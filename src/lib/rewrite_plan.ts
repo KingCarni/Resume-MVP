@@ -1,39 +1,35 @@
 // src/lib/rewrite_plan.ts
-import type { BulletSuggestion } from "./bullet_suggestions";
 
-export type RewritePlanItem = {
-  bulletId: string;
-  original: string;
-  targetKeywords: string[];
-  suggestionText: string;
+type BulletSuggestion = {
+  originalBullet: string;
+  suggestedKeywords: string[];
+  reason?: string;
 };
 
 export function buildRewritePlan(
-  bulletSuggestions: BulletSuggestion[],
-  maxItems = 8
-): RewritePlanItem[] {
-  const scored = bulletSuggestions
-    .map((b) => ({
-      ...b,
-      score: (b.suggestedKeywords?.length ?? 0) * 2 + (b.bulletJobOverlap ?? 0),
-    }))
-    .filter((b) => (b.suggestedKeywords?.length ?? 0) > 0)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, maxItems);
+  bulletSuggestions: BulletSuggestion[] | any
+) {
+  const list: BulletSuggestion[] = Array.isArray(bulletSuggestions)
+    ? bulletSuggestions
+        .map((x: any) => ({
+          originalBullet: String(
+            x?.originalBullet ?? x?.bullet ?? x?.original ?? ""
+          ).trim(),
+          suggestedKeywords: Array.isArray(x?.suggestedKeywords ?? x?.keywords)
+            ? (x.suggestedKeywords ?? x.keywords)
+                .map((k: any) => String(k).trim())
+                .filter(Boolean)
+            : [],
+          reason: x?.reason ? String(x.reason) : undefined,
+        }))
+        .filter((x: BulletSuggestion) => x.originalBullet.length > 0)
+    : [];
 
-  return scored.map((b) => {
-    const targets = (b.suggestedKeywords ?? []).slice(0, 3);
-
-    const suggestionText =
-      `Add: ${targets.join(", ")}. ` +
-      `Rewrite in "Action + Tool/Scope + Result" format (metrics if possible). ` +
-      `Example: "Validated <scope> using <tool> to ensure <quality outcome>, reducing <risk>."`;
-
-    return {
-      bulletId: b.bulletId,
-      original: b.bulletText,
-      targetKeywords: targets,
-      suggestionText,
-    };
-  });
+  // Rewrite plan is intentionally simple: one entry per bullet we want to improve
+  return list.map((x) => ({
+    originalBullet: x.originalBullet,
+    suggestedKeywords: x.suggestedKeywords,
+    reason: x.reason,
+    rewrittenBullet: "", // filled in later by /api/rewrite-bullet
+  }));
 }
