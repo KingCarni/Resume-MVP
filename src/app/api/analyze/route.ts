@@ -1,9 +1,11 @@
+// src/app/api/analyze/route.ts
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 import { analyzeKeywordFit } from "@/lib/keywords";
-import { extractResumeBullets } from "@/lib/bullets";
+import { extractResumeBullets } from "@/lib/extractResumeBullets";
 import { suggestKeywordsForBullets } from "@/lib/bullet_suggestions";
 import { buildRewritePlan } from "@/lib/rewrite_plan";
+import { computeVerbStrength } from "@/lib/verb_strength";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -12,19 +14,10 @@ export const dynamic = "force-dynamic";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-/**
- * Job postings can be flattened to a single paragraph safely.
- */
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Resumes must preserve newlines or we destroy bullet structure.
- * - normalize spaces/tabs within lines
- * - preserve \n
- * - collapse huge blank gaps
- */
 function normalizeResumeText(input: unknown) {
   const raw = String(input ?? "");
   return raw
@@ -48,7 +41,6 @@ function extractExperienceSection(fullText: string) {
   const endHeadingRegex =
     /\n\s*(skills|certificates|certifications|education|projects|references|areas of expertise|summary|technical skills)\b/i;
 
-  // 1) Preferred explicit heading
   const startNeedle = "professional experience";
   const startIdx = lower.indexOf(startNeedle);
 
@@ -69,7 +61,6 @@ function extractExperienceSection(fullText: string) {
     };
   }
 
-  // 2) Fallback: find first job header line (company + date range + role)
   const lines = text.split("\n");
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
@@ -83,14 +74,13 @@ function extractExperienceSection(fullText: string) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i].trim();
     if (!l) continue;
-    if (dateRangeRegex.test(l) && l.length >= 25) {
+    if (dateRangeRegex.test(l) && l.length >= 20) {
       startLine = i;
       break;
     }
   }
 
   if (startLine === -1) {
-    // No obvious job headers: fall back to full text (filters will still clean it)
     return { experienceText: text, foundSection: false, mode: "none" };
   }
 
@@ -111,126 +101,58 @@ function extractExperienceSection(fullText: string) {
 }
 
 /**
- * Strong cleaning for pasted resumes:
- * - removes contact/header lines (P:, E:, L:, emails, linkedin, URLs)
- * - removes job header lines (company + date range + role)
- * - removes "Games Shipped:" lines (with or without 🎮)
- * - keeps real bullets + meaningful long lines inside experience
+ * Option B: capture metadata blocks (not bullets):
+ * - Games Shipped lines
+ * - Metrics clusters
  */
-function filterExperienceLinesToBullets(experienceText: string): string[] {
-  const lines = normalizeResumeText(experienceText)
+function extractMetaBlocks(fullText: string) {
+  const text = normalizeResumeText(fullText);
+  const lines = text
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
 
-  // Contact/header junk
-  const contactPrefixRegex = /^(p:|e:|l:)\s*/i;
-  const emailRegex = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
-  const urlRegex = /\bhttps?:\/\/\S+|\bwww\.\S+/i;
-  const linkedinRegex = /\blinkedin\.com\/in\/\S+/i;
+  const gamesShippedRegex = /^(\u{1F3AE}\s*)?games shipped:/iu;
+  const metricLikeRegex =
+    /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
 
-  // Headings / section labels
-  const headingRegex =
-    /^(skills|certificates|certifications|education|projects|references|areas of expertise|summary|technical skills)\b/i;
-
-  // ✅ NEW: "Games Shipped" junk
-  const gamesShippedRegex = /^(\u{1F3AE}\s*)?games shipped:/iu; // 🎮 optional
-
-  // Job header line detection (no pipes)
-  const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
-  const year = "(19|20)\\d{2}";
-  const dateRangeRegex = new RegExp(
-    `\\b${month}\\s+${year}\\s*[–-]\\s*(${month}\\s+${year}|present)\\b`,
-    "i"
-  );
-
-  // Bullets (also catches the odd "o" and "" lines from Word/Outlook paste)
-  const bulletPrefixRegex = /^(\u2022|•|-|\*|·|o|)\s+/;
-
-  const kept: string[] = [];
+  const gamesShipped: string[] = [];
+  const metrics: string[] = [];
 
   for (const l0 of lines) {
     const l = l0.replace(/\s+/g, " ").trim();
     if (!l) continue;
 
-    // remove section headings
-    if (headingRegex.test(l)) continue;
-
-    // ✅ remove "Games Shipped" lines
-    if (gamesShippedRegex.test(l)) continue;
-
-    // remove contact lines + standalone email/url/linkedin lines
-    if (contactPrefixRegex.test(l)) continue;
-    if (linkedinRegex.test(l)) continue;
-    if (urlRegex.test(l) && l.length < 90) continue;
-    if (emailRegex.test(l) && l.length < 90) continue;
-
-    // remove job header lines (company + date range + role)
-    if (dateRangeRegex.test(l) && l.length >= 25) continue;
-
-    // keep real bullets (strip prefix)
-    if (bulletPrefixRegex.test(l)) {
-      const stripped = l.replace(bulletPrefixRegex, "").trim();
-      if (stripped.length >= 18) kept.push(stripped);
+    if (gamesShippedRegex.test(l)) {
+      gamesShipped.push(l);
       continue;
     }
 
-    // otherwise only keep “content-like” lines
-    if (l.length >= 30) kept.push(l);
+    if (l.length <= 110 && metricLikeRegex.test(l)) {
+      // avoid date ranges being treated as metrics
+      if (
+        /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(
+          l
+        )
+      ) {
+        continue;
+      }
+
+      // avoid phone numbers
+      if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
+
+      metrics.push(l);
+      continue;
+    }
   }
 
-  return kept.slice(0, 160);
+  return {
+    gamesShipped: Array.from(new Set(gamesShipped)).slice(0, 30),
+    metrics: Array.from(new Set(metrics)).slice(0, 50),
+  };
 }
 
-/**
- * Fallback bullet extraction for when your lib extractor returns [].
- * Applies to the experience slice (not entire resume).
- */
-function fallbackExtractBullets(text: string): string[] {
-  const cleaned = normalizeResumeText(text);
-
-  const lines = cleaned
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const bulletRegex = /^(\u2022|•|-|\*|·|\d+\.)\s+/;
-
-  const bulletLike = lines.filter((l) => bulletRegex.test(l));
-  if (bulletLike.length) {
-    return bulletLike
-      .map((l) => l.replace(bulletRegex, "").trim())
-      .filter((l) => l.length >= 18)
-      .slice(0, 160);
-  }
-
-  if (cleaned.includes("•")) {
-    const parts = cleaned
-      .split("•")
-      .map((p) => p.trim())
-      .filter((p) => p.length >= 18);
-
-    if (parts.length) return parts.slice(0, 160);
-  }
-
-  const reasonableLines = lines
-    .filter((l) => l.length >= 18)
-    .filter((l) => !/^(summary|skills|experience|education|projects)\b/i.test(l))
-    // ✅ also drop games shipped lines here, just in case
-    .filter((l) => !/^(\u{1F3AE}\s*)?games shipped:/iu.test(l))
-    .slice(0, 160);
-
-  if (reasonableLines.length >= 6) return reasonableLines;
-
-  const sentenceish = cleaned
-    .replace(/\n+/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 25 && s.length <= 220)
-    .slice(0, 120);
-
-  return sentenceish;
-}
+/** --------- File extraction --------- */
 
 async function extractTextFromDocx(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -268,20 +190,34 @@ async function extractResumeTextFromFile(file: File): Promise<string> {
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
 
+function parseOnlyExperienceFlagFromFormData(v: FormDataEntryValue | null) {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim().toLowerCase();
+  if (s === "true" || s === "1" || s === "on") return true;
+  if (s === "false" || s === "0" || s === "off") return false;
+  return undefined;
+}
+
+/** --------- Route --------- */
+
 export async function POST(req: Request) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
     let resumeText = "";
     let jobText = "";
+    let onlyExperienceBullets: boolean = true;
 
-    // ✅ FILE UPLOAD PATH
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
       const file = form.get("file");
       const resumeTextFallback = form.get("resumeText");
       const job = form.get("jobText") ?? form.get("jobPostingText");
+
+      const flagRaw = form.get("onlyExperienceBullets");
+      const parsedFlag = parseOnlyExperienceFlagFromFormData(flagRaw);
+      if (typeof parsedFlag === "boolean") onlyExperienceBullets = parsedFlag;
 
       jobText = normalizeJobText(job);
 
@@ -290,7 +226,7 @@ export async function POST(req: Request) {
           return NextResponse.json(
             {
               ok: false,
-              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: if the PDF is huge due to graphics, export an "optimized/compressed" PDF or upload DOCX.`,
+              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
             },
             { status: 400 }
           );
@@ -301,12 +237,14 @@ export async function POST(req: Request) {
       } else {
         resumeText = normalizeResumeText(resumeTextFallback);
       }
-    }
-    // ✅ JSON PASTE PATH
-    else if (contentType.includes("application/json")) {
+    } else if (contentType.includes("application/json")) {
       const body = await req.json();
       resumeText = normalizeResumeText(body.resumeText);
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
+
+      if (typeof body.onlyExperienceBullets === "boolean") {
+        onlyExperienceBullets = body.onlyExperienceBullets;
+      }
     } else {
       return NextResponse.json(
         {
@@ -318,7 +256,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validation
     if (!resumeText || !jobText) {
       return NextResponse.json(
         { ok: false, error: "Missing resumeText (or file) or jobText" },
@@ -331,53 +268,118 @@ export async function POST(req: Request) {
         {
           ok: false,
           error:
-            "Resume text too short. If you uploaded a PDF, it may be scanned (image-only). Try DOCX or paste text.",
+            "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text.",
         },
         { status: 400 }
       );
     }
 
-    // Analysis (full resume)
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
+    const metaBlocks = extractMetaBlocks(resumeText);
 
-    // ✅ Experience slicing (heading-based OR heuristic)
-    const { experienceText, foundSection, mode } =
-      extractExperienceSection(resumeText);
+    const experienceSlice = extractExperienceSection(resumeText);
+    const bulletSourceText = onlyExperienceBullets
+      ? experienceSlice.experienceText
+      : resumeText;
 
-    // ✅ Extract bullets from experience only
+    /**
+     * ✅ NEW: Support BOTH extractor return shapes
+     * - old: string[]
+     * - new: { bullets: string[]; jobs: ExtractedJob[] }
+     *
+     * We run strict extraction on experience text, and if empty we try bulletSourceText.
+     */
+    let experienceJobs: any[] = [];
     let bullets: string[] = [];
+    let bulletJobIds: string[] = [];
 
-    // 1) Try your lib extractor on experience slice
-    try {
-      bullets = extractResumeBullets(experienceText) || [];
-    } catch {
-      bullets = [];
-    }
+    const normalizeJobs = (jobsIn: any[]) =>
+      (Array.isArray(jobsIn) ? jobsIn : []).map((j) => ({
+        id: String(j?.id ?? "job_default"),
+        company: String(j?.company || "Company"),
+        title: String(j?.title || "Role"),
+        dates: String(j?.dates || "Dates"),
+        location: j?.location ? String(j.location) : "",
+        bullets: Array.isArray(j?.bullets)
+          ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean)
+          : [],
+      }));
 
-    // 2) Strong experience filters (handles pasted resumes well)
-    const filtered = filterExperienceLinesToBullets(experienceText);
-    if (filtered.length) {
-      bullets = filtered;
-    }
+    const flattenFromJobs = (jobsIn: any[]) => {
+      const outBullets: string[] = [];
+      const outJobIds: string[] = [];
+      for (const job of jobsIn) {
+        for (const b of job.bullets || []) {
+          const t = String(b || "").trim();
+          if (!t) continue;
+          outBullets.push(t);
+          outJobIds.push(job.id);
+        }
+      }
+      return { outBullets, outJobIds };
+    };
 
-    // 3) If still empty, fallback extraction on experience slice
+    const tryExtract = (text: string) => {
+      try {
+        const maybe: any = extractResumeBullets(text);
+        if (Array.isArray(maybe)) {
+          return { bullets: maybe as string[], jobs: [] as any[] };
+        }
+        return {
+          bullets: Array.isArray(maybe?.bullets) ? (maybe.bullets as string[]) : [],
+          jobs: Array.isArray(maybe?.jobs) ? maybe.jobs : [],
+        };
+      } catch {
+        return { bullets: [] as string[], jobs: [] as any[] };
+      }
+    };
+
+    // 1) strict on experience slice
+    const strict1 = tryExtract(experienceSlice.experienceText);
+    experienceJobs = normalizeJobs(strict1.jobs);
+    const flat1 = flattenFromJobs(experienceJobs);
+    bullets = flat1.outBullets;
+    bulletJobIds = flat1.outJobIds;
+
+    // 2) if no bullets, try bulletSourceText (full resume if toggle off)
     if (!bullets.length) {
-      bullets = fallbackExtractBullets(experienceText);
+      const strict2 = tryExtract(bulletSourceText);
 
-      // last pass remove job header lines if any slip in
-      const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
-      const year = "(19|20)\\d{2}";
-      const dateRangeRegex = new RegExp(
-        `\\b${month}\\s+${year}\\s*[–-]\\s*(${month}\\s+${year}|present)\\b`,
-        "i"
-      );
-      bullets = bullets.filter((b) => !dateRangeRegex.test(b));
-      bullets = bullets.filter(
-        (b) => !/^(\u{1F3AE}\s*)?games shipped:/iu.test(b)
+      // if we got jobs with bullets, prefer that
+      const jobs2 = normalizeJobs(strict2.jobs);
+      const flat2 = flattenFromJobs(jobs2);
+
+      if (flat2.outBullets.length) {
+        experienceJobs = jobs2;
+        bullets = flat2.outBullets;
+        bulletJobIds = flat2.outJobIds;
+      } else {
+        // otherwise use flat bullets if provided (no job grouping)
+        bullets = (strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean);
+
+        const fallbackJobId = experienceJobs[0]?.id || "job_default";
+        bulletJobIds = bullets.map(() => fallbackJobId);
+      }
+    }
+
+    // 3) if still empty, hard fail with useful hint
+    if (!bullets.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+          debug: {
+            foundExperienceSection: experienceSlice.foundSection,
+            experienceMode: experienceSlice.mode,
+            experienceLen: experienceSlice.experienceText.length,
+          },
+        },
+        { status: 400 }
       );
     }
 
-    // Suggestions
+    // Suggestions + plan
     let bulletSuggestions: any[] = [];
     let weakBullets: any[] = [];
 
@@ -394,7 +396,6 @@ export async function POST(req: Request) {
       weakBullets = [];
     }
 
-    // Rewrite plan
     let rewritePlan: any[] = [];
     try {
       rewritePlan = buildRewritePlan(bulletSuggestions);
@@ -402,7 +403,6 @@ export async function POST(req: Request) {
       rewritePlan = [];
     }
 
-    // ✅ Always provide a rewritePlan if bullets exist
     if (!Array.isArray(rewritePlan) || rewritePlan.length === 0) {
       const seedKeywords = (
         analysis.highImpactMissing ||
@@ -410,29 +410,67 @@ export async function POST(req: Request) {
         []
       ).slice(0, 5);
 
-      rewritePlan = bullets.slice(0, 25).map((b) => ({
+      rewritePlan = bullets.map((b) => ({
         originalBullet: b,
         suggestedKeywords: seedKeywords,
         rewrittenBullet: "",
       }));
     }
 
+    /**
+     * ✅ Attach jobId + verb strength (before) onto each plan item.
+     * This makes your UI auto-assignment deterministic.
+     */
+    rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
+      const original =
+        typeof item?.originalBullet === "string"
+          ? item.originalBullet
+          : String(item?.originalBullet ?? "");
+
+      const jobId =
+        bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
+
+      return {
+        ...item,
+        originalBullet: original,
+        jobId,
+        verbStrength: computeVerbStrength(original, { mode: "before" }),
+      };
+    });
+
     return NextResponse.json({
       ok: true,
       ...analysis,
+
+      // ✅ Structured jobs + mapping (for auto sections)
+      experienceJobs,
       bullets,
+      bulletJobIds,
+
       bulletSuggestions,
       weakBullets,
       rewritePlan,
+      metaBlocks,
+
       debug: {
         contentType,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
-        experienceLen: experienceText.length,
-        foundExperienceSection: foundSection,
-        experienceMode: mode,
-        bulletsCount: bullets.length,
+
+        onlyExperienceBulletsUsed: onlyExperienceBullets,
+
+        experienceLen: experienceSlice.experienceText.length,
+        foundExperienceSection: experienceSlice.foundSection,
+        experienceMode: experienceSlice.mode,
+
+        jobsDetected: experienceJobs.length,
+        jobsWithBullets: experienceJobs.filter((j) => j.bullets?.length).length,
+        flattenedBulletCount: bullets.length,
         rewritePlanCount: Array.isArray(rewritePlan) ? rewritePlan.length : 0,
+
+        metaGamesCount: metaBlocks.gamesShipped.length,
+        metaMetricsCount: metaBlocks.metrics.length,
+
         maxFileMb: MAX_FILE_MB,
       },
     });
