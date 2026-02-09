@@ -1,8 +1,9 @@
-// src/components/ResumeMvp.tsx
 "use client";
 
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
+
+/** ---------------- Types ---------------- */
 
 type VerbStrength = {
   score: number;
@@ -24,9 +25,7 @@ type RewritePlanItem = {
   blockedKeywords?: string[];
 
   verbStrength?: VerbStrength; // BEFORE (from analyze)
-
-  // server-provided mapping from bullet -> job section
-  jobId?: string;
+  jobId?: string; // server-provided mapping
 };
 
 type ResumeTemplateId = "classic" | "modern" | "minimal";
@@ -82,6 +81,8 @@ type AnalyzeResponse = {
   bulletJobIds?: string[];
 };
 
+/** ---------------- Helpers ---------------- */
+
 async function parseApiResponse(res: Response) {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return await res.json();
@@ -118,8 +119,8 @@ function keywordsToArray(k: any): string[] {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-  if (k && typeof k === "object" && Array.isArray(k.keywords)) {
-    return k.keywords.map((x: any) => String(x).trim()).filter(Boolean);
+  if (k && typeof k === "object" && Array.isArray((k as any).keywords)) {
+    return (k as any).keywords.map((x: any) => String(x).trim()).filter(Boolean);
   }
   return [];
 }
@@ -393,79 +394,7 @@ function computeVerbStrength(bullet: string): VerbStrength {
   return { score, label, detectedVerb, suggestion, baseScore };
 }
 
-function VerbStrengthBadge({ vs, title }: { vs?: VerbStrength; title?: string }) {
-  const label = vs?.label ?? "OK";
-  const score =
-    typeof vs?.score === "number" && Number.isFinite(vs.score) ? vs.score : 50;
-
-  const styles =
-    label === "Strong"
-      ? { bg: "#e9f9ef", border: "#bfe9cd", text: "#0b4a24" }
-      : label === "OK"
-      ? { bg: "#eef6ff", border: "#b9dcff", text: "#0b3b73" }
-      : { bg: "#fff3f3", border: "#ffcccc", text: "#7a1414" };
-
-  return (
-    <span
-      title={
-        title ||
-        (vs?.suggestion
-          ? `${label} (${score}) — ${vs.suggestion}`
-          : `${label} (${score})`)
-      }
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "4px 10px",
-        borderRadius: 999,
-        border: `1px solid ${styles.border}`,
-        background: styles.bg,
-        color: styles.text,
-        fontSize: 12,
-        fontWeight: 900,
-      }}
-    >
-      {label} ({score})
-    </span>
-  );
-}
-
-function VerbStrengthDelta({ before, after }: { before?: VerbStrength; after?: VerbStrength }) {
-  if (!before || !after) return null;
-
-  const delta = after.score - before.score;
-  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
-  const abs = Math.abs(delta);
-
-  const isUp = delta > 0;
-  const isDown = delta < 0;
-
-  const bg = isUp ? "#e9f9ef" : isDown ? "#fff3f3" : "#f4f4f4";
-  const border = isUp ? "#bfe9cd" : isDown ? "#ffcccc" : "#ddd";
-  const color = isUp ? "#0b4a24" : isDown ? "#7a1414" : "#222";
-
-  return (
-    <span
-      title="Verb Strength change from original → rewrite"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "4px 10px",
-        borderRadius: 999,
-        border: `1px solid ${border}`,
-        background: bg,
-        color,
-        fontSize: 12,
-        fontWeight: 900,
-      }}
-    >
-      Δ {sign}
-      {abs}
-    </span>
-  );
-}
-
-/** ---------- Resume Template HTML ---------- **/
+/** ---------- Resume Template HTML ---------- */
 
 function escapeHtml(s: string) {
   return String(s ?? "")
@@ -476,7 +405,6 @@ function escapeHtml(s: string) {
 }
 
 function templateStyles(template: ResumeTemplateId) {
-  // (unchanged – keeping your existing templates)
   if (template === "modern") {
     return `
       :root { --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; }
@@ -615,7 +543,11 @@ function buildResumeHtml(args: {
       if (!list.length) return "";
 
       const headerLeft = `${safe(sec.company || "Company")} — ${safe(sec.title || "Role")}`;
-      const headerRight = [sec.location?.trim() ? safe(sec.location) : "", safe(sec.dates || "")]
+
+      const headerRight = [
+        sec.location?.trim() ? safe(sec.location) : "",
+        safe(sec.dates || ""),
+      ]
         .filter(Boolean)
         .join(" • ");
 
@@ -714,6 +646,8 @@ function uid(prefix = "sec") {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
 
+/** ---------------- Component ---------------- */
+
 export default function ResumeMvp() {
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
@@ -754,6 +688,7 @@ export default function ResumeMvp() {
   const [sections, setSections] = useState<ExperienceSection[]>([
     { id: "default", company: "Experience", title: "", dates: "", location: "" },
   ]);
+
   const [assignments, setAssignments] = useState<Record<number, BulletAssignment>>({});
 
   const canAnalyze = useMemo(() => {
@@ -896,23 +831,31 @@ export default function ResumeMvp() {
       }
 
       if (isHtmlDoc(payload)) {
-        throw new Error(`Analyze returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
+        throw new Error(
+          `Analyze returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`
+        );
       }
 
       if (!res.ok) {
-        throw new Error(typeof payload === "string" ? payload : payload?.error || "Analyze failed");
+        throw new Error(
+          typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed"
+        );
       }
 
       if (typeof payload === "string") {
         throw new Error("Analyze returned unexpected non-JSON response.");
       }
 
-      setAnalysis(payload);
+      setAnalysis(payload as AnalyzeResponse);
 
-      const rewritePlan = Array.isArray(payload?.rewritePlan) ? (payload.rewritePlan as RewritePlanItem[]) : [];
+      const rewritePlan = Array.isArray((payload as any)?.rewritePlan)
+        ? ((payload as any).rewritePlan as RewritePlanItem[])
+        : [];
       const planLen = rewritePlan.length;
 
-      const jobs = Array.isArray(payload?.experienceJobs) ? (payload.experienceJobs as ExperienceJobFromApi[]) : [];
+      const jobs = Array.isArray((payload as any)?.experienceJobs)
+        ? ((payload as any).experienceJobs as ExperienceJobFromApi[])
+        : [];
 
       const nextSections: ExperienceSection[] =
         jobs.length > 0
@@ -931,7 +874,9 @@ export default function ResumeMvp() {
       const fallbackId = nextSections[0]?.id || "default";
 
       if (planLen) {
-        const bulletJobIds = Array.isArray(payload?.bulletJobIds) ? (payload.bulletJobIds as string[]) : undefined;
+        const bulletJobIds = Array.isArray((payload as any)?.bulletJobIds)
+          ? ((payload as any).bulletJobIds as string[])
+          : undefined;
 
         const auto = buildAssignmentsFromServerMapping({
           rewritePlan,
@@ -985,15 +930,17 @@ export default function ResumeMvp() {
     if (!analysis) return;
 
     const bullets = Array.isArray(analysis.bullets) ? analysis.bullets : [];
-    const rewritePlan = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
+    const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
 
-    const planItem = rewritePlan[index];
+    const planItem = rewritePlanLocal[index];
 
     const originalBullet = planItemToText(planItem) || bulletToText(bullets[index]).trim();
     const suggestedKeywords = keywordsToArray(planItem?.suggestedKeywords);
 
     if (!originalBullet) {
-      setError("Missing original bullet for rewrite. Re-run Analyze or confirm bullets are being extracted.");
+      setError(
+        "Missing original bullet for rewrite. Re-run Analyze or confirm bullets are being extracted."
+      );
       return;
     }
 
@@ -1021,7 +968,9 @@ export default function ResumeMvp() {
       const { res, payload } = await postRewriteWithFallback(requestBody);
 
       if (isHtmlDoc(payload)) {
-        throw new Error(`Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
+        throw new Error(
+          `Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`
+        );
       }
 
       if (!res.ok) {
@@ -1123,8 +1072,12 @@ export default function ResumeMvp() {
 
   const rewritePlan = Array.isArray(analysis?.rewritePlan) ? analysis!.rewritePlan! : [];
 
-  const metaGames = Array.isArray(analysis?.metaBlocks?.gamesShipped) ? analysis!.metaBlocks!.gamesShipped! : [];
-  const metaMetrics = Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : [];
+  const metaGames = Array.isArray(analysis?.metaBlocks?.gamesShipped)
+    ? analysis!.metaBlocks!.gamesShipped!
+    : [];
+  const metaMetrics = Array.isArray(analysis?.metaBlocks?.metrics)
+    ? analysis!.metaBlocks!.metrics!
+    : [];
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -1171,7 +1124,17 @@ export default function ResumeMvp() {
       metaMetrics,
       includeMeta: includeMetaInResumeDoc,
     });
-  }, [analysis, rewritePlan.length, resumeTemplate, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMetaInResumeDoc]);
+  }, [
+    analysis,
+    rewritePlan.length,
+    resumeTemplate,
+    profile,
+    sections,
+    bulletsBySection,
+    metaGames,
+    metaMetrics,
+    includeMetaInResumeDoc,
+  ]);
 
   function handleDownloadHtml() {
     if (!resumeHtml) return;
@@ -1183,8 +1146,17 @@ export default function ResumeMvp() {
     openPrintWindow(resumeHtml);
   }
 
+  const debugInjected = useMemo(() => {
+    const plan = Array.isArray(rewritePlan) ? rewritePlan : [];
+    const hits = plan
+      .map((p) => String(p?.rewrittenBullet ?? ""))
+      .flatMap((t) => findInjectedTerms(t, guardrailTerms));
+    return Array.from(new Set(hits));
+  }, [rewritePlan, guardrailTerms]);
+
   return (
     <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
+      {/* Top Nav */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <Link
           href="/resume"
@@ -1214,21 +1186,351 @@ export default function ResumeMvp() {
         </Link>
       </div>
 
-      {/* (rest of your UI is unchanged from what you posted) */}
-      {/* Keep everything you already have below this point */}
-      {/* NOTE: I didn't remove anything intentional — only fixed the routing + self-import issue. */}
-
-      {/* --- YOUR EXISTING RETURN CONTENT CONTINUES --- */}
-      {/* If you want, paste the rest of the return block you want kept and I’ll reflow it cleanly,
-          but it’s safe to keep as-is. */}
       <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Resume MVP</h1>
       <p style={{ marginTop: 8, opacity: 0.8 }}>
         Analyze → auto-detect jobs → auto-assign bullets → rewrite selected → generate a clean template.
       </p>
 
-      {/* The rest of your component can remain exactly as you had it.
-          If you want the full file with the *entire* return (unchanged),
-          tell me and I’ll paste the complete thing in one go. */}
+      {error ? (
+        <Callout title="Error" tone="danger">
+          <div style={{ whiteSpace: "pre-wrap" }}>{error}</div>
+        </Callout>
+      ) : null}
+
+      {/* Minimal working scaffold UI (so the page isn't empty) */}
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 14,
+          alignItems: "start",
+        }}
+      >
+        <div
+          style={{
+            border: "1px solid #e7e7e7",
+            borderRadius: 14,
+            padding: 14,
+            background: "white",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16 }}>Inputs</h2>
+
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Resume file (optional)</div>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {file ? (
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <Chip text={file.name} />
+                  <button type="button" onClick={clearFile}>
+                    Clear
+                  </button>
+                </div>
+              ) : null}
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>
+                Resume text (paste if not uploading)
+              </div>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                rows={6}
+                style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Job posting text</div>
+              <textarea
+                value={jobText}
+                onChange={(e) => setJobText(e.target.value)}
+                rows={6}
+                style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+              />
+            </label>
+
+            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={onlyExperienceBullets}
+                onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
+              />
+              <span style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>
+                Only experience bullets
+              </span>
+            </label>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Target Company</div>
+                <input
+                  value={targetCompany}
+                  onChange={(e) => setTargetCompany(e.target.value)}
+                  style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Source Company</div>
+                <input
+                  value={sourceCompany}
+                  onChange={(e) => setSourceCompany(e.target.value)}
+                  style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>
+                Target Products (comma separated)
+              </div>
+              <input
+                value={targetProductsCsv}
+                onChange={(e) => setTargetProductsCsv(e.target.value)}
+                style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>
+                Blocked Terms (comma separated)
+              </div>
+              <input
+                value={blockedTermsCsv}
+                onChange={(e) => setBlockedTermsCsv(e.target.value)}
+                style={{ width: "100%", borderRadius: 10, border: "1px solid #ddd", padding: 10 }}
+              />
+            </label>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={!canAnalyze || loadingAnalyze}
+                style={{
+                  padding: "10px 14px",
+                  fontWeight: 900,
+                  borderRadius: 12,
+                  border: "1px solid #ddd",
+                }}
+              >
+                {loadingAnalyze ? "Analyzing…" : "Analyze"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRewriteSelected}
+                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                style={{
+                  padding: "10px 14px",
+                  fontWeight: 900,
+                  borderRadius: 12,
+                  border: "1px solid #ddd",
+                }}
+              >
+                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+              </button>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={includeMetaInResumeDoc}
+                  onChange={(e) => setIncludeMetaInResumeDoc(e.target.checked)}
+                />
+                <span style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Include meta blocks</span>
+              </label>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Template</span>
+                <select
+                  value={resumeTemplate}
+                  onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
+                >
+                  <option value="modern">modern</option>
+                  <option value="classic">classic</option>
+                  <option value="minimal">minimal</option>
+                </select>
+              </label>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={showDebugJson}
+                  onChange={(e) => setShowDebugJson(e.target.checked)}
+                />
+                <span style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Show debug</span>
+              </label>
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={logNetworkDebug}
+                  onChange={(e) => setLogNetworkDebug(e.target.checked)}
+                />
+                <span style={{ fontWeight: 800, fontSize: 12, opacity: 0.8 }}>Console logs</span>
+              </label>
+            </div>
+
+            {debugInjected.length ? (
+              <Callout title="Guardrail terms detected in rewrites" tone="warn">
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {debugInjected.map((t) => (
+                    <Chip key={t} text={t} />
+                  ))}
+                </div>
+              </Callout>
+            ) : null}
+
+            {showDebugJson && analysis ? (
+              <pre
+                style={{
+                  marginTop: 10,
+                  background: "#0b0b0b",
+                  color: "#ddd",
+                  padding: 12,
+                  borderRadius: 12,
+                  overflowX: "auto",
+                }}
+              >
+                {JSON.stringify(analysis, null, 2)}
+              </pre>
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #e7e7e7",
+            borderRadius: 14,
+            padding: 14,
+            background: "white",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16 }}>Preview</h2>
+
+          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleDownloadHtml}
+              disabled={!resumeHtml}
+              style={{ padding: "10px 14px", fontWeight: 900, borderRadius: 12, border: "1px solid #ddd" }}
+            >
+              Download HTML
+            </button>
+            <button
+              type="button"
+              onClick={handlePrintPdf}
+              disabled={!resumeHtml}
+              style={{ padding: "10px 14px", fontWeight: 900, borderRadius: 12, border: "1px solid #ddd" }}
+            >
+              Print / Save PDF
+            </button>
+          </div>
+
+          {resumeHtml ? (
+            <div style={{ marginTop: 12, border: "1px solid #e7e7e7", borderRadius: 14, overflow: "hidden" }}>
+              <iframe
+                title="Resume preview"
+                style={{ width: "100%", height: 720, border: "none" }}
+                srcDoc={resumeHtml}
+              />
+            </div>
+          ) : (
+            <div style={{ marginTop: 12, opacity: 0.7, fontSize: 12 }}>
+              Run Analyze + Rewrite to generate the resume HTML.
+            </div>
+          )}
+
+          {analysis && rewritePlan.length ? (
+            <div style={{ marginTop: 14 }}>
+              <h3 style={{ margin: "10px 0 6px", fontSize: 14 }}>Rewrite Plan (select bullets)</h3>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" onClick={() => selectAll(rewritePlan.length)}>
+                    Select all
+                  </button>
+                  <button type="button" onClick={selectNone}>
+                    Select none
+                  </button>
+                </div>
+
+                {rewritePlan.map((item, i) => {
+                  const original = planItemToText(item);
+                  const rewritten = String(item?.rewrittenBullet ?? "").trim();
+                  const isSelected = selectedBulletIdx.has(i);
+
+                  const before = computeVerbStrength(original);
+                  const after = rewritten ? computeVerbStrength(rewritten) : undefined;
+
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        border: "1px solid #e7e7e7",
+                        borderRadius: 12,
+                        padding: 10,
+                      }}
+                    >
+                      <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelected(i)}
+                        />
+                        <strong style={{ fontSize: 13 }}>Bullet #{i + 1}</strong>
+                        <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+                          <Chip text={`Original: ${before.label} (${before.score})`} muted />
+                          {after ? <Chip text={`Rewrite: ${after.label} (${after.score})`} /> : null}
+                        </span>
+                      </label>
+
+                      <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.35 }}>
+                        <div style={{ opacity: 0.7, fontWeight: 800, marginBottom: 4 }}>Original</div>
+                        <div>{original || <em>(empty)</em>}</div>
+                      </div>
+
+                      {rewritten ? (
+                        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.35 }}>
+                          <div style={{ opacity: 0.7, fontWeight: 800, marginBottom: 4 }}>Rewrite</div>
+                          <div>{rewritten}</div>
+                        </div>
+                      ) : null}
+
+                      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => handleRewriteBullet(i)}
+                          disabled={loadingRewriteIndex !== null}
+                          style={{ padding: "6px 10px", fontWeight: 800 }}
+                        >
+                          {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite this bullet"}
+                        </button>
+
+                        {item?.suggestedKeywords?.length ? (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            <span style={{ fontSize: 12, opacity: 0.7, fontWeight: 800 }}>Suggested:</span>
+                            {keywordsToArray(item.suggestedKeywords).slice(0, 10).map((k) => (
+                              <Chip key={k} text={k} />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 }
