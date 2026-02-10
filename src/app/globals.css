@@ -1,8 +1,31 @@
 @import "tailwindcss";
 
+/* --------------------------------------------
+  Theme tokens
+  - next-themes will toggle the `dark` class on <html>
+  - we store colors in CSS variables and let Tailwind use them
+--------------------------------------------- */
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+/* When user explicitly chooses Dark (html.dark) */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+/* When theme is set to "system":
+   - next-themes does NOT apply .dark unless the system is dark
+   - this media query makes the default look correct before mount
+   - .dark above still wins when applied */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
 }
 
 @theme inline {
@@ -12,11 +35,13 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* --------------------------------------------
+  Base document styles
+--------------------------------------------- */
+
+html,
+body {
+  height: 100%;
 }
 
 body {
