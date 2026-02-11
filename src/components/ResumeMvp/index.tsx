@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 
 /** ---------------- Types ---------------- */
@@ -1510,6 +1510,8 @@ export default function ResumeMvp() {
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
 
   // Toggle that gets sent to /api/analyze (Option A behavior)
   const [onlyExperienceBullets, setOnlyExperienceBullets] = useState(true);
@@ -1556,9 +1558,24 @@ export default function ResumeMvp() {
     return hasResume && hasJob;
   }, [file, resumeText, jobText]);
 
-  function clearFile() {
-    setFile(null);
+ function resetDerivedState() {
+  setAnalysis(null);
+  setSelectedBulletIdx(new Set());
+  setAssignments({});
+  setError(null);
+  setLoadingRewriteIndex(null);
+  setLoadingBatchRewrite(false);
+  setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+}
+
+function clearFile() {
+  setFile(null);
+  if (fileInputRef.current) {
+    fileInputRef.current.value = "";
   }
+  resetDerivedState();
+}
+
 
   function toggleSelected(i: number) {
     setSelectedBulletIdx((prev) => {
@@ -2044,9 +2061,14 @@ export default function ResumeMvp() {
                 Resume file (optional)
               </div>
               <input
+               ref={fileInputRef}
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+               onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+              resetDerivedState();
+                }}
+
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
               />
               {file ? (
