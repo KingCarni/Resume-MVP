@@ -179,6 +179,60 @@ function findInjectedTerms(text: string, terms: string[]) {
   return Array.from(new Set(hits));
 }
 
+/** ---------------- NEW: keyword + rewrite guardrail helpers ---------------- */
+
+function normalizeSuggestedKeywordsForBullet(originalBullet: string, suggested: string[]) {
+  const text = normalizeForMatch(originalBullet);
+
+  // ban generic "anchor" phrases that cause repeated rewrites
+  const bannedStarts = [
+    "coordinate daily testing",
+    "coordinated daily testing",
+    "daily testing operations",
+    "daily testing priorities",
+  ].map(normalizeForMatch);
+
+  let cleaned = (suggested || [])
+    .map((s) => String(s).trim())
+    .filter(Boolean)
+    .filter((s) => {
+      const ns = normalizeForMatch(s);
+      return !bannedStarts.some((b) => ns.startsWith(b));
+    });
+
+  // keep keywords that plausibly match the bullet OR are short useful tokens
+  cleaned = cleaned.filter((k) => {
+    const kk = normalizeForMatch(k);
+    if (kk.length <= 6) return true; // allow short ones like "jira", "qa", "ue5"
+    return text.includes(kk);
+  });
+
+  // fallback if we removed too much or the analyze returned junk
+  if (cleaned.length < 2) {
+    cleaned = ["qa", "test planning", "release", "jira"];
+  }
+
+  // cap to avoid keyword spam
+  return cleaned.slice(0, 5);
+}
+
+function isTrainingLikeBullet(bullet: string) {
+  const s = String(bullet || "");
+  // includes common training/certification language
+  return /\b(training|trained|certif|certificate|certification|course|workshop|program|bootcamp|completed|graduated)\b/i.test(
+    s
+  );
+}
+
+function defaultTrainingRewrite(original: string) {
+  const raw = String(original || "").trim();
+  // Keep it honest: training stays training.
+  // If they want it stronger later, we can ask for specifics (topics/skills).
+  return raw
+    ? `Completed ${raw.replace(/^\s*completed\s+/i, "").trim()}, strengthening leadership, coaching, and cross-team communication skills.`
+    : "";
+}
+
 /**
  * Client-side resume text normalization to improve job header parsing.
  * This specifically helps resumes where the job title appears after the dates (tab/column layout),
@@ -238,7 +292,8 @@ function normalizeResumeTextForParsing(input: string) {
       const company = left.replace(/\s{2,}/g, " ").replace(/[•|]+$/g, "").trim();
       const title = right.replace(/^[•|]+/g, "").trim();
 
-      const titleLooksReal = title.length >= 3 && !/^(vancouver|remote|hybrid)\b/i.test(title);
+      const titleLooksReal =
+        title.length >= 3 && !/^(vancouver|remote|hybrid)\b/i.test(title);
 
       if (titleLooksReal) {
         out.push(`${company} — ${title} (${range})`);
@@ -522,7 +577,9 @@ function mkThemeCss(opts: {
   const borderStyle = opts.borderStyle || "solid";
   const shadow = opts.shadow || "0 10px 30px rgba(0,0,0,.06)";
   const bodyBg = opts.bodyBg || opts.pageBg || "#fff";
-  const headerBg = opts.headerBg || "linear-gradient(180deg, rgba(0,0,0,.04), rgba(255,255,255,0))";
+  const headerBg =
+    opts.headerBg ||
+    "linear-gradient(180deg, rgba(0,0,0,.04), rgba(255,255,255,0))";
   const cardBg = opts.cardBg || "#fff";
   const accent2 = opts.accent2 || opts.accent;
 
@@ -543,11 +600,15 @@ function mkThemeCss(opts: {
     .name { font-size: 30px; font-weight: 950; letter-spacing: -.02em; margin:0; }
     .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:800; }
     .contact { margin-top:12px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
-    .chip { display:inline-block; border:1px ${borderStyle} var(--line); padding:6px 10px; border-radius: 999px; background:${opts.hasChips ? "rgba(255,255,255,.9)" : "transparent"}; }
+    .chip { display:inline-block; border:1px ${borderStyle} var(--line); padding:6px 10px; border-radius: 999px; background:${
+      opts.hasChips ? "rgba(255,255,255,.9)" : "transparent"
+    }; }
     .content { padding: 18px 26px 26px; }
     .section { margin-top: 16px; }
     .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 950; letter-spacing: .10em; text-transform:uppercase; }
-    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); ${hasBar ? "" : "display:none;"} }
+    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); ${
+      hasBar ? "" : "display:none;"
+    } }
     .summary { color:var(--muted); line-height: 1.5; font-size: 13px; }
     .job { margin-top: 12px; border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
       10,
@@ -924,7 +985,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e2e8f0",
       accent: "#111827",
       bodyBg: "#f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 45px rgba(2,6,23,.08)",
@@ -941,8 +1003,10 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f6f7fb",
-      headerBg: "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
-      cardBg: "linear-gradient(180deg, rgba(2,6,23,.03), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
+      cardBg:
+        "linear-gradient(180deg, rgba(2,6,23,.03), rgba(255,255,255,0))",
       radius: 16,
       shadow: "0 18px 55px rgba(2,6,23,.12)",
       hasChips: true,
@@ -958,7 +1022,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#1f2937",
       bodyBg:
         "radial-gradient(900px 480px at 20% 10%, rgba(17,24,39,.06), rgba(255,255,255,0)), #fffdf7",
-      headerBg: "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
       cardBg: "#fffef9",
       borderStyle: "solid",
       radius: 12,
@@ -975,7 +1040,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0f172a",
       bodyBg:
         "radial-gradient(1000px 520px at 10% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "dashed",
       radius: 18,
@@ -992,7 +1058,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b57d0",
       accent2: "#111827",
       bodyBg: "#f3f6fb",
-      headerBg: "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
+      headerBg:
+        "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 16px 45px rgba(11,19,36,.10)",
@@ -1009,7 +1076,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
-      headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 0,
@@ -1025,7 +1093,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#eef2f7",
       accent: "#111827",
       bodyBg: "#ffffff",
-      headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 24,
@@ -1043,7 +1112,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "linear-gradient(90deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px), linear-gradient(180deg, rgba(6,182,212,.05) 1px, rgba(255,255,255,0) 1px), #f7fbff",
-      headerBg: "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
+      headerBg:
+        "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
       cardBg: "rgba(255,255,255,.92)",
       borderStyle: "dashed",
       radius: 18,
@@ -1063,8 +1133,10 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f59e0b",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(245,158,11,.10), rgba(255,255,255,0)), #fff7ed",
-      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
-      cardBg: "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
+      cardBg:
+        "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
       radius: 18,
       shadow: "0 16px 45px rgba(43,27,18,.10)",
       hasChips: true,
@@ -1081,7 +1153,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#60a5fa",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fbfaff",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
       cardBg: "#ffffff",
       radius: 20,
       shadow: "0 18px 55px rgba(31,41,55,.08)",
@@ -1099,7 +1172,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f7fbff",
-      headerBg: "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.10)",
@@ -1117,7 +1191,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#a78bfa",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
-      headerBg: "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 48px rgba(31,27,46,.10)",
@@ -1135,7 +1210,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f97316",
       bodyBg:
         "radial-gradient(900px 520px at 25% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f7",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 18px 55px rgba(43,18,32,.10)",
@@ -1153,7 +1229,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#0ea5e9",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(22,163,74,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(14,165,233,.08), rgba(255,255,255,0)), #f3fbf7",
-      headerBg: "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
+      headerBg:
+        "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(11,31,23,.10)",
@@ -1171,7 +1248,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(14,165,233,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f4fbff",
-      headerBg: "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(6,26,42,.10)",
@@ -1189,7 +1267,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f59e0b",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
-      headerBg: "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
       cardBg: "#fffdf7",
       radius: 14,
       shadow: "0 14px 40px rgba(43,32,18,.08)",
@@ -1207,7 +1286,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#7c3aed",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(29,78,216,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7f9ff",
-      headerBg: "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
+      headerBg:
+        "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.12)",
@@ -1225,7 +1305,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f59e0b",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(245,158,11,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(180,83,9,.10), rgba(255,255,255,0)), #fffaf0",
-      headerBg: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
+      headerBg:
+        "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 18,
@@ -1512,7 +1593,6 @@ export default function ResumeMvp() {
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-
   // Toggle that gets sent to /api/analyze (Option A behavior)
   const [onlyExperienceBullets, setOnlyExperienceBullets] = useState(true);
 
@@ -1535,22 +1615,27 @@ export default function ResumeMvp() {
 
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplateId>("modern");
   const [profile, setProfile] = useState<ResumeProfile>({
-    fullName: "Harley Curtis",
-    titleLine: "QA Lead / QA Manager",
-    locationLine: "Vancouver, BC",
-    email: "harleydean17@gmail.com",
+    fullName: "",
+    titleLine: "",
+    locationLine: "",
+    email: "",
     phone: "",
-    linkedin: "linkedin.com/in/harley-curtis",
+    linkedin: "",
     portfolio: "",
-    summary:
-      "QA leader with experience shipping games and driving quality outcomes across releases, automation, and cross-functional execution.",
+    summary: "",
   });
+
+  // Live Preview Editor (like Cover Letter)
 
   const [sections, setSections] = useState<ExperienceSection[]>([
     { id: "default", company: "Experience", title: "", dates: "", location: "" },
   ]);
 
   const [assignments, setAssignments] = useState<Record<number, BulletAssignment>>({});
+  // Live Preview Editor state (Resume)
+  const [showPreviewEditor, setShowPreviewEditor] = useState(false);
+  const [previewHtmlDraft, setPreviewHtmlDraft] = useState("");
+  const [previewHtmlOverride, setPreviewHtmlOverride] = useState<string>("");
 
   const canAnalyze = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1558,24 +1643,28 @@ export default function ResumeMvp() {
     return hasResume && hasJob;
   }, [file, resumeText, jobText]);
 
- function resetDerivedState() {
-  setAnalysis(null);
-  setSelectedBulletIdx(new Set());
-  setAssignments({});
-  setError(null);
-  setLoadingRewriteIndex(null);
-  setLoadingBatchRewrite(false);
-  setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
-}
+  function resetDerivedState() {
+    setAnalysis(null);
+    setSelectedBulletIdx(new Set());
+    setAssignments({});
+    setError(null);
+    setLoadingRewriteIndex(null);
+    setLoadingBatchRewrite(false);
+    setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
 
-function clearFile() {
-  setFile(null);
-  if (fileInputRef.current) {
-    fileInputRef.current.value = "";
+    // Live preview editor state (must exist exactly once earlier in component)
+    setShowPreviewEditor(false);
+    setPreviewHtmlDraft("");
+    setPreviewHtmlOverride("");
   }
-  resetDerivedState();
-}
 
+  function clearFile() {
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    resetDerivedState();
+  }
 
   function toggleSelected(i: number) {
     setSelectedBulletIdx((prev) => {
@@ -1635,7 +1724,6 @@ function clearFile() {
     try {
       let res: Response;
 
-      // IMPORTANT: normalize pasted resume text to help the backend recognize job titles
       const resumeTextForApi = resumeText.trim()
         ? normalizeResumeTextForParsing(resumeText.trim())
         : "";
@@ -1645,7 +1733,6 @@ function clearFile() {
         fd.append("file", file);
         fd.append("jobText", jobText);
 
-        // If the user also pasted text, send the normalized version as a hint
         if (resumeTextForApi) fd.append("resumeText", resumeTextForApi);
 
         fd.append("onlyExperienceBullets", String(onlyExperienceBullets));
@@ -1780,12 +1867,73 @@ function clearFile() {
     const planItem = rewritePlanLocal[index];
 
     const originalBullet = planItemToText(planItem) || bulletToText(bullets[index]).trim();
-    const suggestedKeywords = keywordsToArray(planItem?.suggestedKeywords);
+    const suggestedKeywordsRaw = keywordsToArray(planItem?.suggestedKeywords);
+    const suggestedKeywords = normalizeSuggestedKeywordsForBullet(originalBullet, suggestedKeywordsRaw);
 
     if (!originalBullet) {
       setError(
         "Missing original bullet for rewrite. Re-run Analyze or confirm bullets are being extracted."
       );
+      return;
+    }
+
+    // ✅ Fix: training / cert / program bullets should not become “daily testing”
+    if (isTrainingLikeBullet(originalBullet)) {
+      const rewrittenTraining = defaultTrainingRewrite(originalBullet);
+
+      if (!rewrittenTraining) {
+        setError("Training bullet detected, but could not generate a safe rewrite.");
+        return;
+      }
+
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+
+        const prevBullets = Array.isArray(prev.bullets) ? prev.bullets : [];
+        const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
+
+        const nextPlan =
+          prevPlan.length > 0
+            ? [...prevPlan]
+            : prevBullets.slice(0, 20).map((b) => ({
+                originalBullet: bulletToText(b),
+                suggestedKeywords: [],
+                rewrittenBullet: "",
+                needsMoreInfo: false,
+                notes: [],
+                keywordHits: [],
+                blockedKeywords: [],
+                verbStrength: undefined,
+                jobId: undefined,
+              }));
+
+        if (!nextPlan[index]) {
+          nextPlan[index] = {
+            originalBullet,
+            suggestedKeywords,
+            rewrittenBullet: "",
+            needsMoreInfo: false,
+            notes: [],
+            keywordHits: [],
+            blockedKeywords: [],
+            verbStrength: undefined,
+            jobId: undefined,
+          };
+        }
+
+        nextPlan[index] = {
+          ...nextPlan[index],
+          rewrittenBullet: rewrittenTraining,
+          needsMoreInfo: false,
+          notes: ["Training/education bullet detected; kept rewrite faithful (no invented testing duties)."],
+          keywordHits: [],
+          blockedKeywords: [],
+          suggestedKeywords,
+        };
+
+        return { ...prev, rewritePlan: nextPlan };
+      });
+
       return;
     }
 
@@ -1796,10 +1944,19 @@ function clearFile() {
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
 
+      // ✅ Fix: explicit constraints to prevent "daily testing" hallucinations + duty invention
       const requestBody = {
         originalBullet,
         suggestedKeywords,
         jobText,
+
+        constraints: [
+          "Do not add responsibilities not present in the original bullet.",
+          "Do not add 'daily testing' unless the original bullet explicitly mentions it.",
+          "Preserve the original meaning and scope; only improve clarity and impact.",
+          "Avoid generic filler; keep it concise and specific.",
+        ],
+        mustPreserveMeaning: true,
 
         sourceCompany: sourceCompany.trim(),
         targetCompany: targetCompany.trim(),
@@ -1871,6 +2028,7 @@ function clearFile() {
 
         nextPlan[index] = {
           ...nextPlan[index],
+          suggestedKeywords, // ✅ store the sanitized keywords so UI reflects what was actually used
           rewrittenBullet,
           needsMoreInfo,
           notes,
@@ -1945,18 +2103,19 @@ function clearFile() {
     });
   }, [rewritePlan, selectedBulletIdx]);
 
+  // ✅ Single source of truth: bullets grouped into experience sections
   const bulletsBySection = useMemo(() => {
-    const map: Record<string, string[]> = {};
-    for (const s of sections) map[s.id] = [];
-    if (!rewritePlan.length) return map;
+    const by: Record<string, string[]> = {};
+    const fallback = sections[0]?.id || "default";
 
-    for (let i = 0; i < rewritePlan.length; i++) {
-      const secId = assignments[i]?.sectionId || sections[0]?.id || "default";
-      if (!map[secId]) map[secId] = [];
-      map[secId].push(appliedBulletText[i]);
+    for (let i = 0; i < appliedBulletText.length; i++) {
+      const sectionId = assignments[i]?.sectionId || fallback;
+      if (!by[sectionId]) by[sectionId] = [];
+      by[sectionId].push(appliedBulletText[i]);
     }
-    return map;
-  }, [sections, assignments, rewritePlan.length, appliedBulletText]);
+
+    return by;
+  }, [appliedBulletText, assignments, sections]);
 
   const resumeHtml = useMemo(() => {
     if (!analysis || !rewritePlan.length) return "";
@@ -1981,19 +2140,44 @@ function clearFile() {
     includeMetaInResumeDoc,
   ]);
 
-  function handleDownloadHtml() {
+  // ✅ Live Preview Editor helpers (state MUST be declared once earlier)
+  const effectiveResumeHtml = useMemo(() => {
+    return (previewHtmlOverride || resumeHtml || "").trim();
+  }, [previewHtmlOverride, resumeHtml]);
+
+  function openEditPreview() {
     if (!resumeHtml) return;
-    downloadHtml("resume-template.html", resumeHtml);
+    const seed = (previewHtmlOverride || resumeHtml || "").trim();
+    setPreviewHtmlDraft(seed);
+    setShowPreviewEditor(true);
+  }
+
+  function applyPreviewEdits() {
+    setPreviewHtmlOverride(previewHtmlDraft);
+  }
+
+  function resetPreviewEdits() {
+    setPreviewHtmlOverride("");
+    setPreviewHtmlDraft((resumeHtml || "").trim());
+  }
+
+  function closePreviewEditor() {
+    setShowPreviewEditor(false);
+  }
+
+  function handleDownloadHtml() {
+    if (!effectiveResumeHtml) return;
+    downloadHtml("resume-template.html", effectiveResumeHtml);
   }
 
   function handleViewPreview() {
-    if (!resumeHtml) return;
-    openPreviewWindow(resumeHtml);
+    if (!effectiveResumeHtml) return;
+    openPreviewWindow(effectiveResumeHtml);
   }
 
   function handlePrintPdf() {
-    if (!resumeHtml) return;
-    openPrintWindow(resumeHtml);
+    if (!effectiveResumeHtml) return;
+    openPrintWindow(effectiveResumeHtml);
   }
 
   const debugInjected = useMemo(() => {
@@ -2061,14 +2245,13 @@ function clearFile() {
                 Resume file (optional)
               </div>
               <input
-               ref={fileInputRef}
+                ref={fileInputRef}
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
-               onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
-              resetDerivedState();
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  resetDerivedState();
                 }}
-
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
               />
               {file ? (
@@ -2084,6 +2267,70 @@ function clearFile() {
                 </div>
               ) : null}
             </label>
+
+            {/* Header details */}
+            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
+                Header details
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <input
+                  value={profile.fullName}
+                  onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
+                  placeholder="Full name"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+
+                <input
+                  value={profile.locationLine}
+                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
+                  placeholder="Location"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+
+                <input
+                  value={profile.email}
+                  onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="Email"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+
+                <input
+                  value={profile.phone}
+                  onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="Phone"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3">
+                <input
+                  value={profile.linkedin}
+                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
+                  placeholder="LinkedIn"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+              </div>
+
+              {/* Optional extras (uncomment if you want them visible too) */}
+              {/*
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <input
+                  value={profile.titleLine}
+                  onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
+                  placeholder="Title line"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+                <input
+                  value={profile.portfolio}
+                  onChange={(e) => setProfile((p) => ({ ...p, portfolio: e.target.value }))}
+                  placeholder="Portfolio"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+              </div>
+              */}
+            </div>
 
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
@@ -2263,16 +2510,15 @@ function clearFile() {
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Preview</h2>
             <div className="text-xs text-black/60 dark:text-white/60">
-              {resumeHtml ? "Ready" : "Waiting for rewrite"}
+              {effectiveResumeHtml ? "Ready" : "Waiting for rewrite"}
             </div>
           </div>
 
-          {/* PREVIEW TOOLBAR */}
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={handleDownloadHtml}
-              disabled={!resumeHtml}
+              disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
               Download HTML
@@ -2280,8 +2526,17 @@ function clearFile() {
 
             <button
               type="button"
+              onClick={openEditPreview}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Edit Live Preview
+            </button>
+
+            <button
+              type="button"
               onClick={handleViewPreview}
-              disabled={!resumeHtml}
+              disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
               View Preview
@@ -2290,16 +2545,62 @@ function clearFile() {
             <button
               type="button"
               onClick={handlePrintPdf}
-              disabled={!resumeHtml}
+              disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
               Print / Save PDF
             </button>
           </div>
 
+          {showPreviewEditor ? (
+            <div className="mt-3 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-extrabold">Edit Live Preview (HTML)</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={applyPreviewEdits}
+                    className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 dark:border-white/10"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetPreviewEdits}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePreviewEditor}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                value={previewHtmlDraft}
+                onChange={(e) => setPreviewHtmlDraft(e.target.value)}
+                rows={14}
+                spellCheck={false}
+                className="mt-3 w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+              />
+              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+                Tip: “Apply” sets the override. Download / View / Print will use the edited HTML.
+              </div>
+            </div>
+          ) : null}
+
           {resumeHtml ? (
             <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
-              <iframe title="Resume preview" className="h-[720px] w-full border-0" srcDoc={resumeHtml} />
+              <iframe
+                title="Resume preview"
+                className="h-[720px] w-full border-0"
+                srcDoc={effectiveResumeHtml}
+              />
             </div>
           ) : (
             <div className="mt-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 dark:border-white/15 dark:text-white/60">

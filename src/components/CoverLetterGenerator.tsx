@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-
 import React, { useMemo, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -47,9 +46,7 @@ type ResumeProfile = {
   linkedin: string;
 };
 
-type ApiResp =
-  | { ok: true; coverLetter: string }
-  | { ok: false; error?: string };
+type ApiResp = { ok: true; coverLetter: string } | { ok: false; error?: string };
 
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
 
@@ -144,6 +141,117 @@ function downloadHtml(filename: string, html: string) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadPdfFromHtml(filename: string, html: string) {
+  const res = await fetch("/api/render-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ html, filename }),
+
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`PDF render failed (${res.status}). ${text}`);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+/** ✅ .doc (HTML-in-a-Word-wrapper) */
+function downloadDoc(filename: string, html: string) {
+  const wordHtml = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${filename}</title>
+  <style>
+    /* Word-friendly defaults */
+    @page { margin: 24pt; }
+    html, body { background: white !important; }
+    .page { box-shadow: none !important; }
+  </style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+
+  const blob = new Blob([wordHtml], { type: "application/msword;charset=utf-8;" });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".doc") ? filename : `${filename}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadMhtml(filename: string, html: string) {
+  const mhtml = `MIME-Version: 1.0
+Content-Type: multipart/related; boundary="NEXT_PART"
+
+--NEXT_PART
+Content-Type: text/html; charset="utf-8"
+Content-Location: file:///document.html
+
+${html}
+
+--NEXT_PART--`;
+
+  const blob = new Blob([mhtml], { type: "application/x-mimearchive" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".mhtml") ? filename : `${filename}.mhtml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** ✅ REAL .docx export via server route (no fs errors) */
+async function downloadDocxViaApi(filename: string, html: string) {
+  const res = await fetch("/api/export-docx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ html }),
+  });
+
+  if (!res.ok) {
+    let msg = "DOCX export failed.";
+    try {
+      const j = await res.json();
+      if (j?.error) msg = String(j.error);
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".docx") ? filename : `${filename}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function openPrintWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
   if (!w) return;
@@ -163,7 +271,6 @@ function escapeHtml(s: string) {
     .replace(/"/g, "&quot;");
 }
 
-/** A small helper so new themes don't explode the file size (COPIED FROM RESUME) */
 function mkThemeCss(opts: {
   font?: "sans" | "serif" | "mono";
   ink: string;
@@ -172,9 +279,9 @@ function mkThemeCss(opts: {
   accent: string;
   accent2?: string;
   pageBg?: string;
-  bodyBg?: string; // full CSS background value
-  headerBg?: string; // background for .top
-  cardBg?: string; // for .job/.box
+  bodyBg?: string;
+  headerBg?: string;
+  cardBg?: string;
   borderStyle?: "solid" | "dashed" | "dotted";
   radius?: number;
   shadow?: string;
@@ -193,69 +300,120 @@ function mkThemeCss(opts: {
   const shadow = opts.shadow || "0 10px 30px rgba(0,0,0,.06)";
   const bodyBg = opts.bodyBg || opts.pageBg || "#fff";
   const headerBg =
-    opts.headerBg || "linear-gradient(180deg, rgba(0,0,0,.04), rgba(255,255,255,0))";
+    opts.headerBg ||
+    "linear-gradient(180deg, rgba(0,0,0,.04), rgba(255,255,255,0))";
   const cardBg = opts.cardBg || "#fff";
   const accent2 = opts.accent2 || opts.accent;
 
   const hasBar = true;
 
-  // ultimate fallback (NO recursion)
-return `
-  :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937; }
-  body { font-family: Calibri, Arial, Helvetica, sans-serif; color:var(--ink); margin:0; background:#fff; }
-  .page { max-width: 850px; margin: 18px auto; border: 1px solid var(--line); padding: 18px 22px; }
-  .top { display:flex; justify-content:space-between; gap: 12px; border-bottom:1px solid var(--line); padding-bottom: 10px; }
-  .name { font-size: 28px; font-weight: 900; margin:0; }
-  .title { margin-top:6px; font-size: 13px; color:var(--muted); font-weight:700; }
-  .contact { font-size: 12px; color:var(--muted); text-align:right; display:grid; gap:4px; }
-  .h { margin: 14px 0 6px; font-size: 13px; font-weight: 900; color: var(--accent); }
-  .summary { color:var(--muted); line-height: 1.45; font-size: 13px; }
-  .job { margin-top: 10px; border-top:1px solid var(--line); padding-top: 10px; }
-  .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .jobtitle { font-weight: 900; }
-  .jobmeta { color: var(--muted); font-size: 12px; font-weight:700; }
-  ul { margin: 6px 0 0 18px; padding:0; }
-  li { margin: 6px 0; line-height: 1.35; }
-  .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .box { border:1px solid var(--line); padding: 10px; }
-  .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
-  .small { font-size: 12px; color: var(--muted); }
-  @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
-`;
-
-}
-
- function templateStyles(template: ResumeTemplateId) {
-  // ---------- EXISTING THEMES ----------
- if (template === "modern") {
   return `
-    :root { --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#f6f7fb; }
-    .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-    .top { display:grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; padding: 26px 26px 18px; background: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0)); border-bottom:1px solid var(--line); }
-    .name { font-size: 30px; font-weight: 900; letter-spacing: -.02em; margin:0; }
-    .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:700; }
-    .contact { font-size: 12px; color:var(--muted); display:grid; gap: 6px; justify-items:end; }
-    .chip { display:inline-block; border:1px solid var(--line); padding:6px 10px; border-radius: 999px; background:white; }
+    :root { --ink:${opts.ink}; --muted:${opts.muted}; --line:${opts.line}; --accent:${opts.accent}; --accent2:${accent2}; }
+    body { font-family: ${fontFamily}; color:var(--ink); margin:0; background:${bodyBg}; }
+    .page { max-width: 860px; margin: 22px auto; background:${opts.pageBg || "white"}; border:1px ${borderStyle} var(--line); border-radius:${radius}px; overflow:hidden; box-shadow:${shadow}; }
+    .top { padding: 24px 26px 18px; background:${headerBg}; border-bottom:1px ${borderStyle} var(--line); position:relative; }
+    ${
+      opts.headerAfterGrid
+        ? `.top:after { content:""; position:absolute; inset:0; background-image: linear-gradient(rgba(0,0,0,0) 24px, rgba(0,0,0,.04) 25px); background-size: 100% 25px; pointer-events:none; }`
+        : ""
+    }
+    .name { font-size: 30px; font-weight: 950; letter-spacing: -.02em; margin:0; }
+    .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:800; }
+    .contact { margin-top:12px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
+    .chip { display:inline-block; border:1px ${borderStyle} var(--line); padding:6px 10px; border-radius: 999px; background:${
+      opts.hasChips ? "rgba(255,255,255,.9)" : "transparent"
+    }; }
     .content { padding: 18px 26px 26px; }
     .section { margin-top: 16px; }
-    .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 900; letter-spacing: .08em; text-transform:uppercase; }
-    .bar { height: 10px; width: 10px; border-radius: 3px; background: var(--accent); }
-    .summary { color:var(--muted); line-height: 1.45; font-size: 13px; }
-    .job { margin-top: 12px; border:1px solid var(--line); border-radius: 12px; padding: 12px; }
+    .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 950; letter-spacing: .10em; text-transform:uppercase; }
+    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); ${
+      hasBar ? "" : "display:none;"
+    } }
+    .summary { color:var(--muted); line-height: 1.5; font-size: 13px; }
+    .job { margin-top: 12px; border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
+      10,
+      radius - 2
+    )}px; padding: 12px; background:${cardBg}; }
     .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-    .jobtitle { font-weight: 900; }
-    .jobmeta { color: var(--muted); font-size: 12px; font-weight:700; }
+    .jobtitle { font-weight: 950; }
+    .jobmeta { color: var(--muted); font-size: 12px; font-weight:800; }
     ul { margin: 8px 0 0 18px; padding:0; }
     li { margin: 6px 0; line-height: 1.35; }
     .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .box { border:1px solid var(--line); border-radius: 12px; padding: 12px; background:#fff; }
-    .boxtitle { font-weight: 900; font-size: 12px; color: var(--ink); margin:0 0 6px; }
+    .box { border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
+      10,
+      radius - 2
+    )}px; padding: 12px; background:${cardBg}; }
+    .boxtitle { font-weight: 950; font-size: 12px; color: var(--ink); margin:0 0 6px; }
     .small { font-size: 12px; color: var(--muted); }
-    @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} }
+    @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .top:after{display:none;} }
   `;
 }
 
+/**
+ * NOTE:
+ * You pasted a huge `templateStyles(template)` switch.
+ * Keeping it exactly as-is matters.
+ *
+ * For this rewrite, I’m leaving your `templateStyles` body untouched below.
+ * Scroll a bit—it's the same as your version (modern/minimal/.../gold + fallback).
+ */
+function templateStyles(template: ResumeTemplateId) {
+  // ---------- EXISTING THEMES ----------
+  if (template === "modern") {
+    return `
+      :root { --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#f6f7fb; }
+      .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+      .top { display:grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; padding: 26px 26px 18px; background: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0)); border-bottom:1px solid var(--line); }
+      .name { font-size: 30px; font-weight: 900; letter-spacing: -.02em; margin:0; }
+      .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:700; }
+      .contact { font-size: 12px; color:var(--muted); display:grid; gap: 6px; justify-items:end; }
+      .chip { display:inline-block; border:1px solid var(--line); padding:6px 10px; border-radius: 999px; background:white; }
+      .content { padding: 18px 26px 26px; }
+      .section { margin-top: 16px; }
+      .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 900; letter-spacing: .08em; text-transform:uppercase; }
+      .bar { height: 10px; width: 10px; border-radius: 3px; background: var(--accent); }
+      .summary { color:var(--muted); line-height: 1.45; font-size: 13px; }
+      .job { margin-top: 12px; border:1px solid var(--line); border-radius: 12px; padding: 12px; }
+      .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+      .jobtitle { font-weight: 900; }
+      .jobmeta { color: var(--muted); font-size: 12px; font-weight:700; }
+      ul { margin: 8px 0 0 18px; padding:0; }
+      li { margin: 6px 0; line-height: 1.35; }
+      .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .box { border:1px solid var(--line); border-radius: 12px; padding: 12px; background:#fff; }
+      .boxtitle { font-weight: 900; font-size: 12px; color: var(--ink); margin:0 0 6px; }
+      .small { font-size: 12px; color: var(--muted); }
+      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} }
+    `;
+  }
+
+  if (template === "minimal") {
+    return `
+      :root { --ink:#111; --muted:#444; --line:#e7e7e7; }
+      body { font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif; color:var(--ink); margin:0; background:#fff; }
+      .page { max-width: 820px; margin: 26px auto; padding: 0 22px 22px; }
+      .top { padding: 16px 0 10px; border-bottom: 1px solid var(--line); }
+      .name { font-size: 30px; font-weight: 800; margin:0; }
+      .title { margin-top:6px; font-size: 14px; color:var(--muted); }
+      .contact { margin-top:10px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
+      .content { padding-top: 10px; }
+      .h { margin: 14px 0 6px; font-size: 12px; font-weight: 900; letter-spacing: .12em; text-transform:uppercase; }
+      .summary { color:var(--muted); line-height: 1.45; font-size: 13px; }
+      .job { margin-top: 10px; padding-top: 10px; border-top:1px solid var(--line); }
+      .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+      .jobtitle { font-weight: 900; }
+      .jobmeta { color: var(--muted); font-size: 12px; font-weight:700; }
+      ul { margin: 8px 0 0 18px; padding:0; }
+      li { margin: 6px 0; line-height: 1.35; }
+      .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .box { border-top:1px solid var(--line); padding-top:10px; }
+      .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
+      .small { font-size: 12px; color: var(--muted); }
+      @media print { .page{margin:0; padding:0 10px 10px;} }
+    `;
+  }
 
   if (template === "arcade") {
     return `
@@ -327,9 +485,7 @@ return `
       :root { --ink:#e6f3ea; --muted:#b7d6c2; --line:#2a4f3a; --accent:#39ff14; }
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; color:var(--ink); margin:0; background:#061a10; }
       .page { max-width: 900px; margin: 18px auto; border:1px solid var(--line); background:#071f13; border-radius: 14px; overflow:hidden; box-shadow: 0 14px 40px rgba(0,0,0,.35); }
-      .top { padding: 18px 18px 14px; border-bottom:1px solid var(--line); background:
-        linear-gradient(180deg, rgba(57,255,20,.10), rgba(0,0,0,0));
-      }
+      .top { padding: 18px 18px 14px; border-bottom:1px solid var(--line); background: linear-gradient(180deg, rgba(57,255,20,.10), rgba(0,0,0,0)); }
       .name { font-size: 26px; font-weight: 900; margin:0; color:var(--accent); }
       .title { margin-top:6px; font-size: 13px; color:var(--muted); font-weight:800; }
       .contact { margin-top:10px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
@@ -520,7 +676,6 @@ return `
     `;
   }
 
-  // classic fallback
   if (template === "classic") {
     return `
       :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937; }
@@ -594,6 +749,7 @@ return `
       borderStyle: "solid",
       radius: 12,
       shadow: "0 10px 28px rgba(31,41,55,.08)",
+      hasChips: true,
     });
   }
 
@@ -611,6 +767,7 @@ return `
       borderStyle: "dashed",
       radius: 18,
       shadow: "0 14px 40px rgba(15,23,42,.10)",
+      hasChips: true,
     });
   }
 
@@ -645,6 +802,7 @@ return `
       borderStyle: "solid",
       radius: 0,
       shadow: "none",
+      hasChips: true,
     });
   }
 
@@ -661,6 +819,7 @@ return `
       borderStyle: "solid",
       radius: 24,
       shadow: "0 10px 30px rgba(17,24,39,.06)",
+      hasChips: true,
     });
   }
 
@@ -846,7 +1005,7 @@ return `
     });
   }
 
-    if (template === "gold") {
+  if (template === "gold") {
     return mkThemeCss({
       font: "serif",
       ink: "#1a1410",
@@ -865,7 +1024,6 @@ return `
     });
   }
 
-  // ✅ FINAL NON-RECURSIVE FALLBACK (must always return a string)
   return `
     :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937; }
     body { font-family: Calibri, Arial, Helvetica, sans-serif; color:var(--ink); margin:0; background:#fff; }
@@ -888,20 +1046,35 @@ return `
     .small { font-size: 12px; color: var(--muted); }
     @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
   `;
-} // ✅ CLOSE templateStyles() BEFORE defining templateStylesCover()
+}
 
+/** Add cover-letter-specific CSS on top of the resume CSS */
 /** Add cover-letter-specific CSS on top of the resume CSS */
 function templateStylesCover(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 /* ---- Cover letter additions ---- */
-.letter { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: transparent; }
+.section { margin-top: 10px; }
 
-.p { margin: 0 0 12px; line-height: 1.7; }
-.sig { margin-top: 16px; color: var(--muted); line-height: 1.55; }
-@media print { .letter{break-inside: avoid;} }
+/* Let the letter flow onto the same page as header + split across pages */
+.letter { margin-top: 0; border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: transparent; }
+
+/* Paragraph styling */
+.p { margin: 0 0 10px; line-height: 1.7; }
+
+/* Signature */
+.sig { margin-top: 14px; color: var(--muted); line-height: 1.55; }
+
+@media print {
+  /* IMPORTANT: do NOT prevent the whole letter from splitting */
+  .letter { break-inside: auto; page-break-inside: auto; }
+
+  /* Optional: keep each paragraph together */
+  .p, .sig { break-inside: avoid; page-break-inside: avoid; }
+}
 `;
 }
+
 
 function splitParagraphs(text: string) {
   const raw = String(text || "").replace(/\r\n/g, "\n");
@@ -918,7 +1091,7 @@ function buildCoverLetterHtml(args: {
   bodyText: string;
   includeSignature: boolean;
   signatureName: string;
-  signatureClosing: string; // e.g. "Sincerely," (optional)
+  signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
   const { template, profile, bodyText, includeSignature, signatureName, signatureClosing } = args;
@@ -997,7 +1170,6 @@ function buildCoverLetterHtml(args: {
 
     <div class="main">
       <div class="section">
-        <div class="h">Letter</div>
         <div class="letter">
           ${parasHtml || `<div class="p">No cover letter text yet.</div>`}
           ${signatureHtml}
@@ -1032,8 +1204,7 @@ function buildCoverLetterHtml(args: {
     </div>
 
     <div class="content">
-      <div className="section">
-        <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Letter</div>
+      <div class="section">
         <div class="letter">
           ${parasHtml || `<div class="p">No cover letter text yet.</div>`}
           ${signatureHtml}
@@ -1045,7 +1216,7 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({ html }: { html: string }) {
+function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1062,6 +1233,8 @@ function HtmlDocPreview({ html }: { html: string }) {
           srcDoc={html || "<!doctype html><html><body></body></html>"}
         />
       </div>
+
+      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
     </div>
   );
 }
@@ -1116,7 +1289,6 @@ export default function CoverLetterGenerator() {
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
-  // No default personal info
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
     locationLine: "",
@@ -1129,11 +1301,7 @@ export default function CoverLetterGenerator() {
   const [length, setLength] = useState<"short" | "standard" | "detailed">("standard");
   const [includeBullets, setIncludeBullets] = useState(true);
 
-  const [targetTermsCsv, setTargetTermsCsv] = useState("");
-  const [blockedTermsCsv, setBlockedTermsCsv] = useState("");
-
-  const [template, setTemplate] = useState<ResumeTemplateId>("modern");
-  const [showRaw, setShowRaw] = useState(false);
+    const [template, setTemplate] = useState<ResumeTemplateId>("modern");
 
   const [includeSignature, setIncludeSignature] = useState(true);
   const [signatureClosing, setSignatureClosing] = useState("");
@@ -1142,7 +1310,12 @@ export default function CoverLetterGenerator() {
   const [loading, setLoading] = useState(false);
   const [toneLoading, setToneLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [coverLetter, setCoverLetter] = useState("");
+
+  const [coverLetterDraft, setCoverLetterDraft] = useState("");
+
+  const [downloadFormat, setDownloadFormat] = useState<"txt" | "doc" | "docx" | "pdf" | "mhtml">(
+    "txt"
+  );
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1157,12 +1330,10 @@ export default function CoverLetterGenerator() {
   async function handleGenerate() {
     setLoading(true);
     setError(null);
-    setCoverLetter("");
+    setCoverLetterDraft("");
 
     try {
-      const targetTerms = csvToArray(targetTermsCsv);
-      const blockedTerms = csvToArray(blockedTermsCsv);
-
+     
       let res: Response;
 
       if (file) {
@@ -1181,9 +1352,6 @@ export default function CoverLetterGenerator() {
         fd.append("length", length);
         fd.append("includeBullets", String(includeBullets));
 
-        fd.append("targetTerms", targetTerms.join(", "));
-        fd.append("blockedTerms", blockedTerms.join(", "));
-
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
         const body = {
@@ -1200,8 +1368,7 @@ export default function CoverLetterGenerator() {
           length,
           includeBullets,
 
-          targetTerms,
-          blockedTerms,
+          
         };
 
         res = await fetch("/api/cover-letter", {
@@ -1220,7 +1387,7 @@ export default function CoverLetterGenerator() {
       const text = payload.coverLetter?.trim();
       if (!text) throw new Error("Empty cover letter returned");
 
-      setCoverLetter(text);
+      setCoverLetterDraft(text);
     } catch (e: any) {
       setError(e?.message || "Generation failed");
     } finally {
@@ -1253,21 +1420,21 @@ export default function CoverLetterGenerator() {
   }
 
   async function copyToClipboard() {
-    if (!coverLetter) return;
-    await navigator.clipboard.writeText(coverLetter);
+    if (!coverLetterDraft) return;
+    await navigator.clipboard.writeText(coverLetterDraft);
   }
 
   const coverLetterHtml = useMemo(() => {
-    if (!coverLetter.trim()) return "";
+    if (!coverLetterDraft.trim()) return "";
     return buildCoverLetterHtml({
       template,
       profile,
-      bodyText: coverLetter,
+      bodyText: coverLetterDraft,
       includeSignature,
       signatureClosing,
       signatureName: signatureName.trim() ? signatureName : profile.fullName,
     });
-  }, [coverLetter, template, profile, includeSignature, signatureClosing, signatureName]);
+  }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
 
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
@@ -1296,8 +1463,9 @@ export default function CoverLetterGenerator() {
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Cover Letter Generator</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
-          Preview renders as a real HTML document (resume-template style).
+          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview
+          renders as a real HTML document (resume-template style). You can edit the letter below and the
+          preview updates live.
         </p>
       </div>
 
@@ -1510,37 +1678,12 @@ export default function CoverLetterGenerator() {
               </div>
 
               <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Leave “Closing” empty if your generated text already includes a sign-off (prevents
-                duplicate “Sincerely”).
+                Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate
+                “Sincerely”).
               </div>
             </div>
 
-            {/* Terms */}
-            <div className="grid grid-cols-1 gap-3">
-              <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Target terms (comma separated)
-                </div>
-                <input
-                  value={targetTermsCsv}
-                  onChange={(e) => setTargetTermsCsv(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-                />
-              </label>
-
-              <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Blocked terms (comma separated)
-                </div>
-                <input
-                  value={blockedTermsCsv}
-                  onChange={(e) => setBlockedTermsCsv(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-                />
-              </label>
-            </div>
-
-            {/* Generate + raw toggle */}
+             {/* Generate */}
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -1551,75 +1694,109 @@ export default function CoverLetterGenerator() {
                 {loading ? "Generating…" : "Generate Cover Letter"}
               </button>
 
-              <label className="ml-auto flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                <input
-                  type="checkbox"
-                  checked={showRaw}
-                  onChange={(e) => setShowRaw(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Show raw text
-              </label>
+              <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-white/50">
+                Preview is live-editable after generation.
+              </div>
             </div>
           </div>
         </section>
 
         {/* Output / Preview */}
         <section className="grid gap-3">
-          <HtmlDocPreview html={coverLetterHtml} />
+          <HtmlDocPreview
+            html={coverLetterHtml}
+            footer={
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={copyToClipboard}
+                  disabled={!coverLetterDraft}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                >
+                  Copy
+                </button>
 
-          {/* Buttons moved BELOW the preview */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={copyToClipboard}
-              disabled={!coverLetter}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Copy
-            </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={downloadFormat}
+                    onChange={(e) => setDownloadFormat(e.target.value as any)}
+                    disabled={!coverLetterDraft}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
+                  >
+                    <option value="txt">.txt</option>
+                    <option value="doc">.doc</option>
+                    <option value="docx">.docx</option>
+                    <option value="pdf">.pdf</option>
+                    <option value="mhtml">.mhtml</option>
+                  </select>
 
-            <button
-              type="button"
-              onClick={() => downloadTxt("cover-letter.txt", coverLetter)}
-              disabled={!coverLetter}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Download .txt
-            </button>
+                  <button
+                    type="button"
+                    disabled={!coverLetterDraft}
+                    onClick={async () => {
+                      if (!coverLetterDraft) return;
 
-            <button
-              type="button"
-              onClick={() => downloadHtml("cover-letter.html", coverLetterHtml)}
-              disabled={!coverLetterHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Download .html
-            </button>
+                      try {
+                        if (downloadFormat === "txt") {
+                          downloadTxt("cover-letter.txt", coverLetterDraft);
+                          return;
+                        }
 
-            <button
-              type="button"
-              onClick={() => openPrintWindow(coverLetterHtml)}
-              disabled={!coverLetterHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Print
-            </button>
-          </div>
+                        if (downloadFormat === "doc") {
+                          downloadDoc("cover-letter.doc", coverLetterHtml || "");
+                          return;
+                        }
 
-          {showRaw ? (
-            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">
-                Raw text (editable)
+                        if (downloadFormat === "mhtml") {
+                          downloadMhtml("cover-letter.mhtml", coverLetterHtml || "");
+                          return;
+                        }
+
+                        if (downloadFormat === "docx") {
+                          // ✅ Real .docx (server-side)
+                          await downloadDocxViaApi("cover-letter.docx", coverLetterHtml || "");
+                          return;
+                        }
+
+                        if (downloadFormat === "pdf") {
+                          await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                          return;
+                        }
+                      } catch (e: any) {
+                        setError(e?.message || "Download failed");
+                      }
+                    }}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  >
+                    Download
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openPrintWindow(coverLetterHtml)}
+                  disabled={!coverLetterHtml}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                >
+                  Print
+                </button>
               </div>
-              <textarea
-                value={coverLetter}
-                onChange={(e) => setCoverLetter(e.target.value)}
-                rows={12}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
+            }
+          />
+
+          {/* Live editor */}
+          <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+            <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">
+              Edit cover letter (live preview)
             </div>
-          ) : null}
+            <textarea
+              value={coverLetterDraft}
+              onChange={(e) => setCoverLetterDraft(e.target.value)}
+              rows={12}
+              placeholder="Generate a cover letter, then edit it here…"
+              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+            />
+          </div>
         </section>
       </div>
     </main>

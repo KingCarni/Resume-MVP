@@ -9,12 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "html-to-docx": "^1.8.0",
     "mammoth": "^1.11.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
     "openai": "^6.18.0",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.4.624",
+    "playwright": "^1.58.2",
+    "puppeteer": "^24.37.2",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
