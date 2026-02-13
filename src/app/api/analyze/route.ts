@@ -14,6 +14,16 @@ export const dynamic = "force-dynamic";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
+/**
+ * ✅ Local compat type: the /lib/bullet_suggestions module expects ResumeBullet[]
+ * but our extraction pipeline produces string[].
+ */
+type ResumeBullet = {
+  id: string;
+  text: string;
+  jobId?: string;
+};
+
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
 }
@@ -50,9 +60,7 @@ function extractExperienceSection(fullText: string) {
     const endIdx = endMatch?.index;
 
     const experienceText =
-      typeof endIdx === "number" && endIdx > 0
-        ? afterStart.slice(0, endIdx)
-        : afterStart;
+      typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
     return {
       experienceText: normalizeResumeText(experienceText),
@@ -89,9 +97,7 @@ function extractExperienceSection(fullText: string) {
   const endIdx = endMatch?.index;
 
   const experienceText =
-    typeof endIdx === "number" && endIdx > 0
-      ? afterStart.slice(0, endIdx)
-      : afterStart;
+    typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
   return {
     experienceText: normalizeResumeText(experienceText),
@@ -198,6 +204,34 @@ function parseOnlyExperienceFlagFromFormData(v: FormDataEntryValue | null) {
   return undefined;
 }
 
+/**
+ * ✅ Convert extracted string bullets (+ optional jobId mapping) into ResumeBullet[]
+ * to satisfy suggestKeywordsForBullets(bullets: ResumeBullet[], ...)
+ */
+function normalizeBulletsForSuggestions(args: {
+  bullets: string[];
+  bulletJobIds?: string[];
+  fallbackJobId?: string;
+}) {
+  const { bullets, bulletJobIds, fallbackJobId } = args;
+
+  return (bullets || [])
+    .map((t0, i) => {
+      const text = String(t0 || "").trim();
+      if (!text) return null;
+
+      const jobId = bulletJobIds?.[i] || fallbackJobId || "job_default";
+
+      const b: ResumeBullet = {
+        id: `b${i + 1}`,
+        text,
+        jobId,
+      };
+      return b;
+    })
+    .filter((x): x is ResumeBullet => Boolean(x));
+}
+
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
@@ -249,8 +283,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Unsupported content type. Send JSON or multipart/form-data (file upload).",
+          error: "Unsupported content type. Send JSON or multipart/form-data (file upload).",
         },
         { status: 415 }
       );
@@ -355,7 +388,9 @@ export async function POST(req: Request) {
         bulletJobIds = flat2.outJobIds;
       } else {
         // otherwise use flat bullets if provided (no job grouping)
-        bullets = (strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean);
+        bullets = (strict2.bullets || [])
+          .map((b) => String(b || "").trim())
+          .filter(Boolean);
 
         const fallbackJobId = experienceJobs[0]?.id || "job_default";
         bulletJobIds = bullets.map(() => fallbackJobId);
@@ -384,11 +419,19 @@ export async function POST(req: Request) {
     let weakBullets: any[] = [];
 
     try {
-      const suggestionResult: any = suggestKeywordsForBullets(
+      // ✅ FIX: convert string[] -> ResumeBullet[] for suggestKeywordsForBullets typing
+      const bulletObjs = normalizeBulletsForSuggestions({
         bullets,
+        bulletJobIds,
+        fallbackJobId: experienceJobs[0]?.id || "job_default",
+      });
+
+      const suggestionResult: any = suggestKeywordsForBullets(
+        bulletObjs,
         jobText,
         analysis.missingKeywords
       );
+
       bulletSuggestions = suggestionResult?.bulletSuggestions ?? [];
       weakBullets = suggestionResult?.weakBullets ?? [];
     } catch {
@@ -404,11 +447,7 @@ export async function POST(req: Request) {
     }
 
     if (!Array.isArray(rewritePlan) || rewritePlan.length === 0) {
-      const seedKeywords = (
-        analysis.highImpactMissing ||
-        analysis.missingKeywords ||
-        []
-      ).slice(0, 5);
+      const seedKeywords = (analysis.highImpactMissing || analysis.missingKeywords || []).slice(0, 5);
 
       rewritePlan = bullets.map((b) => ({
         originalBullet: b,
@@ -427,8 +466,7 @@ export async function POST(req: Request) {
           ? item.originalBullet
           : String(item?.originalBullet ?? "");
 
-      const jobId =
-        bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
+      const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
       return {
         ...item,
