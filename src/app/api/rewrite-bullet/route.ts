@@ -18,6 +18,18 @@ type ReqBody = {
 
   role?: string;
   tone?: string;
+
+  // Optional extra constraints from client
+  constraints?: string[];
+  mustPreserveMeaning?: boolean;
+
+  // Word/verb variance controls (per-bullet)
+  avoidPhrases?: string[]; // can include verbs OR phrases
+  preferVerbVariety?: boolean;
+
+  // Global resume/session context
+  usedOpeners?: string[];
+  usedPhrases?: string[];
 };
 
 function normalize(s: unknown) {
@@ -38,6 +50,10 @@ function normalizeForMatch(s: string) {
   return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function uniq<T>(arr: T[]) {
+  return Array.from(new Set(arr));
+}
+
 function findKeywordHits(text: string, terms: string[]) {
   const t = normalizeForMatch(text);
   const hits: string[] = [];
@@ -46,18 +62,71 @@ function findKeywordHits(text: string, terms: string[]) {
     if (!term) continue;
     if (t.includes(term)) hits.push(raw);
   }
-  return Array.from(new Set(hits));
+  return uniq(hits);
 }
+
+/** Pull likely opener verb from a bullet (first non-trivial word) */
+function extractOpenerVerb(bullet: string) {
+  const s = normalize(bullet)
+    .replace(/^[•\-\u2022\u00B7o\s]+/g, "")
+    .replace(/[“”"]/g, '"')
+    .trim();
+
+  const words = s.split(/\s+/).filter(Boolean);
+  for (const w of words.slice(0, 6)) {
+    const clean = w.replace(/[^\w-]/g, "").toLowerCase();
+    if (!clean) continue;
+    if (
+      ["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean)
+    )
+      continue;
+    return clean;
+  }
+  return "";
+}
+
+const DEFAULT_OVERUSED_OPENERS = [
+  "collaborated",
+  "developed",
+  "documented",
+  "executed",
+  "created",
+  "completed",
+  "ensured",
+  "utilized",
+  "managed",
+  "led",
+];
+
+const DEFAULT_OVERUSED_PHRASES = [
+  "developed and documented",
+  "ensuring high-quality standards",
+  "ensuring quality standards",
+  "high-quality standards",
+  "utilizing jira",
+  "using jira",
+  "documenting feedback and issues in jira",
+  "for release candidates",
+  "across multiple platforms",
+  "timely issue resolution",
+  "quality standards",
+];
 
 function buildSystemPrompt() {
   return [
     "You are a resume bullet rewrite assistant.",
     "Rewrite bullets to be concise, impact-driven, and ATS-friendly.",
+    "",
     "Hard rules:",
     "- Do NOT invent new companies, products, teams, tools, metrics, or outcomes.",
     "- Do NOT add target company/product names unless they already exist in the original bullet.",
     "- Keep tense as past tense (resume experience).",
     "- Preserve truthfulness; you may tighten wording and ordering, but not add claims.",
+    "- Keep it one sentence. No semicolons unless absolutely necessary.",
+    "",
+    "Quality rules:",
+    "- Avoid repetitive openers across bullets; vary lead verbs and structure.",
+    "- Avoid stock filler phrases (e.g., 'ensuring quality standards') unless they add specific meaning.",
     "- Prefer strong action verbs and specificity without exaggeration.",
   ].join("\n");
 }
@@ -66,14 +135,27 @@ function buildUserPrompt(args: {
   originalBullet: string;
   jobText: string;
   suggestedKeywords: string[];
+
   sourceCompany?: string;
   targetCompany?: string;
   targetProducts?: string[];
   blockedTerms?: string[];
+
   role?: string;
   tone?: string;
+
+  constraints?: string[];
+  mustPreserveMeaning?: boolean;
+
+  avoidPhrases?: string[];
+  preferVerbVariety?: boolean;
+
+  usedOpeners?: string[];
+  usedPhrases?: string[];
+
   retry?: boolean;
   previousRewrite?: string;
+  forceStarterVerbList?: string[];
 }) {
   const {
     originalBullet,
@@ -85,8 +167,15 @@ function buildUserPrompt(args: {
     blockedTerms,
     role,
     tone,
+    constraints,
+    mustPreserveMeaning,
+    avoidPhrases,
+    preferVerbVariety,
+    usedOpeners,
+    usedPhrases,
     retry,
     previousRewrite,
+    forceStarterVerbList,
   } = args;
 
   const blocked = [
@@ -97,11 +186,32 @@ function buildUserPrompt(args: {
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const extraConstraints = safeArray(constraints);
+
+  // We allow avoidPhrases to include either verbs OR phrases.
+  const avoidNorm = safeArray(avoidPhrases).map((s) => normalizeForMatch(s)).filter(Boolean);
+
+  const usedOpenersNorm = safeArray(usedOpeners).map((s) => normalizeForMatch(s)).filter(Boolean);
+  const usedPhrasesNorm = safeArray(usedPhrases).map((s) => normalizeForMatch(s)).filter(Boolean);
+
+  const combinedAvoidOpeners = uniq([
+    ...DEFAULT_OVERUSED_OPENERS,
+    ...usedOpenersNorm,
+    ...avoidNorm, // may include verbs too
+  ]).filter(Boolean);
+
+  const combinedAvoidPhrases = uniq([
+    ...DEFAULT_OVERUSED_PHRASES,
+    ...usedPhrasesNorm,
+    ...avoidNorm, // may include phrases too
+  ]).filter(Boolean);
+
+  const originalOpener = extractOpenerVerb(originalBullet);
+
   const blocks: string[] = [];
 
   blocks.push(`ROLE CONTEXT: ${normalize(role) || "QA / Quality"}`);
-  if (normalize(sourceCompany))
-    blocks.push(`SOURCE COMPANY: ${normalize(sourceCompany)}`);
+  if (normalize(sourceCompany)) blocks.push(`SOURCE COMPANY: ${normalize(sourceCompany)}`);
 
   blocks.push("");
   blocks.push("ORIGINAL BULLET:");
@@ -113,17 +223,40 @@ function buildUserPrompt(args: {
 
   blocks.push("");
   blocks.push(
-    `SUGGESTED KEYWORDS (use only if truthful): ${
-      suggestedKeywords.join(", ") || "(none)"
-    }`
+    `SUGGESTED KEYWORDS (use only if truthful): ${suggestedKeywords.join(", ") || "(none)"}`
   );
 
   blocks.push("");
+  blocks.push(`BLOCKED TERMS (must not appear): ${blocked.join(", ") || "(none)"}`);
+
+  blocks.push("");
+  blocks.push("VARIANCE RULES:");
+  blocks.push(`- Prefer verb variety: ${preferVerbVariety ? "ON" : "OFF (default)"}`);
+
+  // ✅ NO EXCEPTIONS now.
   blocks.push(
-    `BLOCKED TERMS (must not appear unless already in original): ${
-      blocked.join(", ") || "(none)"
-    }`
+    `- Do NOT start with any of these opener verbs: ${combinedAvoidOpeners.join(", ") || "(none)"}`
   );
+  blocks.push(`- Original opener detected: ${originalOpener || "(none)"}`);
+  blocks.push("- If the original opener is overused, choose a different strong verb that preserves meaning.");
+
+  if (combinedAvoidPhrases.length) {
+    blocks.push(
+      `- Avoid these repeated phrases: ${combinedAvoidPhrases.join(", ")}`
+    );
+  }
+
+  if (mustPreserveMeaning) {
+    blocks.push("");
+    blocks.push("MEANING GUARDRAIL:");
+    blocks.push("- Must preserve original meaning and scope. Improve wording only.");
+  }
+
+  if (extraConstraints.length) {
+    blocks.push("");
+    blocks.push("EXTRA CONSTRAINTS:");
+    for (const c of extraConstraints) blocks.push(`- ${c}`);
+  }
 
   blocks.push("");
   blocks.push(`TONE: ${normalize(tone) || "confident, concise, impact-driven"}`);
@@ -132,23 +265,23 @@ function buildUserPrompt(args: {
   blocks.push("OUTPUT FORMAT:");
   blocks.push("- Return ONE rewritten bullet, one sentence, no prefix characters.");
   blocks.push("- Max ~28 words. Prefer clarity over buzzwords.");
+  blocks.push("- Start with a strong action verb.");
+
+  if (forceStarterVerbList?.length) {
+    blocks.push("");
+    blocks.push("STARTER VERB REQUIREMENT:");
+    blocks.push(`- Start the bullet with ONE of these verbs: ${forceStarterVerbList.join(", ")}`);
+  }
 
   if (retry) {
     blocks.push("");
-    blocks.push("RETRY RULES (previous attempt regressed):");
-    blocks.push(
-      "- Start with a strong action verb (Led/Owned/Drove/Implemented/Automated/Optimized/Delivered…)."
-    );
-    blocks.push(
-      "- Avoid weak openers (Worked with/Helped/Assisted/Supported/Responsible for…)."
-    );
-    blocks.push(
-      "- Preserve any concrete details already present in the original (tools/systems/metrics), but do NOT invent new ones."
-    );
-    blocks.push("- Keep facts the same. Do NOT add new claims/metrics/outcomes.");
+    blocks.push("RETRY RULES (previous attempt violated constraints):");
+    blocks.push("- Change the opener verb.");
+    blocks.push("- Remove repeated filler phrases.");
+    blocks.push("- Keep facts identical; do NOT add claims/metrics/outcomes.");
     if (previousRewrite) {
       blocks.push("");
-      blocks.push("PREVIOUS REWRITE (improve it; do not copy weak phrasing):");
+      blocks.push("PREVIOUS REWRITE (do not copy its opener/phrasing):");
       blocks.push(previousRewrite);
     }
   }
@@ -156,10 +289,7 @@ function buildUserPrompt(args: {
   return blocks.join("\n");
 }
 
-async function generateRewrite(
-  client: OpenAI,
-  args: Parameters<typeof buildUserPrompt>[0]
-) {
+async function generateRewrite(client: OpenAI, args: Parameters<typeof buildUserPrompt>[0]) {
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
   const system = buildSystemPrompt();
@@ -167,7 +297,7 @@ async function generateRewrite(
 
   const resp = await client.chat.completions.create({
     model,
-    temperature: 0.3,
+    temperature: 0.45, // a bit more variety pressure
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -176,6 +306,14 @@ async function generateRewrite(
 
   const text = resp.choices?.[0]?.message?.content ?? "";
   return String(text).trim().replace(/^[-•\u2022]+\s*/g, "");
+}
+
+function containsAnyPhrase(text: string, phrases: string[]) {
+  const t = normalizeForMatch(text);
+  return phrases.some((p) => {
+    const pp = normalizeForMatch(p);
+    return pp && t.includes(pp);
+  });
 }
 
 export async function POST(req: Request) {
@@ -192,7 +330,6 @@ export async function POST(req: Request) {
 
     const jobText = normalize(body.jobText);
     const originalBullet = normalize(body.originalBullet);
-
     const rawSuggestedKeywords = normalizeKeywords(body.suggestedKeywords);
 
     const sourceCompany = normalize(body.sourceCompany);
@@ -202,6 +339,14 @@ export async function POST(req: Request) {
 
     const role = normalize(body.role) || "QA Lead";
     const tone = normalize(body.tone) || "confident, concise, impact-driven";
+
+    const constraints = safeArray(body.constraints);
+    const mustPreserveMeaning = !!body.mustPreserveMeaning;
+    const avoidPhrases = safeArray(body.avoidPhrases);
+    const preferVerbVariety = !!body.preferVerbVariety;
+
+    const usedOpeners = safeArray(body.usedOpeners);
+    const usedPhrases = safeArray(body.usedPhrases);
 
     if (!jobText || !originalBullet) {
       return NextResponse.json(
@@ -223,7 +368,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Sanitize suggested keywords (remove target-only terms)
     const { usableKeywords, blockedKeywords } = sanitizeKeywords({
       rawKeywords: rawSuggestedKeywords,
       targetCompany: targetCompany || undefined,
@@ -233,10 +377,20 @@ export async function POST(req: Request) {
 
     const client = new OpenAI({ apiKey });
 
-    // BEFORE (shared scorer)
-    const verbStrengthBefore = computeVerbStrength(originalBullet, {
-      mode: "before",
-    });
+    const verbStrengthBefore = computeVerbStrength(originalBullet, { mode: "before" });
+
+    // Build “hard” avoid lists for enforcement
+    const hardAvoidOpeners = uniq([
+      ...DEFAULT_OVERUSED_OPENERS,
+      ...usedOpeners.map(normalizeForMatch),
+      ...avoidPhrases.map(normalizeForMatch),
+    ]).filter(Boolean);
+
+    const hardAvoidPhrases = uniq([
+      ...DEFAULT_OVERUSED_PHRASES,
+      ...usedPhrases.map(normalizeForMatch),
+      ...avoidPhrases.map(normalizeForMatch),
+    ]).filter(Boolean);
 
     // Attempt #1
     const attempt1 = await generateRewrite(client, {
@@ -249,18 +403,51 @@ export async function POST(req: Request) {
       blockedTerms,
       role,
       tone,
+      constraints,
+      mustPreserveMeaning,
+      avoidPhrases,
+      preferVerbVariety,
+      usedOpeners,
+      usedPhrases,
       retry: false,
     });
+
     const after1 = computeVerbStrength(attempt1, { mode: "after" });
 
-    let retryUsed = false;
+    // Enforce opener + phrase bans
+    const opener1 = normalizeForMatch(extractOpenerVerb(attempt1));
+    const openerViolates = preferVerbVariety && opener1 && hardAvoidOpeners.includes(opener1);
+    const phraseViolates = preferVerbVariety && hardAvoidPhrases.length
+      ? containsAnyPhrase(attempt1, hardAvoidPhrases)
+      : false;
 
-    // Attempt #2 if base regressed
+    let retryUsed = false;
     let attempt2: string | null = null;
     let after2: ReturnType<typeof computeVerbStrength> | null = null;
 
-    if (after1.baseScore < verbStrengthBefore.baseScore) {
+    const needsRetry =
+      after1.baseScore < verbStrengthBefore.baseScore || openerViolates || phraseViolates;
+
+    if (needsRetry) {
       retryUsed = true;
+
+      // Force a starter set that tends to diversify QA bullets
+      const forceStarters = [
+        "Led",
+        "Owned",
+        "Drove",
+        "Implemented",
+        "Streamlined",
+        "Standardized",
+        "Coordinated",
+        "Automated",
+        "Improved",
+        "Delivered",
+        "Validated",
+        "Triaged",
+        "Established",
+      ];
+
       attempt2 = await generateRewrite(client, {
         originalBullet,
         jobText,
@@ -271,21 +458,28 @@ export async function POST(req: Request) {
         blockedTerms,
         role,
         tone,
+        constraints,
+        mustPreserveMeaning,
+        avoidPhrases,
+        preferVerbVariety,
+        usedOpeners,
+        usedPhrases,
         retry: true,
         previousRewrite: attempt1,
+        forceStarterVerbList: forceStarters,
       });
+
       after2 = computeVerbStrength(attempt2, { mode: "after" });
     }
 
-    // Pick best rewrite (best baseScore; tie-break total score)
+    // Pick best rewrite (baseScore, then score)
     let bestRewrite = attempt1;
     let bestAfter = after1;
 
     if (after2) {
       const better =
         after2.baseScore > bestAfter.baseScore ||
-        (after2.baseScore === bestAfter.baseScore &&
-          after2.score >= bestAfter.score);
+        (after2.baseScore === bestAfter.baseScore && after2.score >= bestAfter.score);
 
       if (better) {
         bestRewrite = attempt2!;
@@ -293,9 +487,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ Never return worse than original
+    // Final enforcement: if we STILL violate opener rules, fallback to original (truth > style)
+    const finalOpener = normalizeForMatch(extractOpenerVerb(bestRewrite));
+    const finalViolates = preferVerbVariety && finalOpener && hardAvoidOpeners.includes(finalOpener);
+
     let usedOriginalFallback = false;
-    if (bestAfter.baseScore < verbStrengthBefore.baseScore) {
+    if (bestAfter.baseScore < verbStrengthBefore.baseScore || finalViolates) {
       usedOriginalFallback = true;
       bestRewrite = originalBullet;
       bestAfter = computeVerbStrength(originalBullet, { mode: "before" });
@@ -317,15 +514,15 @@ export async function POST(req: Request) {
 
     const notes: string[] = [];
     notes.push("Rewrote for clarity + impact while preserving truthfulness.");
-    if (retryUsed) notes.push("Auto-retried once to avoid strength regression.");
+    if (preferVerbVariety) notes.push("Verb variety enabled (hard-enforced opener/phrase avoidance).");
+    if (avoidPhrases.length) notes.push("Applied avoid list (verbs/phrases).");
+    if (usedOpeners.length) notes.push("Used global usedOpeners to reduce opener repetition.");
+    if (usedPhrases.length) notes.push("Used global usedPhrases to reduce repeated phrasing.");
+    if (retryUsed) notes.push("Auto-retried once (opener/phrase violation or strength regression).");
     if (usedOriginalFallback)
-      notes.push(
-        "Kept original bullet because rewrite would reduce quality (score regression)."
-      );
-    if (blockedKeywords.length)
-      notes.push("Removed blocked keywords from suggestions (guardrail).");
-    if (blockedTermsFound.length)
-      notes.push("Detected target-only term risk (blocked terms present).");
+      notes.push("Kept original bullet (rewrite violated opener rules or reduced quality).");
+    if (blockedKeywords.length) notes.push("Removed blocked keywords from suggestions (guardrail).");
+    if (blockedTermsFound.length) notes.push("Detected target-only term risk (blocked terms present).");
 
     const regressedBase = bestAfter.baseScore < verbStrengthBefore.baseScore;
 
@@ -335,13 +532,8 @@ export async function POST(req: Request) {
       needsMoreInfo,
       notes,
 
-      // ✅ what the UI expects as “Keywords used”
       keywordHits: keywordHitsArr,
-
-      // ✅ what the UI expects as “Removed keywords”
       blockedKeywords,
-
-      // ✅ additional debug/safety signal (optional)
       blockedTermsFound,
 
       verbStrengthBefore,

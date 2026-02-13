@@ -225,21 +225,37 @@ function isTrainingLikeBullet(bullet: string) {
 }
 
 function defaultTrainingRewrite(original: string) {
-  const raw = String(original || "").trim();
-  // Keep it honest: training stays training.
-  // If they want it stronger later, we can ask for specifics (topics/skills).
-  return raw
-    ? `Completed ${raw.replace(/^\s*completed\s+/i, "").trim()}, strengthening leadership, coaching, and cross-team communication skills.`
-    : "";
+  const raw = String(original || "")
+    .trim()
+    .replace(/^[•\-\u2022\u00B7o\s]+/g, "") // strip bullet glyphs
+    .trim();
+
+  if (!raw) return "";
+
+  // If it already starts with a strong training verb, DO NOT prepend another verb.
+  // Just tighten and add a safe outcome clause.
+  const startsWithTrainingVerb =
+    /^(completed|earned|achieved|graduated|attended|finished|passed|certified|trained)\b/i.test(
+      raw
+    );
+
+  const base = raw.replace(/\s+/g, " ").trim();
+  const cleaned = base.replace(/^\s*completed\s+/i, "Completed ");
+
+  if (startsWithTrainingVerb) {
+    const alreadyHasOutcome =
+      /\b(strengthen(ed|ing)|improv(ed|ing)|building|develop(ed|ing))\b/i.test(cleaned);
+
+    return alreadyHasOutcome
+      ? cleaned
+      : `${cleaned}, strengthening leadership, coaching, and cross-team communication skills.`;
+  }
+
+  return `Completed ${base}, strengthening leadership, coaching, and cross-team communication skills.`;
 }
 
 /**
  * Client-side resume text normalization to improve job header parsing.
- * This specifically helps resumes where the job title appears after the dates (tab/column layout),
- * like: "Prodigy Education ... Feb 2025 – Jan 2026 ... QA Lead"
- *
- * We rewrite those header lines into a more parse-friendly shape:
- *   "Prodigy Education — QA Lead (Feb 2025 – Jan 2026)"
  */
 function normalizeResumeTextForParsing(input: string) {
   const text = String(input ?? "");
@@ -256,9 +272,7 @@ function normalizeResumeTextForParsing(input: string) {
   const cleaned = text
     .replace(/\r\n/g, "\n")
     .replace(/\u00A0/g, " ")
-    // normalize some weird bullet glyphs to hyphen bullets (doesn't affect headers)
     .replace(/^[\u2022\u00B7o\s]+/gm, (m) => (m.trim() ? "- " : m))
-    // collapse repeated spaces *but keep newlines*
     .replace(/[ \t]+/g, " ")
     .trimEnd();
 
@@ -269,9 +283,6 @@ function normalizeResumeTextForParsing(input: string) {
     const line = String(lineRaw ?? "");
     const m = line.match(dateRange);
 
-    // Only try to rewrite header-ish lines:
-    // - must contain a date range
-    // - should not start with a bullet
     if (!m || /^\s*[-•]/.test(line)) {
       out.push(lineRaw);
       continue;
@@ -548,87 +559,309 @@ function escapeHtml(s: string) {
     .replace(/"/g, "&quot;");
 }
 
-/** A small helper so new themes don't explode the file size */
-function mkThemeCss(opts: {
-  font?: "sans" | "serif" | "mono";
+/**
+ * ✅ Arcade-style header contact chips (forced across ALL templates)
+ * - wraps cleanly
+ * - consistent spacing
+ * - prevents long email/links from breaking layout
+ */
+function headerContactChipsCss() {
+  return `
+/* --- Arcade-style header contact chips (unified) --- */
+.top .contact{
+  margin-top: 12px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  max-width: none !important;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+.top .chip{
+  display: inline-flex !important;
+  align-items: center !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+`.trim();
+}
+
+type ThemeArgs = {
+  font: "sans" | "serif";
   ink: string;
   muted: string;
   line: string;
   accent: string;
   accent2?: string;
-  pageBg?: string;
-  bodyBg?: string; // full CSS background value
-  headerBg?: string; // background for .top
-  cardBg?: string; // for .job/.box
-  borderStyle?: "solid" | "dashed" | "dotted";
-  radius?: number;
-  shadow?: string;
-  headerAfterGrid?: boolean;
+
+  bodyBg: string;
+  headerBg: string;
+  cardBg: string;
+
+  radius: number;
+  shadow: string;
+
+  borderStyle?: "solid" | "dashed";
   hasChips?: boolean;
-}) {
-  const fontFamily =
-    opts.font === "mono"
-      ? `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
-      : opts.font === "serif"
-      ? `ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`
-      : `ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`;
+  headerAfterGrid?: boolean;
+};
 
-  const radius = typeof opts.radius === "number" ? opts.radius : 16;
-  const borderStyle = opts.borderStyle || "solid";
-  const shadow = opts.shadow || "0 10px 30px rgba(0,0,0,.06)";
-  const bodyBg = opts.bodyBg || opts.pageBg || "#fff";
-  const headerBg =
-    opts.headerBg ||
-    "linear-gradient(180deg, rgba(0,0,0,.04), rgba(255,255,255,0))";
-  const cardBg = opts.cardBg || "#fff";
-  const accent2 = opts.accent2 || opts.accent;
+function mkThemeCss(t: ThemeArgs) {
+  const borderStyle = t.borderStyle ?? "solid";
+  const accent2 = t.accent2 ?? t.accent;
 
-  const hasBar = true;
+  const PAGE_SIZE = "Letter";
+  const PAGE_MARGIN = "0.35in";
 
-  // Note: chips will only render in buildResumeHtml for some templates.
-  // New themes still work; chips just behave like plain contact blocks when not used.
   return `
-    :root { --ink:${opts.ink}; --muted:${opts.muted}; --line:${opts.line}; --accent:${opts.accent}; --accent2:${accent2}; }
-    body { font-family: ${fontFamily}; color:var(--ink); margin:0; background:${bodyBg}; }
-    .page { max-width: 860px; margin: 22px auto; background:${opts.pageBg || "white"}; border:1px ${borderStyle} var(--line); border-radius:${radius}px; overflow:hidden; box-shadow:${shadow}; }
-    .top { padding: 24px 26px 18px; background:${headerBg}; border-bottom:1px ${borderStyle} var(--line); position:relative; }
-    ${
-      opts.headerAfterGrid
-        ? `.top:after { content:""; position:absolute; inset:0; background-image: linear-gradient(rgba(0,0,0,0) 24px, rgba(0,0,0,.04) 25px); background-size: 100% 25px; pointer-events:none; }`
-        : ""
-    }
-    .name { font-size: 30px; font-weight: 950; letter-spacing: -.02em; margin:0; }
-    .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:800; }
-    .contact { margin-top:12px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
-    .chip { display:inline-block; border:1px ${borderStyle} var(--line); padding:6px 10px; border-radius: 999px; background:${
-      opts.hasChips ? "rgba(255,255,255,.9)" : "transparent"
-    }; }
-    .content { padding: 18px 26px 26px; }
-    .section { margin-top: 16px; }
-    .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 950; letter-spacing: .10em; text-transform:uppercase; }
-    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); ${
-      hasBar ? "" : "display:none;"
-    } }
-    .summary { color:var(--muted); line-height: 1.5; font-size: 13px; }
-    .job { margin-top: 12px; border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
-      10,
-      radius - 2
-    )}px; padding: 12px; background:${cardBg}; }
-    .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-    .jobtitle { font-weight: 950; }
-    .jobmeta { color: var(--muted); font-size: 12px; font-weight:800; }
-    ul { margin: 8px 0 0 18px; padding:0; }
-    li { margin: 6px 0; line-height: 1.35; }
-    .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .box { border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
-      10,
-      radius - 2
-    )}px; padding: 12px; background:${cardBg}; }
-    .boxtitle { font-weight: 950; font-size: 12px; color: var(--ink); margin:0 0 6px; }
-    .small { font-size: 12px; color: var(--muted); }
-    @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .top:after{display:none;} }
-  `;
+:root{
+  --ink:${t.ink};
+  --muted:${t.muted};
+  --line:${t.line};
+  --accent:${t.accent};
+  --accent2:${accent2};
+  --bodyBg:${t.bodyBg};
+  --headerBg:${t.headerBg};
+  --cardBg:${t.cardBg};
+  --radius:${t.radius}px;
+  --shadow:${t.shadow};
+  --borderStyle:${borderStyle};
 }
+
+*{ box-sizing:border-box; }
+
+html, body{
+  margin:0;
+  padding:0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@page{
+  size: ${PAGE_SIZE};
+  margin: ${PAGE_MARGIN};
+}
+
+/* Base */
+body{
+  font-family: ${
+    t.font === "serif"
+      ? `ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`
+      : `ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"`
+  };
+  color: var(--ink);
+  background: var(--bodyBg);
+  line-height: 1.35;
+}
+
+/* Sheet */
+.page{
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto;
+  padding: 18px 22px;
+  background: rgba(255,255,255,0.0);
+}
+
+/* Top header */
+.top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding: 14px 16px;
+  border: 1px var(--borderStyle) var(--line);
+  border-radius: var(--radius);
+  background: var(--headerBg);
+  box-shadow: var(--shadow);
+}
+
+.name{
+  margin:0;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.2px;
+}
+
+.title{
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Base chip style */
+.chip{
+  display:inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px var(--borderStyle) var(--line);
+  background: var(--cardBg);
+  box-shadow: 0 10px 25px rgba(2,6,23,.06);
+}
+
+/* Content */
+.content{
+  margin-top: 14px;
+}
+
+.section{
+  margin-top: 14px;
+}
+
+.h{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.bar{
+  display:inline-block;
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+
+.summary{
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.meta{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.box{
+  border: 1px var(--borderStyle) var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--cardBg);
+  box-shadow: var(--shadow);
+}
+
+.boxtitle{
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.small{
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* Jobs */
+.job{
+  margin-top: 12px;
+}
+
+.jobhead{
+  display:flex;
+  justify-content:space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px var(--borderStyle) var(--line);
+  margin-bottom: 8px;
+}
+
+.jobtitle{
+  font-weight: 800;
+}
+
+.jobmeta{
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+ul{
+  margin: 0;
+  padding-left: 18px;
+}
+
+li{
+  margin: 0 0 6px 0;
+}
+
+/* Optional: grid header decoration */
+${
+  t.headerAfterGrid
+    ? `
+.top:after{
+  content:"";
+  display:block;
+  height: 10px;
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  width: 100%;
+}
+`
+    : ""
+}
+
+/* ✅ Force Arcade-style header chips for ALL mkThemeCss themes */
+${headerContactChipsCss()}
+
+@media print{
+  /* Keep the same appearance as preview */
+  body{ background: var(--bodyBg) !important; }
+  .page{
+    width: 8.5in !important;
+    min-height: 11in !important;
+    margin: 0 auto !important;
+  }
+}
+
+`.trim();
+}
+
+function printLockCss() {
+  const PAGE_SIZE = "Letter";
+  const PAGE_MARGIN = "0.35in";
+
+  return `
+/* --- PRINT LOCK: keep layout stable, DON'T restyle --- */
+html, body{
+  margin:0;
+  padding:0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@page{
+  size: ${PAGE_SIZE};
+  margin: ${PAGE_MARGIN};
+}
+
+/* IMPORTANT:
+   We intentionally do NOT change background/shadows in print.
+   PDF should match the on-screen preview. */
+@media print{
+  .page{
+    width: 8.5in !important;
+    min-height: 11in !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+  }
+}
+`.trim();
+}
+
 
 function templateStyles(template: ResumeTemplateId) {
   // ---------- EXISTING THEMES ----------
@@ -657,7 +890,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 12px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 900; font-size: 12px; color: var(--ink); margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -683,7 +917,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border-top:1px solid var(--line); padding-top:10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{margin:0; padding:0 10px 10px;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -716,7 +951,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 1000; font-size: 12px; color: var(--ink); margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .top:after{display:none;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -748,7 +984,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .bar{box-shadow:none;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -777,13 +1014,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; background:#061a10; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; color:var(--accent); }
       .small { font-size: 12px; color: var(--muted); }
-      @media print {
-        body{background:white; color:black;}
-        .page{box-shadow:none; margin:0; border:1px solid #ddd; border-radius:0; background:white;}
-        .name,.h,.boxtitle{color:#111;}
-        .summary,.jobmeta,.contact,.small{color:#333;}
-        .chip{background:#fff; border:1px solid #ddd; color:#111;}
-      }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -817,7 +1049,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px dashed var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -842,7 +1075,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 12px; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 10px 10px;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -867,7 +1101,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 950; font-size: 11px; margin:0 0 6px; }
       .small { font-size: 11px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -881,7 +1116,8 @@ function templateStyles(template: ResumeTemplateId) {
       .main { padding: 18px 22px; }
       .name { font-size: 24px; font-weight: 950; margin:0; }
       .title { margin-top:6px; font-size: 12px; color:var(--muted); font-weight:800; }
-      .contact { margin-top:10px; font-size: 12px; color:var(--muted); display:grid; gap:6px; font-weight:700; }
+      .contact { margin-top:10px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
+      .chip { display:inline-block; border:1px solid var(--line); padding:6px 10px; border-radius: 999px; background:#fff; }
       .h { margin: 14px 0 6px; font-size: 12px; font-weight: 950; letter-spacing: .12em; text-transform:uppercase; color: var(--accent); }
       .summary { color:var(--muted); line-height: 1.45; font-size: 13px; }
       .job { margin-top: 10px; border-top:1px solid var(--line); padding-top: 10px; }
@@ -896,7 +1132,7 @@ function templateStyles(template: ResumeTemplateId) {
       .small { font-size: 12px; color: var(--muted); }
       .content { padding:0; }
       .section { margin-top: 0; }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .side{background:white;} }
+      ${printLockCss()}
     `;
   }
 
@@ -921,7 +1157,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{border:none; margin:0; padding:0 10px 10px;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -946,7 +1183,7 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 800; font-size: 11px; margin:0 0 6px; }
       .small { font-size: 11px; color: var(--muted); }
-      @media print { .page{margin:0; padding:0 10px 10px;} }
+      ${printLockCss()}
     `;
   }
 
@@ -972,7 +1209,8 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
+      ${headerContactChipsCss()}
+      ${printLockCss()}
     `;
   }
 
@@ -985,8 +1223,7 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e2e8f0",
       accent: "#111827",
       bodyBg: "#f8fafc",
-      headerBg:
-        "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 45px rgba(2,6,23,.08)",
@@ -1003,10 +1240,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f6f7fb",
-      headerBg:
-        "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
-      cardBg:
-        "linear-gradient(180deg, rgba(2,6,23,.03), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
+      cardBg: "linear-gradient(180deg, rgba(2,6,23,.03), rgba(255,255,255,0))",
       radius: 16,
       shadow: "0 18px 55px rgba(2,6,23,.12)",
       hasChips: true,
@@ -1022,8 +1257,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#1f2937",
       bodyBg:
         "radial-gradient(900px 480px at 20% 10%, rgba(17,24,39,.06), rgba(255,255,255,0)), #fffdf7",
-      headerBg:
-        "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
       cardBg: "#fffef9",
       borderStyle: "solid",
       radius: 12,
@@ -1040,8 +1274,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0f172a",
       bodyBg:
         "radial-gradient(1000px 520px at 10% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f8fafc",
-      headerBg:
-        "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "dashed",
       radius: 18,
@@ -1058,8 +1291,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b57d0",
       accent2: "#111827",
       bodyBg: "#f3f6fb",
-      headerBg:
-        "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
+      headerBg: "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 16px 45px rgba(11,19,36,.10)",
@@ -1076,8 +1308,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
-      headerBg:
-        "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 0,
@@ -1093,8 +1324,7 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#eef2f7",
       accent: "#111827",
       bodyBg: "#ffffff",
-      headerBg:
-        "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 24,
@@ -1112,8 +1342,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "linear-gradient(90deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px), linear-gradient(180deg, rgba(6,182,212,.05) 1px, rgba(255,255,255,0) 1px), #f7fbff",
-      headerBg:
-        "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
+      headerBg: "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
       cardBg: "rgba(255,255,255,.92)",
       borderStyle: "dashed",
       radius: 18,
@@ -1133,10 +1362,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f59e0b",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(245,158,11,.10), rgba(255,255,255,0)), #fff7ed",
-      headerBg:
-        "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
-      cardBg:
-        "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
+      cardBg: "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
       radius: 18,
       shadow: "0 16px 45px rgba(43,27,18,.10)",
       hasChips: true,
@@ -1153,8 +1380,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#60a5fa",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fbfaff",
-      headerBg:
-        "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
       cardBg: "#ffffff",
       radius: 20,
       shadow: "0 18px 55px rgba(31,41,55,.08)",
@@ -1172,8 +1398,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f7fbff",
-      headerBg:
-        "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
+      headerBg: "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.10)",
@@ -1189,10 +1414,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e8defa",
       accent: "#7c3aed",
       accent2: "#a78bfa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
-      headerBg:
-        "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      headerBg: "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 48px rgba(31,27,46,.10)",
@@ -1210,8 +1433,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f97316",
       bodyBg:
         "radial-gradient(900px 520px at 25% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f7",
-      headerBg:
-        "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 18px 55px rgba(43,18,32,.10)",
@@ -1229,8 +1451,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#0ea5e9",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(22,163,74,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(14,165,233,.08), rgba(255,255,255,0)), #f3fbf7",
-      headerBg:
-        "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
+      headerBg: "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(11,31,23,.10)",
@@ -1248,8 +1469,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(14,165,233,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f4fbff",
-      headerBg:
-        "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
+      headerBg: "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(6,26,42,.10)",
@@ -1265,10 +1485,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#f1e2c7",
       accent: "#d97706",
       accent2: "#f59e0b",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
-      headerBg:
-        "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
+      headerBg: "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
       cardBg: "#fffdf7",
       radius: 14,
       shadow: "0 14px 40px rgba(43,32,18,.08)",
@@ -1286,8 +1504,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#7c3aed",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(29,78,216,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7f9ff",
-      headerBg:
-        "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
+      headerBg: "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.12)",
@@ -1305,8 +1522,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#f59e0b",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(245,158,11,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(180,83,9,.10), rgba(255,255,255,0)), #fffaf0",
-      headerBg:
-        "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
+      headerBg: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 18,
@@ -1315,7 +1531,6 @@ function templateStyles(template: ResumeTemplateId) {
     });
   }
 
-  // ultimate fallback
   return templateStyles("classic");
 }
 
@@ -1333,9 +1548,10 @@ function buildResumeHtml(args: {
 
   const safe = (s: string) => escapeHtml(s || "");
 
+  // ✅ Order: email then location then phone etc (your preference)
   const contactBits = [
-    profile.locationLine?.trim() ? safe(profile.locationLine) : "",
     profile.email?.trim() ? safe(profile.email) : "",
+    profile.locationLine?.trim() ? safe(profile.locationLine) : "",
     profile.phone?.trim() ? safe(profile.phone) : "",
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
     profile.portfolio?.trim() ? safe(profile.portfolio) : "",
@@ -1346,7 +1562,6 @@ function buildResumeHtml(args: {
     template === "arcade" ||
     template === "neon" ||
     template === "blueprint" ||
-    // treat new themes as "modern-style"
     template === "monochrome" ||
     template === "noir" ||
     template === "paper" ||
@@ -1424,7 +1639,10 @@ function buildResumeHtml(args: {
     .filter(Boolean)
     .join("");
 
+  // Sidebar template has its own layout
   if (template === "sidebar") {
+    const sidebarContact = contactBits.map((c) => `<div class="chip">${c}</div>`).join("");
+
     return `<!doctype html>
 <html>
 <head>
@@ -1439,9 +1657,10 @@ function buildResumeHtml(args: {
   <div class="page">
     <div class="side">
       <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
-      <div class="title">${safe(profile.titleLine || "QA Lead / QA Manager")}</div>
+      <div class="title">${safe(profile.titleLine || "")}</div>
+
       <div class="contact">
-        ${contactBits.map((c) => `<div>${c}</div>`).join("")}
+        ${sidebarContact}
       </div>
 
       <div class="section">
@@ -1463,24 +1682,24 @@ function buildResumeHtml(args: {
 </html>`;
   }
 
-  // “chip style” contact block for templates that are visually richer
-  const useChips = hasBar && template !== "terminal" && template !== "ats" && template !== "compact";
-  const topContact = useChips
-    ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
-    : contactBits.map((c) => `<div>${c}</div>`).join("");
+  // ✅ Chips everywhere except ATS (keep ATS plain)
+  const useChips = template !== "ats";
+  const topContact = contactBits
+    .map((c) => (useChips ? `<div class="chip">${c}</div>` : `<div>${c}</div>`))
+    .join("");
 
   const inlineSummary = hasBar
     ? `<div style="margin-top:10px; color:var(--muted); font-size:12px;">
-            ${safe(profile.summary || "")}
-         </div>`
+        ${safe(profile.summary || "")}
+       </div>`
     : "";
 
   const summaryBlock = hasBar
     ? ""
     : `<div class="section">
-            <div class="h">Summary</div>
-            <div class="summary">${safe(profile.summary || "")}</div>
-         </div>`;
+         <div class="h">Summary</div>
+         <div class="summary">${safe(profile.summary || "")}</div>
+       </div>`;
 
   return `<!doctype html>
 <html>
@@ -1497,17 +1716,18 @@ function buildResumeHtml(args: {
     <div class="top">
       <div>
         <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
-        <div class="title">${safe(profile.titleLine || "QA Lead / QA Manager")}</div>
+        <div class="title">${safe(profile.titleLine || "")}</div>
+
+        <div class="contact">
+          ${topContact}
+        </div>
+
         ${inlineSummary}
-      </div>
-      <div class="contact">
-        ${topContact}
       </div>
     </div>
 
     <div class="content">
       ${summaryBlock}
-
       ${metaHtml}
 
       <div class="section">
@@ -1549,10 +1769,75 @@ function openPrintWindow(html: string) {
   setTimeout(() => w.print(), 250);
 }
 
+function htmlToPlainText(html: string) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return (doc.body?.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    return String(html || "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadAsTxt(filenameBase: string, html: string) {
+  const txt = htmlToPlainText(html);
+  const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+  downloadBlob(`${filenameBase}.txt`, blob);
+}
+
+function downloadAsWordHtml(filename: string, html: string, mime: string) {
+  const docHtml = `<!doctype html><html><head><meta charset="utf-8" /></head><body>${html}</body></html>`;
+  const blob = new Blob([docHtml], { type: `${mime};charset=utf-8` });
+  downloadBlob(filename, blob);
+}
+
+function downloadAsDoc(filenameBase: string, html: string) {
+  downloadAsWordHtml(`${filenameBase}.doc`, html, "application/msword");
+}
+
+function downloadAsDocx(filenameBase: string, html: string) {
+  downloadAsWordHtml(
+    `${filenameBase}.docx`,
+    html,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
+}
+
+function downloadAsMhtml(filenameBase: string, html: string) {
+  const boundary = "----=_NextPart_" + Math.random().toString(16).slice(2);
+  const mhtml =
+    `From: <Saved by Resume MVP>\r\n` +
+    `Subject: Resume\r\n` +
+    `MIME-Version: 1.0\r\n` +
+    `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"\r\n\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: text/html; charset="utf-8"\r\n` +
+    `Content-Transfer-Encoding: 7bit\r\n\r\n` +
+    `${html}\r\n\r\n` +
+    `--${boundary}--\r\n`;
+
+  const blob = new Blob([mhtml], { type: "multipart/related;charset=utf-8" });
+  downloadBlob(`${filenameBase}.mhtml`, blob);
+}
+
 /** ---------------- Component ---------------- */
 
 const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
-  // original 12
   { id: "modern", label: "Modern (clean)" },
   { id: "classic", label: "Classic (standard)" },
   { id: "minimal", label: "Minimal (serif-lite)" },
@@ -1565,8 +1850,6 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
   { id: "neon", label: "Neon (cyber)" },
   { id: "terminal", label: "Terminal (dev)" },
   { id: "blueprint", label: "Blueprint (tech)" },
-
-  // +18 = 30 total
   { id: "monochrome", label: "Monochrome (sleek)" },
   { id: "noir", label: "Noir (moody)" },
   { id: "paper", label: "Paper (warm serif)" },
@@ -1593,10 +1876,9 @@ export default function ResumeMvp() {
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Toggle that gets sent to /api/analyze (Option A behavior)
   const [onlyExperienceBullets, setOnlyExperienceBullets] = useState(true);
 
-  const [sourceCompany, setSourceCompany] = useState("Prodigy Education");
+  const [sourceCompany, setSourceCompany] = useState("");
   const [targetCompany, setTargetCompany] = useState("");
   const [targetProductsCsv, setTargetProductsCsv] = useState("");
   const [blockedTermsCsv, setBlockedTermsCsv] = useState("");
@@ -1625,14 +1907,11 @@ export default function ResumeMvp() {
     summary: "",
   });
 
-  // Live Preview Editor (like Cover Letter)
-
   const [sections, setSections] = useState<ExperienceSection[]>([
     { id: "default", company: "Experience", title: "", dates: "", location: "" },
   ]);
 
   const [assignments, setAssignments] = useState<Record<number, BulletAssignment>>({});
-  // Live Preview Editor state (Resume)
   const [showPreviewEditor, setShowPreviewEditor] = useState(false);
   const [previewHtmlDraft, setPreviewHtmlDraft] = useState("");
   const [previewHtmlOverride, setPreviewHtmlOverride] = useState<string>("");
@@ -1651,11 +1930,56 @@ export default function ResumeMvp() {
     setLoadingRewriteIndex(null);
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
-
-    // Live preview editor state (must exist exactly once earlier in component)
     setShowPreviewEditor(false);
     setPreviewHtmlDraft("");
     setPreviewHtmlOverride("");
+  }
+
+  type DownloadFormat = ".txt" | ".doc" | ".docx" | ".pdf" | ".mhtml";
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".txt");
+
+  async function handleCopyOutput() {
+    if (!effectiveResumeHtml) return;
+    const txt = htmlToPlainText(effectiveResumeHtml);
+    try {
+      await navigator.clipboard.writeText(txt);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = txt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+  }
+
+  async function handleDownloadByFormat() {
+    if (!effectiveResumeHtml) return;
+
+    const base = "resume";
+    const html = effectiveResumeHtml;
+
+    if (downloadFormat === ".txt") return downloadAsTxt(base, html);
+    if (downloadFormat === ".doc") return downloadAsDoc(base, html);
+    if (downloadFormat === ".docx") return downloadAsDocx(base, html);
+    if (downloadFormat === ".mhtml") return downloadAsMhtml(base, html);
+
+    if (downloadFormat === ".pdf") {
+      const res = await fetch("/api/resume-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html, filename: base }),
+      });
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "PDF export failed");
+      }
+
+      const blob = await res.blob();
+      downloadBlob(`${base}.pdf`, blob);
+      return;
+    }
   }
 
   function clearFile() {
@@ -1831,32 +2155,20 @@ export default function ResumeMvp() {
   }
 
   async function postRewriteWithFallback(body: any) {
-    const endpoints = ["/api/rewriteBullet", "/api/rewrite-bullet"];
+    const res = await fetch("/api/rewrite-bullet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-    let lastRes: Response | null = null;
-    let lastPayload: any = null;
+    const payload = await parseApiResponse(res);
 
-    for (const url of endpoints) {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const payload = await parseApiResponse(res);
-
-      if (logNetworkDebug) {
-        console.log(`[rewrite] tried ${url} -> status:`, res.status);
-        console.log(`[rewrite] payload from ${url}:`, payload);
-      }
-
-      if (res.status !== 404) return { res, payload, url };
-
-      lastRes = res;
-      lastPayload = payload;
+    if (logNetworkDebug) {
+      console.log("[rewrite] status:", res.status);
+      console.log("[rewrite] payload:", payload);
     }
 
-    return { res: lastRes!, payload: lastPayload, url: endpoints[endpoints.length - 1] };
+    return { res, payload, url: "/api/rewrite-bullet" };
   }
 
   async function handleRewriteBullet(index: number) {
@@ -1866,7 +2178,7 @@ export default function ResumeMvp() {
     const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
     const planItem = rewritePlanLocal[index];
 
-    const originalBullet = planItemToText(planItem) || bulletToText(bullets[index]).trim();
+    const originalBullet = (planItemToText(planItem) || bulletToText(bullets[index])).trim();
     const suggestedKeywordsRaw = keywordsToArray(planItem?.suggestedKeywords);
     const suggestedKeywords = normalizeSuggestedKeywordsForBullet(originalBullet, suggestedKeywordsRaw);
 
@@ -1877,7 +2189,6 @@ export default function ResumeMvp() {
       return;
     }
 
-    // ✅ Fix: training / cert / program bullets should not become “daily testing”
     if (isTrainingLikeBullet(originalBullet)) {
       const rewrittenTraining = defaultTrainingRewrite(originalBullet);
 
@@ -1925,7 +2236,9 @@ export default function ResumeMvp() {
           ...nextPlan[index],
           rewrittenBullet: rewrittenTraining,
           needsMoreInfo: false,
-          notes: ["Training/education bullet detected; kept rewrite faithful (no invented testing duties)."],
+          notes: [
+            "Training/education bullet detected; kept rewrite faithful (no invented testing duties).",
+          ],
           keywordHits: [],
           blockedKeywords: [],
           suggestedKeywords,
@@ -1944,7 +2257,102 @@ export default function ResumeMvp() {
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
 
-      // ✅ Fix: explicit constraints to prevent "daily testing" hallucinations + duty invention
+      const norm = (s: any) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+      const extractOpenerVerb = (bullet: string) => {
+        const s = String(bullet ?? "")
+          .trim()
+          .replace(/^[•\-\u2022\u00B7o\s]+/g, "")
+          .replace(/[“”"]/g, '"')
+          .trim();
+
+        const words = s.split(/\s+/).filter(Boolean);
+        for (const w of words.slice(0, 6)) {
+          const clean = w.replace(/[^\w-]/g, "").toLowerCase();
+          if (!clean) continue;
+          if (["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean))
+            continue;
+          return clean;
+        }
+        return "";
+      };
+
+      const buildPhrasesFromText = (text: string) => {
+        const stop = new Set([
+          "the",
+          "a",
+          "an",
+          "and",
+          "or",
+          "to",
+          "of",
+          "in",
+          "on",
+          "for",
+          "with",
+          "by",
+          "as",
+          "at",
+          "from",
+          "into",
+          "is",
+          "was",
+          "were",
+          "be",
+          "been",
+          "being",
+          "that",
+          "this",
+          "these",
+          "those",
+          "it",
+          "its",
+          "their",
+        ]);
+
+        const tokens = norm(text)
+          .replace(/[^a-z0-9\s-]/g, " ")
+          .split(/\s+/)
+          .filter(Boolean)
+          .filter((t) => t.length > 2 && !stop.has(t));
+
+        const phrases: string[] = [];
+        for (let i = 0; i < tokens.length - 1; i++) phrases.push(`${tokens[i]} ${tokens[i + 1]}`);
+        for (let i = 0; i < tokens.length - 2; i++)
+          phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+        return phrases;
+      };
+
+      const otherTexts: string[] = [];
+      for (let i = 0; i < rewritePlanLocal.length; i++) {
+        if (i === index) continue;
+
+        const it = rewritePlanLocal[i];
+        const txt =
+          (it?.rewrittenBullet && String(it.rewrittenBullet).trim()) ||
+          planItemToText(it) ||
+          bulletToText(bullets[i] ?? "").trim();
+
+        if (txt) otherTexts.push(txt);
+      }
+
+      const usedOpeners = Array.from(
+        new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean))
+      );
+
+      const phraseCounts = new Map<string, number>();
+      for (const t of otherTexts) {
+        for (const p of buildPhrasesFromText(t)) {
+          phraseCounts.set(p, (phraseCounts.get(p) ?? 0) + 1);
+        }
+      }
+
+      const usedPhrases = Array.from(phraseCounts.entries())
+        .filter(([, count]) => count >= 3)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([phrase]) => phrase);
+
       const requestBody = {
         originalBullet,
         suggestedKeywords,
@@ -1955,16 +2363,24 @@ export default function ResumeMvp() {
           "Do not add 'daily testing' unless the original bullet explicitly mentions it.",
           "Preserve the original meaning and scope; only improve clarity and impact.",
           "Avoid generic filler; keep it concise and specific.",
+          "Do not start with the same opener verb used in other bullets; avoid repeating the same lead verb across bullets.",
+          "Avoid starting with 'Collaborated', 'Developed', or 'Completed' unless the original bullet uses that verb and it's unavoidable.",
         ],
         mustPreserveMeaning: true,
+
+        avoidPhrases: ["collaborated", "developed", "executed", "created", "documented", "completed"],
+        preferVerbVariety: true,
+
+        usedOpeners,
+        usedPhrases,
 
         sourceCompany: sourceCompany.trim(),
         targetCompany: targetCompany.trim(),
         targetProducts,
         blockedTerms,
 
-        role: "QA Lead",
-        tone: "confident, concise, impact-driven",
+        role: "",
+        tone: "",
       };
 
       const { res, payload } = await postRewriteWithFallback(requestBody);
@@ -2028,12 +2444,13 @@ export default function ResumeMvp() {
 
         nextPlan[index] = {
           ...nextPlan[index],
-          suggestedKeywords, // ✅ store the sanitized keywords so UI reflects what was actually used
+          suggestedKeywords,
           rewrittenBullet,
           needsMoreInfo,
           notes,
           keywordHits,
           blockedKeywords,
+          verbStrength: payload?.verbStrengthAfter ?? nextPlan[index].verbStrength,
         };
 
         return { ...prev, rewritePlan: nextPlan };
@@ -2103,7 +2520,6 @@ export default function ResumeMvp() {
     });
   }, [rewritePlan, selectedBulletIdx]);
 
-  // ✅ Single source of truth: bullets grouped into experience sections
   const bulletsBySection = useMemo(() => {
     const by: Record<string, string[]> = {};
     const fallback = sections[0]?.id || "default";
@@ -2140,7 +2556,6 @@ export default function ResumeMvp() {
     includeMetaInResumeDoc,
   ]);
 
-  // ✅ Live Preview Editor helpers (state MUST be declared once earlier)
   const effectiveResumeHtml = useMemo(() => {
     return (previewHtmlOverride || resumeHtml || "").trim();
   }, [previewHtmlOverride, resumeHtml]);
@@ -2163,11 +2578,6 @@ export default function ResumeMvp() {
 
   function closePreviewEditor() {
     setShowPreviewEditor(false);
-  }
-
-  function handleDownloadHtml() {
-    if (!effectiveResumeHtml) return;
-    downloadHtml("resume-template.html", effectiveResumeHtml);
   }
 
   function handleViewPreview() {
@@ -2268,6 +2678,55 @@ export default function ResumeMvp() {
               ) : null}
             </label>
 
+            <label className="grid gap-1.5">
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume text (paste if not uploading)
+              </div>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                rows={6}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+              />
+              {resumeText.trim() ? (
+                <div className="text-xs text-black/60 dark:text-white/60">
+                  Tip: Pasted text is auto-normalized on Analyze to help recognize headers like
+                  “Company … Dates … Title”.
+                </div>
+              ) : null}
+            </label>
+
+            <label className="grid gap-1.5">
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Job posting text
+              </div>
+              <textarea
+                value={jobText}
+                onChange={(e) => setJobText(e.target.value)}
+                rows={6}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+              />
+            </label>
+
+            {/* Template */}
+            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
+                Template
+              </div>
+
+              <select
+                value={resumeTemplate}
+                onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+              >
+                {TEMPLATE_OPTIONS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
@@ -2279,6 +2738,12 @@ export default function ResumeMvp() {
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                />
+                <input
+                  value={profile.titleLine}
+                  onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
+                  placeholder="Professional Title (e.g. QA Lead | Game & VR Systems)"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
 
@@ -2313,195 +2778,126 @@ export default function ResumeMvp() {
                 />
               </div>
 
-              {/* Optional extras (uncomment if you want them visible too) */}
-              {/*
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="mt-3 flex items-center gap-2">
                 <input
-                  value={profile.titleLine}
-                  onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
-                  placeholder="Title line"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  type="checkbox"
+                  checked={onlyExperienceBullets}
+                  onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
+                  className="h-4 w-4"
                 />
-                <input
-                  value={profile.portfolio}
-                  onChange={(e) => setProfile((p) => ({ ...p, portfolio: e.target.value }))}
-                  placeholder="Portfolio"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
-                />
-              </div>
-              */}
-            </div>
+                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                  Only experience bullets
+                </span>
+              </label>
 
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Resume text (paste if not uploading)
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5">
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Target Company
+                  </div>
+                  <input
+                    value={targetCompany}
+                    onChange={(e) => setTargetCompany(e.target.value)}
+                    className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  />
+                </label>
+
+                <label className="grid gap-1.5">
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Source Company
+                  </div>
+                  <input
+                    value={sourceCompany}
+                    onChange={(e) => setSourceCompany(e.target.value)}
+                    className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  />
+                </label>
               </div>
-              <textarea
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-                rows={6}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
-              {resumeText.trim() ? (
-                <div className="text-xs text-black/60 dark:text-white/60">
-                  Tip: Pasted text is auto-normalized on Analyze to help recognize headers like
-                  “Company … Dates … Title”.
+
+              {/* Hidden advanced guardrail inputs */}
+              <div className="hidden" aria-hidden="true">
+                <label className="grid gap-1.5">
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Target Products (comma separated)
+                  </div>
+                  <input
+                    value={targetProductsCsv}
+                    onChange={(e) => setTargetProductsCsv(e.target.value)}
+                    className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  />
+                </label>
+
+                <label className="grid gap-1.5">
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Blocked Terms (comma separated)
+                  </div>
+                  <input
+                    value={blockedTermsCsv}
+                    onChange={(e) => setBlockedTermsCsv(e.target.value)}
+                    className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={!canAnalyze || loadingAnalyze}
+                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                >
+                  {loadingAnalyze ? "Analyzing…" : "Analyze"}
+                </button>
+              
+                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={includeMetaInResumeDoc}
+                    onChange={(e) => setIncludeMetaInResumeDoc(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Include meta blocks
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={showDebugJson}
+                    onChange={(e) => setShowDebugJson(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show debug
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                  <input
+                    type="checkbox"
+                    checked={logNetworkDebug}
+                    onChange={(e) => setLogNetworkDebug(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Console logs
+                </label>
+              </div>
+
+              {debugInjected.length ? (
+                <div className="mt-2">
+                  <Callout title="Guardrail terms detected in rewrites" tone="warn">
+                    <div className="flex flex-wrap gap-2">
+                      {debugInjected.map((t) => (
+                        <Chip key={t} text={t} />
+                      ))}
+                    </div>
+                  </Callout>
                 </div>
               ) : null}
-            </label>
 
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Job posting text
-              </div>
-              <textarea
-                value={jobText}
-                onChange={(e) => setJobText(e.target.value)}
-                rows={6}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
-            </label>
-
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={onlyExperienceBullets}
-                onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
-                className="h-4 w-4"
-              />
-              <span className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Only experience bullets
-              </span>
-            </label>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Target Company
-                </div>
-                <input
-                  value={targetCompany}
-                  onChange={(e) => setTargetCompany(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-                />
-              </label>
-
-              <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Source Company
-                </div>
-                <input
-                  value={sourceCompany}
-                  onChange={(e) => setSourceCompany(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-                />
-              </label>
+              {showDebugJson && analysis ? (
+                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-white/80">
+                  {JSON.stringify(analysis, null, 2)}
+                </pre>
+              ) : null}
             </div>
-
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Target Products (comma separated)
-              </div>
-              <input
-                value={targetProductsCsv}
-                onChange={(e) => setTargetProductsCsv(e.target.value)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
-            </label>
-
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Blocked Terms (comma separated)
-              </div>
-              <input
-                value={blockedTermsCsv}
-                onChange={(e) => setBlockedTermsCsv(e.target.value)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
-            </label>
-
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleAnalyze}
-                disabled={!canAnalyze || loadingAnalyze}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-              >
-                {loadingAnalyze ? "Analyzing…" : "Analyze"}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRewriteSelected}
-                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-              >
-                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
-              </button>
-
-              <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                <input
-                  type="checkbox"
-                  checked={includeMetaInResumeDoc}
-                  onChange={(e) => setIncludeMetaInResumeDoc(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Include meta blocks
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                Template
-                <select
-                  value={resumeTemplate}
-                  onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                  className="rounded-lg border border-black/10 bg-white px-2 py-1 text-xs font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
-                >
-                  {TEMPLATE_OPTIONS.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                <input
-                  type="checkbox"
-                  checked={showDebugJson}
-                  onChange={(e) => setShowDebugJson(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Show debug
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                <input
-                  type="checkbox"
-                  checked={logNetworkDebug}
-                  onChange={(e) => setLogNetworkDebug(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Console logs
-              </label>
-            </div>
-
-            {debugInjected.length ? (
-              <div className="mt-2">
-                <Callout title="Guardrail terms detected in rewrites" tone="warn">
-                  <div className="flex flex-wrap gap-2">
-                    {debugInjected.map((t) => (
-                      <Chip key={t} text={t} />
-                    ))}
-                  </div>
-                </Callout>
-              </div>
-            ) : null}
-
-            {showDebugJson && analysis ? (
-              <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-white/80">
-                {JSON.stringify(analysis, null, 2)}
-              </pre>
-            ) : null}
           </div>
         </section>
 
@@ -2517,11 +2913,42 @@ export default function ResumeMvp() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleDownloadHtml}
+              onClick={handleCopyOutput}
               disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
-              Download HTML
+              Copy
+            </button>
+
+            <select
+              value={downloadFormat}
+              onChange={(e) => setDownloadFormat(e.target.value as DownloadFormat)}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-white/10 dark:text-white"
+              disabled={!effectiveResumeHtml}
+            >
+              <option value=".txt">.txt</option>
+              <option value=".doc">.doc</option>
+              <option value=".docx">.docx</option>
+              <option value=".pdf">.pdf</option>
+              <option value=".mhtml">.mhtml</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleDownloadByFormat}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Download
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintPdf}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Print
             </button>
 
             <button
@@ -2539,16 +2966,7 @@ export default function ResumeMvp() {
               disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
-              View Preview
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrintPdf}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Print / Save PDF
+              Preview
             </button>
           </div>
 
@@ -2612,24 +3030,37 @@ export default function ResumeMvp() {
           {analysis && rewritePlan.length ? (
             <div className="mt-4">
               <div className="flex flex-wrap items-end justify-between gap-2">
-                <h3 className="text-sm font-extrabold">Rewrite Plan (select bullets)</h3>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => selectAll(rewritePlan.length)}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Select all
-                  </button>
-                  <button
-                    type="button"
-                    onClick={selectNone}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Select none
-                  </button>
-                </div>
+              <h3 className="text-sm font-extrabold">Rewrite Plan (select bullets)</h3>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* ✅ Move Rewrite Selected here */}
+                <button
+                  type="button"
+                  onClick={handleRewriteSelected}
+                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                >
+                  {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => selectAll(rewritePlan.length)}
+                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                >
+                  Select all
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selectNone}
+                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                >
+                  Select none
+                </button>
               </div>
+            </div>
+
 
               <div className="mt-3 grid gap-3">
                 {rewritePlan.map((item, i) => {
