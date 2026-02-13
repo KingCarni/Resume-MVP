@@ -110,13 +110,6 @@ function Callout({
   );
 }
 
-function csvToArray(s: string): string[] {
-  return (s || "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-}
-
 function downloadTxt(filename: string, text: string) {
   const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -129,24 +122,11 @@ function downloadTxt(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadHtml(filename: string, html: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".html") ? filename : `${filename}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 async function downloadPdfFromHtml(filename: string, html: string) {
   const res = await fetch("/api/render-pdf", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ html, filename }),
-
   });
 
   if (!res.ok) {
@@ -186,7 +166,9 @@ ${html}
 </body>
 </html>`;
 
-  const blob = new Blob([wordHtml], { type: "application/msword;charset=utf-8;" });
+  const blob = new Blob([wordHtml], {
+    type: "application/msword;charset=utf-8;",
+  });
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -305,13 +287,27 @@ function mkThemeCss(opts: {
   const cardBg = opts.cardBg || "#fff";
   const accent2 = opts.accent2 || opts.accent;
 
-  const hasBar = true;
-
   return `
-    :root { --ink:${opts.ink}; --muted:${opts.muted}; --line:${opts.line}; --accent:${opts.accent}; --accent2:${accent2}; }
-    body { font-family: ${fontFamily}; color:var(--ink); margin:0; background:${bodyBg}; }
-    .page { max-width: 860px; margin: 22px auto; background:${opts.pageBg || "white"}; border:1px ${borderStyle} var(--line); border-radius:${radius}px; overflow:hidden; box-shadow:${shadow}; }
-    .top { padding: 24px 26px 18px; background:${headerBg}; border-bottom:1px ${borderStyle} var(--line); position:relative; }
+    :root {
+      --ink:${opts.ink};
+      --muted:${opts.muted};
+      --line:${opts.line};
+      --accent:${opts.accent};
+      --accent2:${accent2};
+
+      /* ✅ shared tokens (used by cover letter card) */
+      --headerbg:${headerBg};
+      --pagebg:${opts.pageBg || "white"};
+      --bodybg:${bodyBg};
+      --cardbg:${cardBg};
+      --borderStyle:${borderStyle};
+      --radius:${radius}px;
+      --shadow:${shadow};
+    }
+
+    body { font-family: ${fontFamily}; color:var(--ink); margin:0; background:var(--bodybg); }
+    .page { max-width: 860px; margin: 22px auto; background:var(--pagebg); border:1px ${borderStyle} var(--line); border-radius:${radius}px; overflow:hidden; box-shadow:${shadow}; }
+    .top { padding: 24px 26px 18px; background:var(--headerbg); border-bottom:1px ${borderStyle} var(--line); position:relative; }
     ${
       opts.headerAfterGrid
         ? `.top:after { content:""; position:absolute; inset:0; background-image: linear-gradient(rgba(0,0,0,0) 24px, rgba(0,0,0,.04) 25px); background-size: 100% 25px; pointer-events:none; }`
@@ -326,14 +322,12 @@ function mkThemeCss(opts: {
     .content { padding: 18px 26px 26px; }
     .section { margin-top: 16px; }
     .h { display:flex; align-items:center; gap:10px; margin:0 0 8px; font-size: 13px; font-weight: 950; letter-spacing: .10em; text-transform:uppercase; }
-    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); ${
-      hasBar ? "" : "display:none;"
-    } }
+    .bar { height: 10px; width: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
     .summary { color:var(--muted); line-height: 1.5; font-size: 13px; }
     .job { margin-top: 12px; border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
       10,
       radius - 2
-    )}px; padding: 12px; background:${cardBg}; }
+    )}px; padding: 12px; background:var(--cardbg); }
     .jobhead { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
     .jobtitle { font-weight: 950; }
     .jobmeta { color: var(--muted); font-size: 12px; font-weight:800; }
@@ -343,29 +337,31 @@ function mkThemeCss(opts: {
     .box { border:1px ${borderStyle} var(--line); border-radius: ${Math.max(
       10,
       radius - 2
-    )}px; padding: 12px; background:${cardBg}; }
+    )}px; padding: 12px; background:var(--cardbg); }
     .boxtitle { font-weight: 950; font-size: 12px; color: var(--ink); margin:0 0 6px; }
     .small { font-size: 12px; color: var(--muted); }
     @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .top:after{display:none;} }
   `;
 }
 
-/**
- * NOTE:
- * You pasted a huge `templateStyles(template)` switch.
- * Keeping it exactly as-is matters.
- *
- * For this rewrite, I’m leaving your `templateStyles` body untouched below.
- * Scroll a bit—it's the same as your version (modern/minimal/.../gold + fallback).
- */
 function templateStyles(template: ResumeTemplateId) {
   // ---------- EXISTING THEMES ----------
   if (template === "modern") {
     return `
-      :root { --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; }
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#f6f7fb; }
-      .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-      .top { display:grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; padding: 26px 26px 18px; background: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0)); border-bottom:1px solid var(--line); }
+      :root {
+        --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0;
+        --headerbg: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0));
+        --pagebg: white;
+        --bodybg: #f6f7fb;
+
+        --borderStyle: solid;
+        --radius: 16px;
+        --shadow: 0 10px 30px rgba(0,0,0,.06);
+        --cardbg: #fff;
+      }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:var(--bodybg); }
+      .page { max-width: 860px; margin: 22px auto; background:var(--pagebg); border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+      .top { display:grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; padding: 26px 26px 18px; background: var(--headerbg); border-bottom:1px solid var(--line); }
       .name { font-size: 30px; font-weight: 900; letter-spacing: -.02em; margin:0; }
       .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:700; }
       .contact { font-size: 12px; color:var(--muted); display:grid; gap: 6px; justify-items:end; }
@@ -391,7 +387,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "minimal") {
     return `
-      :root { --ink:#111; --muted:#444; --line:#e7e7e7; }
+      :root {
+        --ink:#111; --muted:#444; --line:#e7e7e7;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 820px; margin: 26px auto; padding: 0 22px 22px; }
       .top { padding: 16px 0 10px; border-bottom: 1px solid var(--line); }
@@ -417,14 +419,23 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "arcade") {
     return `
-      :root { --ink:#120a2a; --muted:#3b2a66; --line:#e7d7ff; --accent:#7c3aed; --accent2:#06b6d4; }
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:
-        radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,.12), rgba(255,255,255,0)),
-        radial-gradient(1000px 600px at 90% 20%, rgba(6,182,212,.10), rgba(255,255,255,0)),
-        #fbf7ff;
+      :root {
+        --ink:#120a2a; --muted:#3b2a66; --line:#e7d7ff; --accent:#7c3aed; --accent2:#06b6d4;
+        --headerbg: linear-gradient(135deg, rgba(124,58,237,.16), rgba(6,182,212,.10));
+        --pagebg: white;
+        --bodybg:
+          radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,.12), rgba(255,255,255,0)),
+          radial-gradient(1000px 600px at 90% 20%, rgba(6,182,212,.10), rgba(255,255,255,0)),
+          #fbf7ff;
+
+        --borderStyle: solid;
+        --radius: 18px;
+        --shadow: 0 14px 40px rgba(18,10,42,.10);
+        --cardbg: #fff;
       }
-      .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 18px; overflow:hidden; box-shadow: 0 14px 40px rgba(18,10,42,.10); }
-      .top { padding: 24px 26px 18px; background: linear-gradient(135deg, rgba(124,58,237,.16), rgba(6,182,212,.10)); border-bottom:1px solid var(--line); position:relative; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:var(--bodybg); }
+      .page { max-width: 860px; margin: 22px auto; background:var(--pagebg); border:1px solid var(--line); border-radius: 18px; overflow:hidden; box-shadow: 0 14px 40px rgba(18,10,42,.10); }
+      .top { padding: 24px 26px 18px; background: var(--headerbg); border-bottom:1px solid var(--line); position:relative; }
       .top:after { content:""; position:absolute; inset:0; background-image: linear-gradient(rgba(0,0,0,0) 24px, rgba(18,10,42,.03) 25px); background-size: 100% 25px; pointer-events:none; }
       .name { font-size: 32px; font-weight: 1000; letter-spacing: -.03em; margin:0; }
       .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:800; }
@@ -450,14 +461,23 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "neon") {
     return `
-      :root { --ink:#0b1020; --muted:#2a3558; --line:#dde3ff; --accent:#00e5ff; --accent2:#ff00e5; }
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:
-        radial-gradient(900px 500px at 20% 10%, rgba(0,229,255,.14), rgba(255,255,255,0)),
-        radial-gradient(900px 500px at 80% 20%, rgba(255,0,229,.10), rgba(255,255,255,0)),
-        #f7f9ff;
+      :root {
+        --ink:#0b1020; --muted:#2a3558; --line:#dde3ff; --accent:#00e5ff; --accent2:#ff00e5;
+        --headerbg: linear-gradient(135deg, rgba(0,229,255,.12), rgba(255,0,229,.08));
+        --pagebg: white;
+        --bodybg:
+          radial-gradient(900px 500px at 20% 10%, rgba(0,229,255,.14), rgba(255,255,255,0)),
+          radial-gradient(900px 500px at 80% 20%, rgba(255,0,229,.10), rgba(255,255,255,0)),
+          #f7f9ff;
+
+        --borderStyle: solid;
+        --radius: 18px;
+        --shadow: 0 18px 50px rgba(11,16,32,.10);
+        --cardbg: #fff;
       }
-      .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 18px; overflow:hidden; box-shadow: 0 18px 50px rgba(11,16,32,.10); }
-      .top { padding: 26px; border-bottom:1px solid var(--line); background: linear-gradient(135deg, rgba(0,229,255,.12), rgba(255,0,229,.08)); }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:var(--bodybg); }
+      .page { max-width: 860px; margin: 22px auto; background:var(--pagebg); border:1px solid var(--line); border-radius: 18px; overflow:hidden; box-shadow: 0 18px 50px rgba(11,16,32,.10); }
+      .top { padding: 26px; border-bottom:1px solid var(--line); background: var(--headerbg); }
       .name { font-size: 32px; font-weight: 950; letter-spacing: -.03em; margin:0; }
       .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:900; }
       .contact { margin-top:12px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
@@ -482,10 +502,20 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "terminal") {
     return `
-      :root { --ink:#e6f3ea; --muted:#b7d6c2; --line:#2a4f3a; --accent:#39ff14; }
-      body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; color:var(--ink); margin:0; background:#061a10; }
-      .page { max-width: 900px; margin: 18px auto; border:1px solid var(--line); background:#071f13; border-radius: 14px; overflow:hidden; box-shadow: 0 14px 40px rgba(0,0,0,.35); }
-      .top { padding: 18px 18px 14px; border-bottom:1px solid var(--line); background: linear-gradient(180deg, rgba(57,255,20,.10), rgba(0,0,0,0)); }
+      :root {
+        --ink:#e6f3ea; --muted:#b7d6c2; --line:#2a4f3a; --accent:#39ff14;
+        --headerbg: linear-gradient(180deg, rgba(57,255,20,.10), rgba(0,0,0,0));
+        --pagebg: #071f13;
+        --bodybg: #061a10;
+
+        --borderStyle: solid;
+        --radius: 14px;
+        --shadow: 0 14px 40px rgba(0,0,0,.35);
+        --cardbg: #061a10;
+      }
+      body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; color:var(--ink); margin:0; background:var(--bodybg); }
+      .page { max-width: 900px; margin: 18px auto; border:1px solid var(--line); background:var(--pagebg); border-radius: 14px; overflow:hidden; box-shadow: 0 14px 40px rgba(0,0,0,.35); }
+      .top { padding: 18px 18px 14px; border-bottom:1px solid var(--line); background: var(--headerbg); }
       .name { font-size: 26px; font-weight: 900; margin:0; color:var(--accent); }
       .title { margin-top:6px; font-size: 13px; color:var(--muted); font-weight:800; }
       .contact { margin-top:10px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
@@ -515,16 +545,23 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "blueprint") {
     return `
-      :root { --ink:#0b1a2a; --muted:#2a4a6a; --line:#cfe7ff; --accent:#0b57d0; }
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0;
-        background:
+      :root {
+        --ink:#0b1a2a; --muted:#2a4a6a; --line:#cfe7ff; --accent:#0b57d0;
+        --headerbg: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0));
+        --pagebg: white;
+        --bodybg:
           linear-gradient(90deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px),
           linear-gradient(180deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px),
           #f7fbff;
-        background-size: 26px 26px;
+
+        --borderStyle: dashed;
+        --radius: 16px;
+        --shadow: 0 10px 30px rgba(11,26,42,.08);
+        --cardbg: #fff;
       }
-      .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(11,26,42,.08); }
-      .top { padding: 22px 26px 18px; border-bottom:1px solid var(--line); background: linear-gradient(180deg, rgba(11,87,208,.08), rgba(255,255,255,0)); }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:var(--bodybg); background-size: 26px 26px; }
+      .page { max-width: 860px; margin: 22px auto; background:var(--pagebg); border:1px solid var(--line); border-radius: 16px; overflow:hidden; box-shadow: 0 10px 30px rgba(11,26,42,.08); }
+      .top { padding: 22px 26px 18px; border-bottom:1px solid var(--line); background: var(--headerbg); }
       .name { font-size: 30px; font-weight: 950; letter-spacing: -.02em; margin:0; }
       .title { margin-top:6px; font-size: 14px; color:var(--muted); font-weight:800; }
       .contact { margin-top:12px; font-size: 12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
@@ -549,7 +586,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "executive") {
     return `
-      :root { --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --accent:#111827; }
+      :root {
+        --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --accent:#111827;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 900px; margin: 22px auto; background:white; border:1px solid var(--line); padding: 22px 26px; }
       .top { display:flex; justify-content:space-between; gap: 16px; border-bottom:1px solid var(--line); padding-bottom: 14px; }
@@ -574,7 +617,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "compact") {
     return `
-      :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#111827; }
+      :root {
+        --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#111827;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 900px; margin: 16px auto; border: 1px solid var(--line); padding: 14px 18px; }
       .top { display:flex; justify-content:space-between; gap: 10px; border-bottom:1px solid var(--line); padding-bottom: 8px; }
@@ -599,7 +648,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "sidebar") {
     return `
-      :root { --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; --side:#f4f6fb; }
+      :root {
+        --ink:#111; --muted:#555; --line:#e7e7e7; --accent:#0b57d0; --side:#f4f6fb;
+        --borderStyle: solid;
+        --radius: 16px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 980px; margin: 22px auto; border:1px solid var(--line); border-radius: 16px; overflow:hidden; display:grid; grid-template-columns: 280px 1fr; }
       .top { grid-column: 1 / -1; display:none; }
@@ -628,7 +683,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "serif") {
     return `
-      :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#0f172a; }
+      :root {
+        --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#0f172a;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif; color:var(--ink); margin:0; background:#fafafa; }
       .page { max-width: 860px; margin: 22px auto; background:white; border:1px solid var(--line); padding: 22px 26px; }
       .top { display:flex; justify-content:space-between; gap: 16px; border-bottom:2px solid var(--line); padding-bottom: 12px; }
@@ -653,7 +714,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "ats") {
     return `
-      :root { --ink:#111; --muted:#333; --line:#ddd; --accent:#111; }
+      :root {
+        --ink:#111; --muted:#333; --line:#ddd; --accent:#111;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: Arial, Helvetica, sans-serif; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 900px; margin: 16px auto; background:white; padding: 16px 18px; }
       .top { display:flex; justify-content:space-between; gap: 12px; border-bottom:1px solid var(--line); padding-bottom: 10px; }
@@ -678,7 +745,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "classic") {
     return `
-      :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937; }
+      :root {
+        --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937;
+        --borderStyle: solid;
+        --radius: 0px;
+        --shadow: none;
+        --cardbg: #fff;
+      }
       body { font-family: Calibri, Arial, Helvetica, sans-serif; color:var(--ink); margin:0; background:#fff; }
       .page { max-width: 850px; margin: 18px auto; border: 1px solid var(--line); padding: 18px 22px; }
       .top { display:flex; justify-content:space-between; gap: 12px; border-bottom:1px solid var(--line); padding-bottom: 10px; }
@@ -701,7 +774,7 @@ function templateStyles(template: ResumeTemplateId) {
     `;
   }
 
-  // ---------- NEW THEMES (18) ----------
+  // ---------- NEW THEMES ----------
   if (template === "monochrome") {
     return mkThemeCss({
       font: "sans",
@@ -710,7 +783,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e2e8f0",
       accent: "#111827",
       bodyBg: "#f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 45px rgba(2,6,23,.08)",
@@ -744,7 +818,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#1f2937",
       bodyBg:
         "radial-gradient(900px 480px at 20% 10%, rgba(17,24,39,.06), rgba(255,255,255,0)), #fffdf7",
-      headerBg: "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
       cardBg: "#fffef9",
       borderStyle: "solid",
       radius: 12,
@@ -762,7 +837,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0f172a",
       bodyBg:
         "radial-gradient(1000px 520px at 10% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "dashed",
       radius: 18,
@@ -797,7 +873,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
-      headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 0,
@@ -814,7 +891,8 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#eef2f7",
       accent: "#111827",
       bodyBg: "#ffffff",
-      headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 24,
@@ -1025,7 +1103,13 @@ function templateStyles(template: ResumeTemplateId) {
   }
 
   return `
-    :root { --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937; }
+    :root {
+      --ink:#111; --muted:#444; --line:#e7e7e7; --accent:#1f2937;
+      --borderStyle: solid;
+      --radius: 0px;
+      --shadow: none;
+      --cardbg: #fff;
+    }
     body { font-family: Calibri, Arial, Helvetica, sans-serif; color:var(--ink); margin:0; background:#fff; }
     .page { max-width: 850px; margin: 18px auto; border: 1px solid var(--line); padding: 18px 22px; }
     .top { display:flex; justify-content:space-between; gap: 12px; border-bottom:1px solid var(--line); padding-bottom: 10px; }
@@ -1049,32 +1133,70 @@ function templateStyles(template: ResumeTemplateId) {
 }
 
 /** Add cover-letter-specific CSS on top of the resume CSS */
-/** Add cover-letter-specific CSS on top of the resume CSS */
 function templateStylesCover(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
-/* ---- Cover letter additions ---- */
-.section { margin-top: 10px; }
 
-/* Let the letter flow onto the same page as header + split across pages */
-.letter { margin-top: 0; border: 1px solid var(--line); border-radius: 14px; padding: 14px; background: transparent; }
+/* ---------------- Cover Letter additions (match ResumeMvp look 1:1) ---------------- */
 
-/* Paragraph styling */
-.p { margin: 0 0 10px; line-height: 1.7; }
-
-/* Signature */
-.sig { margin-top: 14px; color: var(--muted); line-height: 1.55; }
-
-@media print {
-  /* IMPORTANT: do NOT prevent the whole letter from splitting */
-  .letter { break-inside: auto; page-break-inside: auto; }
-
-  /* Optional: keep each paragraph together */
-  .p, .sig { break-inside: avoid; page-break-inside: avoid; }
-}
-`;
+.cover-wrap{
+  margin-top: 14px;
 }
 
+.letter-card{
+  border: 1px var(--borderStyle, solid) var(--line);
+  border-radius: var(--radius, 18px);
+  background: var(--cardbg, rgba(255,255,255,.92));
+  box-shadow: var(--shadow, 0 16px 45px rgba(2,6,23,.08));
+  padding: 18px 18px;
+}
+
+.letter-head{
+  font-weight: 900;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px var(--borderStyle, solid) var(--line);
+}
+
+.letter-head .contactline{
+  margin-top: 6px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.letter{
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.letter p{
+  margin: 0 0 12px 0;
+}
+
+.letter .closing{
+  margin-top: 16px;
+}
+
+/* Optional: remove harsh cutoff from templates that use .top border */
+.top{
+  border-bottom: 0 !important;
+}
+
+/* Sidebar mode: make card still feel like the same system */
+.main .letter-card{
+  background: var(--cardbg, #fff);
+}
+
+@media print{
+  .letter-card{
+    box-shadow: none !important;
+  }
+}
+`.trim();
+}
 
 function splitParagraphs(text: string) {
   const raw = String(text || "").replace(/\r\n/g, "\n");
@@ -1094,7 +1216,14 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const { template, profile, bodyText, includeSignature, signatureName, signatureClosing } = args;
+  const {
+    template,
+    profile,
+    bodyText,
+    includeSignature,
+    signatureName,
+    signatureClosing,
+  } = args;
 
   const contactBits = [
     profile.locationLine?.trim() ? safe(profile.locationLine) : "",
@@ -1103,49 +1232,38 @@ function buildCoverLetterHtml(args: {
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
   ].filter(Boolean);
 
-  const hasBar =
-    template === "modern" ||
-    template === "arcade" ||
-    template === "neon" ||
-    template === "blueprint" ||
-    template === "monochrome" ||
-    template === "noir" ||
-    template === "paper" ||
-    template === "ink" ||
-    template === "corporate" ||
-    template === "contrast" ||
-    template === "minimalist" ||
-    template === "grid" ||
-    template === "retro" ||
-    template === "pastel" ||
-    template === "aura" ||
-    template === "lavender" ||
-    template === "sunset" ||
-    template === "forest" ||
-    template === "ocean" ||
-    template === "sand" ||
-    template === "royal" ||
-    template === "gold";
-
-  const useChips = hasBar && template !== "terminal" && template !== "ats" && template !== "compact";
+  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
 
   const topContact = useChips
     ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
     : contactBits.map((c) => `<div>${c}</div>`).join("<br/>");
 
   const paras = splitParagraphs(bodyText);
-  const parasHtml = paras.map((p) => `<div class="p">${safe(p)}</div>`).join("");
+  const parasHtml = paras.length
+    ? paras.map((p) => `<p>${safe(p)}</p>`).join("")
+    : `<p>No cover letter text yet.</p>`;
 
   const sigClosing = signatureClosing.trim() ? safe(signatureClosing.trim()) : "";
   const sigName = signatureName.trim() ? safe(signatureName.trim()) : "";
 
   const signatureHtml =
     includeSignature && (sigClosing || sigName)
-      ? `<div class="sig">
+      ? `<div class="closing">
           ${sigClosing ? `${sigClosing}<br/>` : ""}
           ${sigName}
         </div>`
       : "";
+
+  const inlineHeader = `
+    <div class="letter-head">
+      <div>${safe(profile.fullName || "Your Name")}</div>
+      ${
+        contactBits.length
+          ? `<div class="contactline">${contactBits.join(" • ")}</div>`
+          : ""
+      }
+    </div>
+  `;
 
   if (template === "sidebar") {
     return `<!doctype html>
@@ -1169,10 +1287,13 @@ function buildCoverLetterHtml(args: {
     </div>
 
     <div class="main">
-      <div class="section">
-        <div class="letter">
-          ${parasHtml || `<div class="p">No cover letter text yet.</div>`}
-          ${signatureHtml}
+      <div class="cover-wrap">
+        <div class="letter-card">
+          ${inlineHeader}
+          <div class="letter">
+            ${parasHtml}
+            ${signatureHtml}
+          </div>
         </div>
       </div>
     </div>
@@ -1204,10 +1325,12 @@ function buildCoverLetterHtml(args: {
     </div>
 
     <div class="content">
-      <div class="section">
-        <div class="letter">
-          ${parasHtml || `<div class="p">No cover letter text yet.</div>`}
-          ${signatureHtml}
+      <div class="cover-wrap">
+        <div class="letter-card">
+          <div class="letter">
+            ${parasHtml}
+            ${signatureHtml}
+          </div>
         </div>
       </div>
     </div>
@@ -1216,7 +1339,13 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+function HtmlDocPreview({
+  html,
+  footer,
+}: {
+  html: string;
+  footer?: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1234,7 +1363,9 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
         />
       </div>
 
-      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
+      {footer ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div>
+      ) : null}
     </div>
   );
 }
@@ -1244,10 +1375,33 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
 function recommendToneHeuristic(jobText: string) {
   const t = String(jobText || "").toLowerCase();
 
-  const startupSignals = ["startup", "0-1", "zero-to-one", "fast-paced", "scrappy", "wear multiple hats"];
-  const enterpriseSignals = ["enterprise", "stakeholders", "cross-functional", "governance", "compliance", "risk"];
+  const startupSignals = [
+    "startup",
+    "0-1",
+    "zero-to-one",
+    "fast-paced",
+    "scrappy",
+    "wear multiple hats",
+  ];
+  const enterpriseSignals = [
+    "enterprise",
+    "stakeholders",
+    "cross-functional",
+    "governance",
+    "compliance",
+    "risk",
+  ];
   const leadershipSignals = ["lead", "manager", "mentored", "managed", "owned", "strategy", "roadmap"];
-  const technicalSignals = ["api", "automation", "ci/cd", "pipeline", "performance", "observability", "kpi", "metrics"];
+  const technicalSignals = [
+    "api",
+    "automation",
+    "ci/cd",
+    "pipeline",
+    "performance",
+    "observability",
+    "kpi",
+    "metrics",
+  ];
 
   const score = (arr: string[]) => arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
 
@@ -1301,7 +1455,7 @@ export default function CoverLetterGenerator() {
   const [length, setLength] = useState<"short" | "standard" | "detailed">("standard");
   const [includeBullets, setIncludeBullets] = useState(true);
 
-    const [template, setTemplate] = useState<ResumeTemplateId>("modern");
+  const [template, setTemplate] = useState<ResumeTemplateId>("modern");
 
   const [includeSignature, setIncludeSignature] = useState(true);
   const [signatureClosing, setSignatureClosing] = useState("");
@@ -1313,9 +1467,9 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-  const [downloadFormat, setDownloadFormat] = useState<"txt" | "doc" | "docx" | "pdf" | "mhtml">(
-    "txt"
-  );
+  const [downloadFormat, setDownloadFormat] = useState<
+    "txt" | "doc" | "docx" | "pdf" | "mhtml"
+  >("txt");
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1333,7 +1487,6 @@ export default function CoverLetterGenerator() {
     setCoverLetterDraft("");
 
     try {
-     
       let res: Response;
 
       if (file) {
@@ -1367,8 +1520,6 @@ export default function CoverLetterGenerator() {
           tone: tone.trim(),
           length,
           includeBullets,
-
-          
         };
 
         res = await fetch("/api/cover-letter", {
@@ -1434,9 +1585,17 @@ export default function CoverLetterGenerator() {
       signatureClosing,
       signatureName: signatureName.trim() ? signatureName : profile.fullName,
     });
-  }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
+  }, [
+    coverLetterDraft,
+    template,
+    profile,
+    includeSignature,
+    signatureClosing,
+    signatureName,
+  ]);
 
-  const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
+  const templateLabel =
+    TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -1461,11 +1620,13 @@ export default function CoverLetterGenerator() {
       </div>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Cover Letter Generator</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">
+          Cover Letter Generator
+        </h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview
-          renders as a real HTML document (resume-template style). You can edit the letter below and the
-          preview updates live.
+          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover
+          letter. Preview renders as a real HTML document (resume-template style).
+          You can edit the letter below and the preview updates live.
         </p>
       </div>
 
@@ -1509,7 +1670,8 @@ export default function CoverLetterGenerator() {
                 </div>
               ) : null}
               <div className="text-xs text-black/60 dark:text-white/60">
-                If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT).
+                If you upload a file, the generator extracts text server-side
+                (PDF/DOCX/TXT).
               </div>
             </label>
 
@@ -1541,7 +1703,9 @@ export default function CoverLetterGenerator() {
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Template</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Template
+              </div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
@@ -1553,7 +1717,9 @@ export default function CoverLetterGenerator() {
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/60 dark:text-white/60">Selected: {templateLabel}</div>
+              <div className="text-xs text-black/60 dark:text-white/60">
+                Selected: {templateLabel}
+              </div>
             </label>
 
             {/* Header details */}
@@ -1564,13 +1730,17 @@ export default function CoverLetterGenerator() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
-                  onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, fullName: e.target.value }))
+                  }
                   placeholder="Full name"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.locationLine}
-                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, locationLine: e.target.value }))
+                  }
                   placeholder="Location"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
@@ -1588,7 +1758,9 @@ export default function CoverLetterGenerator() {
                 />
                 <input
                   value={profile.linkedin}
-                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, linkedin: e.target.value }))
+                  }
                   placeholder="LinkedIn"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
                 />
@@ -1599,7 +1771,9 @@ export default function CoverLetterGenerator() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Tone</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Tone
+                  </div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
@@ -1618,7 +1792,9 @@ export default function CoverLetterGenerator() {
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Length</div>
+                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                  Length
+                </div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
@@ -1678,12 +1854,12 @@ export default function CoverLetterGenerator() {
               </div>
 
               <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate
-                “Sincerely”).
+                Leave “Closing” empty if your generated text already includes a
+                sign-off (prevents duplicate “Sincerely”).
               </div>
             </div>
 
-             {/* Generate */}
+            {/* Generate */}
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -1753,13 +1929,18 @@ export default function CoverLetterGenerator() {
                         }
 
                         if (downloadFormat === "docx") {
-                          // ✅ Real .docx (server-side)
-                          await downloadDocxViaApi("cover-letter.docx", coverLetterHtml || "");
+                          await downloadDocxViaApi(
+                            "cover-letter.docx",
+                            coverLetterHtml || ""
+                          );
                           return;
                         }
 
                         if (downloadFormat === "pdf") {
-                          await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                          await downloadPdfFromHtml(
+                            "cover-letter.pdf",
+                            coverLetterHtml || ""
+                          );
                           return;
                         }
                       } catch (e: any) {
