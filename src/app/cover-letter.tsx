@@ -104,7 +104,7 @@ export default function CoverLetterPage() {
   return (
     <main style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
       <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
-        Cover Letter Generator
+        Git-a-Job: Cover Letter Generator
       </h1>
       <p style={{ marginTop: 8, opacity: 0.8 }}>
         Paste resume + job posting → generate a tailored cover letter (separate

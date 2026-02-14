@@ -2634,7 +2634,7 @@ export default function ResumeMvp() {
 
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
           Analyze → auto-detect jobs → auto-assign bullets → rewrite selected → generate a clean
           template.
