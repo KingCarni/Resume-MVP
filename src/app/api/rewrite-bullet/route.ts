@@ -120,6 +120,7 @@ function buildSystemPrompt() {
     "Hard rules:",
     "- Do NOT invent new companies, products, teams, tools, metrics, or outcomes.",
     "- Do NOT add target company/product names unless they already exist in the original bullet.",
+    "- Do NOT import job requirements as if they were experience; only use facts already stated.",
     "- Keep tense as past tense (resume experience).",
     "- Preserve truthfulness; you may tighten wording and ordering, but not add claims.",
     "- Keep it one sentence. No semicolons unless absolutely necessary.",
@@ -218,12 +219,14 @@ function buildUserPrompt(args: {
   blocks.push(originalBullet);
 
   blocks.push("");
-  blocks.push("JOB POSTING (alignment only; do not copy company/product names):");
+  blocks.push("JOB POSTING (alignment only; do NOT copy company/product names; do NOT import requirements as experience):");
   blocks.push(jobText);
 
   blocks.push("");
   blocks.push(
-    `SUGGESTED KEYWORDS (use only if truthful): ${suggestedKeywords.join(", ") || "(none)"}`
+    `SUGGESTED KEYWORDS (safe-only; use only if already truthful in original bullet): ${
+      suggestedKeywords.join(", ") || "(none)"
+    }`
   );
 
   blocks.push("");
@@ -241,9 +244,7 @@ function buildUserPrompt(args: {
   blocks.push("- If the original opener is overused, choose a different strong verb that preserves meaning.");
 
   if (combinedAvoidPhrases.length) {
-    blocks.push(
-      `- Avoid these repeated phrases: ${combinedAvoidPhrases.join(", ")}`
-    );
+    blocks.push(`- Avoid these repeated phrases: ${combinedAvoidPhrases.join(", ")}`);
   }
 
   if (mustPreserveMeaning) {
@@ -297,7 +298,7 @@ async function generateRewrite(client: OpenAI, args: Parameters<typeof buildUser
 
   const resp = await client.chat.completions.create({
     model,
-    temperature: 0.45, // a bit more variety pressure
+    temperature: 0.35, // lower = less “creative importing”
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -361,9 +362,12 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (jobText.length > 25000) {
+
+    // ✅ Prevent FUNCTION_PAYLOAD_TOO_LARGE / oversized requests
+    // (also enforce this client-side by trimming before sending)
+    if (jobText.length > 6000) {
       return NextResponse.json(
-        { ok: false, error: "jobText too long. Keep under ~25k chars." },
+        { ok: false, error: "jobText too long. Keep under ~6k chars." },
         { status: 400 }
       );
     }
@@ -374,6 +378,12 @@ export async function POST(req: Request) {
       targetProducts,
       extraBlocked: blockedTerms,
     });
+
+    // ✅ KEY FIX (no job→experience blending):
+    // Only allow keywords that already appear in the ORIGINAL bullet.
+    const safeKeywords = findKeywordHits(originalBullet, usableKeywords);
+    const safeNorm = new Set(safeKeywords.map(normalizeForMatch));
+    const riskyKeywords = usableKeywords.filter((k) => !safeNorm.has(normalizeForMatch(k)));
 
     const client = new OpenAI({ apiKey });
 
@@ -396,7 +406,7 @@ export async function POST(req: Request) {
     const attempt1 = await generateRewrite(client, {
       originalBullet,
       jobText,
-      suggestedKeywords: usableKeywords,
+      suggestedKeywords: safeKeywords, // ✅ safe-only
       sourceCompany,
       targetCompany,
       targetProducts,
@@ -417,16 +427,19 @@ export async function POST(req: Request) {
     // Enforce opener + phrase bans
     const opener1 = normalizeForMatch(extractOpenerVerb(attempt1));
     const openerViolates = preferVerbVariety && opener1 && hardAvoidOpeners.includes(opener1);
-    const phraseViolates = preferVerbVariety && hardAvoidPhrases.length
-      ? containsAnyPhrase(attempt1, hardAvoidPhrases)
-      : false;
+    const phraseViolates =
+      preferVerbVariety && hardAvoidPhrases.length ? containsAnyPhrase(attempt1, hardAvoidPhrases) : false;
+
+    // ✅ detect if model smuggled job-only keywords anyway
+    const riskyFound1 = findKeywordHits(attempt1, riskyKeywords);
+    const riskyViolates = riskyFound1.length > 0;
 
     let retryUsed = false;
     let attempt2: string | null = null;
     let after2: ReturnType<typeof computeVerbStrength> | null = null;
 
     const needsRetry =
-      after1.baseScore < verbStrengthBefore.baseScore || openerViolates || phraseViolates;
+      after1.baseScore < verbStrengthBefore.baseScore || openerViolates || phraseViolates || riskyViolates;
 
     if (needsRetry) {
       retryUsed = true;
@@ -451,7 +464,7 @@ export async function POST(req: Request) {
       attempt2 = await generateRewrite(client, {
         originalBullet,
         jobText,
-        suggestedKeywords: usableKeywords,
+        suggestedKeywords: safeKeywords, // ✅ safe-only
         sourceCompany,
         targetCompany,
         targetProducts,
@@ -472,33 +485,49 @@ export async function POST(req: Request) {
       after2 = computeVerbStrength(attempt2, { mode: "after" });
     }
 
-    // Pick best rewrite (baseScore, then score)
+    // Pick best rewrite (prefer SAFE over "better" if unsafe)
     let bestRewrite = attempt1;
     let bestAfter = after1;
 
-    if (after2) {
-      const better =
+    const riskyFoundBest1 = riskyFound1;
+
+    let riskyFoundBest2: string[] = [];
+    if (attempt2) riskyFoundBest2 = findKeywordHits(attempt2, riskyKeywords);
+
+    if (after2 && attempt2) {
+      const bestIsSafe = riskyFoundBest1.length === 0;
+      const candIsSafe = riskyFoundBest2.length === 0;
+
+      const candidateBetterByStrength =
         after2.baseScore > bestAfter.baseScore ||
         (after2.baseScore === bestAfter.baseScore && after2.score >= bestAfter.score);
 
-      if (better) {
-        bestRewrite = attempt2!;
+      // Prefer safe candidate if current best is unsafe; otherwise use strength criteria
+      const chooseCandidate =
+        (candIsSafe && !bestIsSafe) || (candIsSafe === bestIsSafe && candidateBetterByStrength);
+
+      if (chooseCandidate) {
+        bestRewrite = attempt2;
         bestAfter = after2;
       }
     }
 
-    // Final enforcement: if we STILL violate opener rules, fallback to original (truth > style)
+    // Final enforcement: if we STILL violate opener rules or add risky keywords, fallback to original
     const finalOpener = normalizeForMatch(extractOpenerVerb(bestRewrite));
-    const finalViolates = preferVerbVariety && finalOpener && hardAvoidOpeners.includes(finalOpener);
+    const finalOpenerViolates =
+      preferVerbVariety && finalOpener && hardAvoidOpeners.includes(finalOpener);
+
+    const finalRiskyFound = findKeywordHits(bestRewrite, riskyKeywords);
+    const finalRiskyViolates = finalRiskyFound.length > 0;
 
     let usedOriginalFallback = false;
-    if (bestAfter.baseScore < verbStrengthBefore.baseScore || finalViolates) {
+    if (bestAfter.baseScore < verbStrengthBefore.baseScore || finalOpenerViolates || finalRiskyViolates) {
       usedOriginalFallback = true;
       bestRewrite = originalBullet;
       bestAfter = computeVerbStrength(originalBullet, { mode: "before" });
     }
 
-    const keywordHitsArr = findKeywordHits(bestRewrite, usableKeywords);
+    const keywordHitsArr = findKeywordHits(bestRewrite, safeKeywords);
 
     const blockedUniverse = [
       ...(targetCompany ? [targetCompany] : []),
@@ -514,15 +543,17 @@ export async function POST(req: Request) {
 
     const notes: string[] = [];
     notes.push("Rewrote for clarity + impact while preserving truthfulness.");
+    notes.push("Keyword guardrail enabled: only keywords already present in the original bullet are allowed.");
     if (preferVerbVariety) notes.push("Verb variety enabled (hard-enforced opener/phrase avoidance).");
     if (avoidPhrases.length) notes.push("Applied avoid list (verbs/phrases).");
     if (usedOpeners.length) notes.push("Used global usedOpeners to reduce opener repetition.");
     if (usedPhrases.length) notes.push("Used global usedPhrases to reduce repeated phrasing.");
-    if (retryUsed) notes.push("Auto-retried once (opener/phrase violation or strength regression).");
-    if (usedOriginalFallback)
-      notes.push("Kept original bullet (rewrite violated opener rules or reduced quality).");
+    if (retryUsed) notes.push("Auto-retried once (opener/phrase/risky-keyword violation or strength regression).");
+    if (usedOriginalFallback) notes.push("Kept original bullet (rewrite violated truth/variance rules or reduced quality).");
     if (blockedKeywords.length) notes.push("Removed blocked keywords from suggestions (guardrail).");
     if (blockedTermsFound.length) notes.push("Detected target-only term risk (blocked terms present).");
+    if (riskyKeywords.length)
+      notes.push("Job-derived keywords not in the original bullet were treated as risky/forbidden.");
 
     const regressedBase = bestAfter.baseScore < verbStrengthBefore.baseScore;
 
@@ -531,6 +562,11 @@ export async function POST(req: Request) {
       rewrittenBullet: bestRewrite,
       needsMoreInfo,
       notes,
+
+      // Transparency for debugging “mixing”
+      safeKeywords,
+      riskyKeywords,
+      riskyKeywordsFoundInRewrite: usedOriginalFallback ? [] : finalRiskyFound,
 
       keywordHits: keywordHitsArr,
       blockedKeywords,
