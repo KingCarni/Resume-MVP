@@ -2848,7 +2848,16 @@ export default function ResumeMvp() {
                 >
                   {loadingAnalyze ? "Analyzing…" : "Analyze"}
                 </button>
-              
+
+                <button
+                  type="button"
+                  onClick={handleRewriteSelected}
+                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                >
+                  {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+                </button>
+
                 <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
                     type="checkbox"
@@ -3030,36 +3039,36 @@ export default function ResumeMvp() {
           {analysis && rewritePlan.length ? (
             <div className="mt-4">
               <div className="flex flex-wrap items-end justify-between gap-2">
-              <h3 className="text-sm font-extrabold">Rewrite Plan (select bullets)</h3>
+            <h3 className="text-sm font-extrabold">Rewrite Plan (select bullets)</h3>
 
-              <div className="flex flex-wrap items-center gap-3">
-                {/* ✅ Move Rewrite Selected here */}
-                <button
-                  type="button"
-                  onClick={handleRewriteSelected}
-                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-                >
-                  {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
-                </button>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* ✅ Move Rewrite Selected here */}
+              <button
+                type="button"
+                onClick={handleRewriteSelected}
+                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+              >
+                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => selectAll(rewritePlan.length)}
-                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                >
-                  Select all
-                </button>
+              <button
+                type="button"
+                onClick={() => selectAll(rewritePlan.length)}
+                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+              >
+                Select all
+              </button>
 
-                <button
-                  type="button"
-                  onClick={selectNone}
-                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                >
-                  Select none
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={selectNone}
+                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+              >
+                Select none
+              </button>
             </div>
+          </div>
 
 
               <div className="mt-3 grid gap-3">
