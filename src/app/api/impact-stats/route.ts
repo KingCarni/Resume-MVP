@@ -20,19 +20,19 @@ export async function GET() {
   if (!dbUrl) {
     return NextResponse.json(
       { ok: false, error: "Missing DATABASE_URL (Neon/Vercel Storage env var)" },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 
   const client = new Client({
     connectionString: dbUrl,
+    // Neon/Vercel Postgres typically requires SSL; this avoids cert issues
     ssl: { rejectUnauthorized: false },
   });
 
   try {
     await client.connect();
 
-    // Count "yes" votes per event (interview/job)
     const r = await client.query(
       `select event, count(*)::int as c
        from impact_votes
@@ -49,12 +49,14 @@ export async function GET() {
       if (e === "job") counts.job = c;
     }
 
-    return NextResponse.json({ ok: true, counts });
+    return NextResponse.json(
+      { ok: true, counts },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (e: any) {
     const msg = String(e?.message || "");
     const code = String(e?.code || "");
 
-    // If table missing, return zeros (so UI never crashes)
     const relationMissing =
       code === "42P01" ||
       (msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist"));
@@ -62,12 +64,15 @@ export async function GET() {
     console.error("impact-stats error:", e);
 
     if (relationMissing) {
-      return NextResponse.json({ ok: true, counts: { interview: 0, job: 0 } });
+      return NextResponse.json(
+        { ok: true, counts: { interview: 0, job: 0 } },
+        { headers: { "Cache-Control": "no-store" } }
+      );
     }
 
     return NextResponse.json(
       { ok: false, error: msg || "DB error", code: code || undefined },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   } finally {
     await client.end().catch(() => {});
