@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 
 function normalize(s: string) {
   return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -63,14 +64,18 @@ type RewriteApiResponse = {
   keywordHits?: string[];
   blockedKeywords?: string[];
   needsMoreInfo?: boolean;
+
+  // Optional transparency fields (if your API returns them)
+  safeKeywords?: string[];
+  riskyKeywords?: string[];
+  riskyKeywordsFoundInRewrite?: string[];
 };
 
 type Props = {
-  // Minimal props so you can plug this in anywhere
   defaultOriginalBullet?: string;
   defaultJobText?: string;
-  defaultTargetCompany?: string; // e.g. "Scopely"
-  defaultTargetProducts?: string[]; // e.g. ["Monopoly GO!", "Monopoly"]
+  defaultTargetCompany?: string;
+  defaultTargetProducts?: string[];
   defaultRole?: string;
   defaultTone?: string;
 };
@@ -99,8 +104,7 @@ export default function KeywordNudgeRewritePanel({
   const rawKeywords = useMemo(() => splitKeywords(keywordsText), [keywordsText]);
 
   const targetProductsList = useMemo(
-    () =>
-      splitKeywords(targetProducts).map((p) => p.trim()).filter(Boolean),
+    () => splitKeywords(targetProducts).map((p) => p.trim()).filter(Boolean),
     [targetProducts]
   );
 
@@ -114,24 +118,49 @@ export default function KeywordNudgeRewritePanel({
     [rawKeywords, targetCompany, targetProductsList]
   );
 
+  const requestPreview = useMemo(() => {
+    // Build the exact payload that will be sent (trimmed/capped)
+    const payload = buildRewriteBulletPayload({
+      originalBullet,
+      jobText,
+      suggestedKeywords: usable,
+      role,
+      tone,
+      sourceCompany: "",
+      targetCompany,
+      targetProducts: targetProductsList,
+    });
+
+    let bytes = 0;
+    try {
+      bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+    } catch {
+      bytes = 0;
+    }
+
+    return { payload, bytes };
+  }, [originalBullet, jobText, usable, role, tone, targetCompany, targetProductsList]);
+
   async function onRewrite() {
     setIsLoading(true);
     setResult(null);
 
     try {
+      const payload = buildRewriteBulletPayload({
+        originalBullet,
+        jobText,
+        suggestedKeywords: usable, // sanitized list only (payload builder caps it further)
+        role,
+        tone,
+        sourceCompany: "", // optional — you can wire this in later
+        targetCompany,
+        targetProducts: targetProductsList,
+      });
+
       const res = await fetch("/api/rewrite-bullet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          originalBullet,
-          jobText,
-          suggestedKeywords: usable, // ✅ sanitized list only
-          role,
-          tone,
-          sourceCompany: "", // optional — you can wire this in later
-          targetCompany, // ✅ server can enforce too
-          targetProducts: targetProductsList, // ✅ server can enforce too
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = (await res.json()) as RewriteApiResponse;
@@ -223,10 +252,9 @@ export default function KeywordNudgeRewritePanel({
             onChange={(e) => setKeywordsText(e.target.value)}
             rows={3}
             style={{ padding: 10, borderRadius: 8, border: "1px solid #444" }}
-            placeholder={`e.g.\nrisk-based testing\nConfluence\business priorities\nAPI testing`}
+            placeholder={`e.g.\nrisk-based testing\nConfluence\nbusiness priorities\nAPI testing`}
           />
 
-          {/* ✅ UI nudge */}
           <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.4 }}>
             Use <b>skills and responsibilities</b> (e.g., “risk-based testing”, “Confluence”,
             “business priorities”).{" "}
@@ -236,7 +264,6 @@ export default function KeywordNudgeRewritePanel({
             </b>
           </div>
 
-          {/* ✅ Show what gets removed */}
           {removed.length > 0 && (
             <div
               style={{
@@ -247,18 +274,25 @@ export default function KeywordNudgeRewritePanel({
                 fontSize: 13,
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                Removed from keywords
-              </div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Removed from keywords</div>
               <div style={{ opacity: 0.85 }}>
                 {removed.join(", ")} (company/product identifiers)
               </div>
             </div>
           )}
 
-          {/* ✅ Show what will actually be sent */}
           <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
             Will send keywords: {usable.length ? usable.join(", ") : "(none)"}
+          </div>
+
+          {/* ✅ Debug / safety preview: what will actually be sent after caps */}
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+            Payload size: {requestPreview.bytes.toLocaleString()} bytes{" "}
+            {requestPreview.bytes > 150000 ? (
+              <span style={{ opacity: 0.9 }}>
+                — ⚠️ large (trim job text / keywords)
+              </span>
+            ) : null}
           </div>
         </label>
 
@@ -322,14 +356,21 @@ export default function KeywordNudgeRewritePanel({
                   </div>
                 )}
 
-                {/* If your API returns blockedKeywords too, show it (optional) */}
-                {Array.isArray(result.blockedKeywords) &&
-                  result.blockedKeywords.length > 0 && (
+                {Array.isArray(result.blockedKeywords) && result.blockedKeywords.length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 13, opacity: 0.9 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Blocked by API</div>
+                    <div>{result.blockedKeywords.join(", ")}</div>
+                  </div>
+                )}
+
+                {/* Optional transparency from API (helps validate guardrails) */}
+                {Array.isArray(result.riskyKeywordsFoundInRewrite) &&
+                  result.riskyKeywordsFoundInRewrite.length > 0 && (
                     <div style={{ marginTop: 10, fontSize: 13, opacity: 0.9 }}>
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                        Blocked by API
+                        Risky keywords detected (forbidden)
                       </div>
-                      <div>{result.blockedKeywords.join(", ")}</div>
+                      <div>{result.riskyKeywordsFoundInRewrite.join(", ")}</div>
                     </div>
                   )}
               </>

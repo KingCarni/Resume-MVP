@@ -6,7 +6,7 @@ import Providers from "./providers";
 import ThemeToggle from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
-  title: "Resume MVP",
+  title: "Git-a-Job",
   description: "AI-Powered resume analysis MVP",
 };
 
@@ -20,7 +20,7 @@ export default function RootLayout({
           <header className="border-b border-black/10 dark:border-white/10">
             <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
               <Link href="/" className="font-semibold">
-                Resume MVP
+                Git-a-Job: Resume Builder
               </Link>
 
               <div className="flex items-center gap-3">

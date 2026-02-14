@@ -5,6 +5,7 @@ import React, { useMemo, useRef, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import ImpactVote from "@/components/ImpactVote";
 import FeedbackWidget from "@/components/FeedbackWidget";
+import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 
 /** ---------------- Types ---------------- */
 
@@ -2157,11 +2158,13 @@ export default function ResumeMvp() {
   }
 
   async function postRewriteWithFallback(body: any) {
-    const res = await fetch("/api/rewrite-bullet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+  const safeBody = buildRewriteBulletPayload(body);
+
+  const res = await fetch("/api/rewrite-bullet", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(safeBody),
+  });
 
     const payload = await parseApiResponse(res);
 
