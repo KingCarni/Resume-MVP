@@ -13,29 +13,102 @@ function normalizeLines(text: string) {
   return String(text ?? "")
     .replace(/\r\n/g, "\n")
     .split("\n")
+    // NOTE: keep original left-padding for indentation checks if needed later
+    .map((l) => l.replace(/\t/g, "  "))
     .map((l) => l.trim())
     .filter(Boolean);
 }
 
+function cleanLine(line: string) {
+  return String(line || "").replace(/\s+/g, " ").trim();
+}
+
+function digitCount(s: string) {
+  return (s.match(/\d/g) || []).length;
+}
+
+function looksLikePersonName(line: string) {
+  const l = cleanLine(line);
+
+  // Very small heuristic: "First Last" or "First M Last"
+  // Avoid flagging normal bullet sentences (keep it short).
+  if (l.length > 60) return false;
+
+  // Reject if it contains punctuation typical of bullets/sentences
+  if (/[.,;:()@/\\|]/.test(l)) return false;
+
+  // 2–3 capitalized tokens
+  const m = l.match(/^([A-Z][a-z]+)(\s+[A-Z]\.)?(\s+[A-Z][a-z]+)(\s+[A-Z][a-z]+)?$/);
+  return Boolean(m);
+}
+
+function looksLikeContactOrReferenceLine(line: string) {
+  const l = cleanLine(line);
+  if (!l) return true;
+
+  // Emails
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(l)) return true;
+
+  // URLs (linkedin/portfolio/etc.)
+  if (/\bhttps?:\/\/\S+|\bwww\.\S+/i.test(l)) return true;
+  if (/\blinkedin\.com\/in\/\S+/i.test(l)) return true;
+
+  // Phone-ish: 7+ digits total covers lots of formats
+  if (digitCount(l) >= 7) return true;
+
+  // Reference headings / common contact labels
+  if (
+    /\b(references?|reference available|available upon request|contact|phone|mobile|email|linkedin|github|portfolio)\b/i.test(
+      l
+    )
+  ) {
+    return true;
+  }
+
+  // “Name” lines that are likely a reference/contact (but don’t overdo it)
+  if (looksLikePersonName(l)) return true;
+
+  // Addresses (street number + street) — basic
+  if (/^\d+\s+\w+/.test(l) && l.length <= 80) return true;
+
+  return false;
+}
+
+function isDefinitelyNotExperienceBullet(line: string) {
+  // This is used to FILTER bullets. Keep it strict, but not too aggressive.
+  const l = cleanLine(line);
+  if (!l) return true;
+
+  // Section headings we don’t want as bullets
+  if (/^(education|certificates?|certifications|achievements|personal skills|skills)$/i.test(l))
+    return true;
+
+  // References/contact
+  if (looksLikeContactOrReferenceLine(l)) return true;
+
+  return false;
+}
+
 /** Accept a bunch of common bullet markers */
 function isBulletLine(line: string) {
-  return /^(\u2022|•|-|\*|·|o||‣|∙|–)\s+/.test(line);
+  return /^(\u2022|•|-|\*|·|o||‣|∙|–|—)\s+/.test(line);
 }
 
 function stripBullet(line: string) {
-  return line.replace(/^(\u2022|•|-|\*|·|o||‣|∙|–)\s+/, "").trim();
+  return line.replace(/^(\u2022|•|-|\*|·|o||‣|∙|–|—)\s+/, "").trim();
 }
 
 /**
- * STRICT job anchor detection (same as before):
+ * STRICT job anchor detection:
  * We only start a new job when we see a month+year date range.
  * Example: "Jan 2021 – Present" or "Sept 2020 - Mar 2022"
  */
 function isDateRangeLine(line: string) {
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
+  const dash = "[–—-]";
   const re = new RegExp(
-    `\\b${month}\\s+${year}\\s*[–-]\\s*(${month}\\s+${year}|present)\\b`,
+    `\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`,
     "i"
   );
   return re.test(line);
@@ -44,8 +117,9 @@ function isDateRangeLine(line: string) {
 function extractDateRange(line: string) {
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
+  const dash = "[–—-]";
   const re = new RegExp(
-    `(${month}\\s+${year}\\s*[–-]\\s*(${month}\\s+${year}|present))`,
+    `(${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current))`,
     "i"
   );
   const m = line.match(re);
@@ -54,10 +128,6 @@ function extractDateRange(line: string) {
 
 function uid() {
   return `job_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-}
-
-function cleanLine(line: string) {
-  return (line || "").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -95,6 +165,7 @@ function parseHeader(companyMaybe: string, titleMaybe: string, inlineHeader: str
 }
 
 function looksLikeContactOrLink(line: string) {
+  // Keep this for header tracking (prev1/prev2). More permissive than the bullet filter.
   const l = cleanLine(line);
   const contactPrefixRegex = /^(p:|e:|l:)\s*/i;
   const emailRegex = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
@@ -120,24 +191,32 @@ function looksLikeHeading(line: string) {
 /**
  * Hybrid “bullet-ish” line:
  * - long enough to be meaningful
- * - not contact/link
+ * - not contact/link/reference/name/email/phone
  * - not a heading
  * - not another date range
  */
 function isBulletishSentence(line: string) {
   const l = cleanLine(line);
   if (!l) return false;
-  if (looksLikeContactOrLink(l)) return false;
   if (looksLikeHeading(l)) return false;
   if (isDateRangeLine(l)) return false;
+
+  // This is the important fix: don’t accept contact/reference/name-ish lines as bullets
+  if (looksLikeContactOrReferenceLine(l)) return false;
 
   // Avoid lines that look like only a label (too short)
   if (l.length < 25) return false;
 
   // Avoid obvious "company/title" label lines inside job blocks
-  // (common in PDFs where header splits weirdly)
   if (/^(company|role|title|location|dates)\s*:/i.test(l)) return false;
 
+  return true;
+}
+
+function shouldKeepBulletText(b: string) {
+  const l = cleanLine(b);
+  if (l.length < 10) return false;
+  if (isDefinitelyNotExperienceBullet(l)) return false;
   return true;
 }
 
@@ -162,7 +241,7 @@ export function extractResumeBullets(resumeText: string): {
 
     // Start new job when we hit a date range line
     if (isDateRangeLine(line)) {
-      // finalize previous (keep even if no bullets? we’ll keep it only if bullets exist)
+      // finalize previous (only keep if bullets exist)
       if (current && current.bullets.length) jobs.push(current);
 
       const dates = extractDateRange(line) || line;
@@ -186,11 +265,14 @@ export function extractResumeBullets(resumeText: string): {
       continue;
     }
 
-    // If explicit bullet markers exist, always take them
+    // If explicit bullet markers exist, always consider them
     if (isBulletLine(line)) {
-      const b = stripBullet(line);
-      if (b.length >= 10) {
+      const b0 = stripBullet(line);
+      const b = cleanLine(b0);
+
+      if (shouldKeepBulletText(b)) {
         bulletsFlat.push(b);
+
         if (!current) {
           // If bullets appear before any job anchor, store under placeholder job
           current = {
@@ -201,16 +283,20 @@ export function extractResumeBullets(resumeText: string): {
             bullets: [],
           };
         }
+
         current.bullets.push(b);
       }
+
       continue;
     }
 
     // HYBRID: if we're inside a job, accept bullet-ish sentences too
     if (current && isBulletishSentence(line)) {
-      const b = line;
-      bulletsFlat.push(b);
-      current.bullets.push(b);
+      const b = cleanLine(line);
+      if (shouldKeepBulletText(b)) {
+        bulletsFlat.push(b);
+        current.bullets.push(b);
+      }
       continue;
     }
 
@@ -225,7 +311,10 @@ export function extractResumeBullets(resumeText: string): {
   if (current && current.bullets.length) jobs.push(current);
 
   // De-dupe bullets (PDF extraction can repeat lines)
-  const dedup = (arr: string[]) => Array.from(new Set(arr.map(cleanLine))).filter(Boolean);
+  const dedup = (arr: string[]) =>
+    Array.from(new Set(arr.map(cleanLine)))
+      .map(cleanLine)
+      .filter((x) => shouldKeepBulletText(x));
 
   const cleanJobs = jobs.map((j) => ({
     ...j,
