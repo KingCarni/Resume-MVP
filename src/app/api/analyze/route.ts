@@ -32,30 +32,97 @@ function normalizeResumeText(input: unknown) {
   const raw = String(input ?? "");
   return raw
     .replace(/\r\n/g, "\n")
+    .replace(/\u00A0/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
+/** ---------------- DOCX helpers (FIX: preserve list bullets) ---------------- */
+
+function stripTagsToText(html: string) {
+  return String(html ?? "")
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|td|th)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractLiText(html: string): string[] {
+  const matches = [...String(html ?? "").matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
+  const bullets = matches
+    .map((m) => stripTagsToText(m[1]))
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(bullets));
+}
+
+/**
+ * Extract DOCX in a bullet-aware way:
+ * - Convert to HTML (keeps lists)
+ * - Pull <li> items as bullets
+ * - Also provide a plain-text version that includes "- " lines so downstream parsers work
+ */
+async function extractDocxTextAndBullets(file: File): Promise<{
+  text: string;
+  bullets: string[];
+  html: string;
+}> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  // Prefer HTML conversion (preserves lists)
+  const { value: html } = await mammoth.convertToHtml({ buffer });
+  const bullets = extractLiText(html);
+
+  // Plain text from HTML
+  const text = stripTagsToText(html);
+
+  // Make sure bullet markers exist in the text for any existing detectors
+  const textWithBullets =
+    bullets.length > 0 ? `${text}\n\n${bullets.map((b) => `- ${b}`).join("\n")}` : text;
+
+  return { text: textWithBullets, bullets, html };
+}
+
+/** ---------------- Experience section slicing ---------------- */
+
 /**
  * Pull ONLY the Experience section from the resume text.
  * Priority:
- * 1) If we find "Professional Experience", slice from there -> next major heading
- * 2) Otherwise, heuristically start at first job header line with date range
- *    and end at Skills / Certificates / References / etc.
+ * 1) Recognize headings ("Employment History", "Work Experience", etc.) and slice until next major heading
+ * 2) Otherwise, heuristically start at first job header line with a date range and end at Skills / Certificates / References / etc.
  */
 function extractExperienceSection(fullText: string) {
   const text = normalizeResumeText(fullText);
   const lower = text.toLowerCase();
 
+  // More inclusive end headings (avoid ending too early if "summary" appears near top)
   const endHeadingRegex =
-    /\n\s*(skills|certificates|certifications|education|projects|references|areas of expertise|summary|technical skills)\b/i;
+    /\n\s*(skills|personal skills|technical skills|certificates|certifications|education|projects|references|achievements|training|volunteer|interests)\b/i;
 
-  const startNeedle = "professional experience";
-  const startIdx = lower.indexOf(startNeedle);
+  // Accept common experience headings
+  const startNeedles = [
+    "professional experience",
+    "work experience",
+    "employment history",
+    "experience",
+  ];
 
-  if (startIdx !== -1) {
-    const afterStart = text.slice(startIdx);
+  let bestStartIdx = -1;
+  let bestNeedle = "";
+  for (const needle of startNeedles) {
+    const idx = lower.indexOf(needle);
+    if (idx !== -1 && (bestStartIdx === -1 || idx < bestStartIdx)) {
+      bestStartIdx = idx;
+      bestNeedle = needle;
+    }
+  }
+
+  if (bestStartIdx !== -1) {
+    const afterStart = text.slice(bestStartIdx);
     const endMatch = afterStart.match(endHeadingRegex);
     const endIdx = endMatch?.index;
 
@@ -65,16 +132,17 @@ function extractExperienceSection(fullText: string) {
     return {
       experienceText: normalizeResumeText(experienceText),
       foundSection: true,
-      mode: "heading",
+      mode: `heading:${bestNeedle}`,
     };
   }
 
+  // Heuristic fallback: find first date-range-ish line
   const lines = text.split("\n");
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
-
+  const dash = "[–—-]";
   const dateRangeRegex = new RegExp(
-    `\\b${month}\\s+${year}\\s*[–-]\\s*(${month}\\s+${year}|present)\\b`,
+    `\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`,
     "i"
   );
 
@@ -82,7 +150,7 @@ function extractExperienceSection(fullText: string) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i].trim();
     if (!l) continue;
-    if (dateRangeRegex.test(l) && l.length >= 20) {
+    if (dateRangeRegex.test(l) && l.length >= 14) {
       startLine = i;
       break;
     }
@@ -136,13 +204,8 @@ function extractMetaBlocks(fullText: string) {
 
     if (l.length <= 110 && metricLikeRegex.test(l)) {
       // avoid date ranges being treated as metrics
-      if (
-        /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(
-          l
-        )
-      ) {
+      if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l))
         continue;
-      }
 
       // avoid phone numbers
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
@@ -158,13 +221,7 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** --------- File extraction --------- */
-
-async function extractTextFromDocx(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const parsed = await mammoth.extractRawText({ buffer });
-  return parsed?.value ?? "";
-}
+/** ---------------- File extraction ---------------- */
 
 async function extractTextFromPdf(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -189,10 +246,26 @@ async function extractTextFromPdf(file: File): Promise<string> {
   return text;
 }
 
-async function extractResumeTextFromFile(file: File): Promise<string> {
+/**
+ * Return BOTH resumeText and any bullets we can confidently extract at file-read time.
+ * (DOCX lists often get lost if you only extract raw text.)
+ */
+async function extractResumeFromFile(file: File): Promise<{
+  text: string;
+  bulletsFromFile?: string[];
+}> {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".docx")) return extractTextFromDocx(file);
-  if (name.endsWith(".pdf")) return extractTextFromPdf(file);
+
+  if (name.endsWith(".docx")) {
+    const { text, bullets } = await extractDocxTextAndBullets(file);
+    return { text, bulletsFromFile: bullets };
+  }
+
+  if (name.endsWith(".pdf")) {
+    const text = await extractTextFromPdf(file);
+    return { text, bulletsFromFile: undefined };
+  }
+
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
 
@@ -242,6 +315,9 @@ export async function POST(req: Request) {
     let jobText = "";
     let onlyExperienceBullets: boolean = true;
 
+    // NEW: file-level bullets (DOCX <li> extraction)
+    let bulletsFromFile: string[] = [];
+
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -266,8 +342,11 @@ export async function POST(req: Request) {
           );
         }
 
-        const extracted = await extractResumeTextFromFile(file);
-        resumeText = normalizeResumeText(extracted);
+        const extracted = await extractResumeFromFile(file);
+        resumeText = normalizeResumeText(extracted.text);
+        bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
+          ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
+          : [];
       } else {
         resumeText = normalizeResumeText(resumeTextFallback);
       }
@@ -311,16 +390,15 @@ export async function POST(req: Request) {
     const metaBlocks = extractMetaBlocks(resumeText);
 
     const experienceSlice = extractExperienceSection(resumeText);
-    const bulletSourceText = onlyExperienceBullets
-      ? experienceSlice.experienceText
-      : resumeText;
+    const bulletSourceText = onlyExperienceBullets ? experienceSlice.experienceText : resumeText;
 
     /**
-     * ✅ NEW: Support BOTH extractor return shapes
+     * ✅ Support BOTH extractor return shapes
      * - old: string[]
      * - new: { bullets: string[]; jobs: ExtractedJob[] }
      *
      * We run strict extraction on experience text, and if empty we try bulletSourceText.
+     * PLUS: for DOCX, we can use bulletsFromFile as an additional fallback.
      */
     let experienceJobs: any[] = [];
     let bullets: string[] = [];
@@ -367,6 +445,12 @@ export async function POST(req: Request) {
       }
     };
 
+    // 0) If we have DOCX list bullets, seed them first (they’re usually the most reliable)
+    // We'll still prefer structured jobs from extractResumeBullets if available.
+    const seededFileBullets = (bulletsFromFile || [])
+      .map((b) => String(b || "").trim())
+      .filter(Boolean);
+
     // 1) strict on experience slice
     const strict1 = tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
@@ -397,7 +481,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3) if still empty, hard fail with useful hint
+    // 3) if still empty, fall back to DOCX list bullets (if present)
+    if (!bullets.length && seededFileBullets.length) {
+      bullets = seededFileBullets;
+
+      const fallbackJobId = experienceJobs[0]?.id || "job_default";
+      bulletJobIds = bullets.map(() => fallbackJobId);
+    }
+
+    // 4) if still empty, hard fail with useful hint
     if (!bullets.length) {
       return NextResponse.json(
         {
@@ -408,6 +500,7 @@ export async function POST(req: Request) {
             foundExperienceSection: experienceSlice.foundSection,
             experienceMode: experienceSlice.mode,
             experienceLen: experienceSlice.experienceText.length,
+            bulletsFromFileCount: seededFileBullets.length,
           },
         },
         { status: 400 }
@@ -419,7 +512,6 @@ export async function POST(req: Request) {
     let weakBullets: any[] = [];
 
     try {
-      // ✅ FIX: convert string[] -> ResumeBullet[] for suggestKeywordsForBullets typing
       const bulletObjs = normalizeBulletsForSuggestions({
         bullets,
         bulletJobIds,
@@ -500,6 +592,8 @@ export async function POST(req: Request) {
         experienceLen: experienceSlice.experienceText.length,
         foundExperienceSection: experienceSlice.foundSection,
         experienceMode: experienceSlice.mode,
+
+        bulletsFromFileCount: seededFileBullets.length,
 
         jobsDetected: experienceJobs.length,
         jobsWithBullets: experienceJobs.filter((j) => j.bullets?.length).length,
