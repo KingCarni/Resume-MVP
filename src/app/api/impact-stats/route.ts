@@ -15,48 +15,68 @@ function getDbUrl() {
   );
 }
 
+type ImpactEvent = "interview" | "job";
+type ImpactAnswer = "yes" | "no";
+
+function emptyAllResponses() {
+  return {
+    interview: { yes: 0, no: 0 },
+    job: { yes: 0, no: 0 },
+  };
+}
+
 export async function GET() {
   const dbUrl = getDbUrl();
   if (!dbUrl) {
     return NextResponse.json(
-      { ok: false, error: "Missing DATABASE_URL (Neon/Vercel Storage env var)" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
+      {
+        ok: false,
+        error: "Missing DATABASE_URL (Neon/Vercel Storage env var)",
+        counts: { interview: 0, job: 0 },
+        allResponses: emptyAllResponses(),
+      },
+      { status: 500 }
     );
   }
 
   const client = new Client({
     connectionString: dbUrl,
-    // Neon/Vercel Postgres typically requires SSL; this avoids cert issues
     ssl: { rejectUnauthorized: false },
   });
 
   try {
     await client.connect();
 
+    // Return ALL responses grouped by event + answer
     const r = await client.query(
-      `select event, count(*)::int as c
+      `select event, answer, count(*)::int as c
        from impact_votes
-       where answer = 'yes'
-       group by event`
+       group by event, answer`
     );
 
-    const counts = { interview: 0, job: 0 };
+    const allResponses = emptyAllResponses();
 
     for (const row of r.rows || []) {
-      const e = String(row.event || "");
+      const event = String(row.event || "") as ImpactEvent;
+      const answer = String(row.answer || "") as ImpactAnswer;
       const c = Number(row.c || 0);
-      if (e === "interview") counts.interview = c;
-      if (e === "job") counts.job = c;
+
+      if ((event === "interview" || event === "job") && (answer === "yes" || answer === "no")) {
+        allResponses[event][answer] = c;
+      }
     }
 
-    return NextResponse.json(
-      { ok: true, counts },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    const counts = {
+      interview: allResponses.interview.yes,
+      job: allResponses.job.yes,
+    };
+
+    return NextResponse.json({ ok: true, counts, allResponses });
   } catch (e: any) {
     const msg = String(e?.message || "");
     const code = String(e?.code || "");
 
+    // If table missing, return zeros so UI never crashes
     const relationMissing =
       code === "42P01" ||
       (msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist"));
@@ -64,15 +84,22 @@ export async function GET() {
     console.error("impact-stats error:", e);
 
     if (relationMissing) {
-      return NextResponse.json(
-        { ok: true, counts: { interview: 0, job: 0 } },
-        { headers: { "Cache-Control": "no-store" } }
-      );
+      return NextResponse.json({
+        ok: true,
+        counts: { interview: 0, job: 0 },
+        allResponses: emptyAllResponses(),
+      });
     }
 
     return NextResponse.json(
-      { ok: false, error: msg || "DB error", code: code || undefined },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
+      {
+        ok: false,
+        error: msg || "DB error",
+        code: code || undefined,
+        counts: { interview: 0, job: 0 },
+        allResponses: emptyAllResponses(),
+      },
+      { status: 500 }
     );
   } finally {
     await client.end().catch(() => {});
