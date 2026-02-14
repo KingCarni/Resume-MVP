@@ -6,7 +6,7 @@ export type ResumeBullet = {
 };
 
 function normalizeSpaces(s: string) {
-  return s.replace(/\s+/g, " ").trim();
+  return String(s || "").replace(/\s+/g, " ").trim();
 }
 
 // Detect many common bullet starters (Word/Docs copy-paste included)
@@ -37,14 +37,54 @@ function looksLikeHeading(line: string) {
   // Avoid grabbing section headings as bullets
   const l = line.trim();
   if (l.length <= 3) return true;
-  if (/^(experience|work experience|skills|summary|education|projects|certifications)\b/i.test(l)) return true;
+  if (
+    /^(experience|work experience|skills|summary|education|projects|certifications)\b/i.test(l)
+  )
+    return true;
   // All-caps short lines are often headings
   if (l.length < 40 && l === l.toUpperCase() && /[A-Z]/.test(l)) return true;
   return false;
 }
 
+function looksLikeContactOrReferenceLine(s: string) {
+  const t = normalizeSpaces(s);
+
+  // Emails
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(t)) return true;
+
+  // Phone-ish: 7+ digits total (covers 5551234, 604-555-1234, +1 (604) 555-1234)
+  const digitCount = (t.match(/\d/g) || []).length;
+  if (digitCount >= 7) return true;
+
+  // Common “reference/contact header” lines
+  if (
+    /\b(references?|reference available|contact|phone|mobile|email|linkedin|github|portfolio)\b/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+
+  // URLs (often linkedin/portfolio)
+  if (/\bhttps?:\/\/\S+|\bwww\.\S+/i.test(t)) return true;
+
+  // “Name, Title” style lines that are usually references
+  // (simple heuristic: two Capitalized words near start, short line)
+  if (t.length <= 60 && /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b/.test(t)) return true;
+
+  return false;
+}
+
+function shouldKeepBullet(text: string) {
+  const cleaned = normalizeSpaces(text);
+  if (cleaned.length < 12) return false;
+  if (looksLikeHeading(cleaned)) return false;
+  if (looksLikeContactOrReferenceLine(cleaned)) return false;
+  return true;
+}
+
 export function extractResumeBullets(resumeText: string): ResumeBullet[] {
-  const lines = resumeText
+  const lines = String(resumeText || "")
     .replace(/\r\n/g, "\n")
     .split("\n");
 
@@ -58,8 +98,7 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
     if (!trimmed) {
       // blank line ends a bullet continuation
       if (current) {
-        const cleaned = normalizeSpaces(current);
-        if (cleaned.length >= 12 && !looksLikeHeading(cleaned)) bullets.push(cleaned);
+        if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
         current = null;
       }
       continue;
@@ -70,8 +109,7 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
     if (start) {
       // flush previous bullet
       if (current) {
-        const cleaned = normalizeSpaces(current);
-        if (cleaned.length >= 12 && !looksLikeHeading(cleaned)) bullets.push(cleaned);
+        if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
       }
       current = start;
       continue;
@@ -81,14 +119,16 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
     const isIndented = /^\s{2,}/.test(line);
 
     if (current && isIndented) {
-      current = `${current} ${trimmed}`;
+      // Prevent contact/ref lines from polluting a legitimate bullet
+      if (!looksLikeContactOrReferenceLine(trimmed)) {
+        current = `${current} ${trimmed}`;
+      }
       continue;
     }
 
     // If we have a current bullet and this line is NOT indented, it's probably a new paragraph/section
     if (current) {
-      const cleaned = normalizeSpaces(current);
-      if (cleaned.length >= 12 && !looksLikeHeading(cleaned)) bullets.push(cleaned);
+      if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
       current = null;
     }
 
@@ -97,13 +137,13 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
 
   // flush last bullet
   if (current) {
-    const cleaned = normalizeSpaces(current);
-    if (cleaned.length >= 12 && !looksLikeHeading(cleaned)) bullets.push(cleaned);
+    if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
   }
 
   // Deduplicate while preserving order
   const seen = new Set<string>();
   const out: ResumeBullet[] = [];
+
   for (const b of bullets) {
     const key = b.toLowerCase();
     if (seen.has(key)) continue;
