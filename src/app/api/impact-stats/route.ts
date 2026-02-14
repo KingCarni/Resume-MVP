@@ -5,16 +5,6 @@ import { Client } from "pg";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function getDbUrl() {
-  return (
-    process.env.DATABASE_URL ||
-    process.env.DATABASE_POSTGRES_URL ||
-    process.env.DATABASE_URL_UNPOOLED ||
-    process.env.DATABASE_POSTGRES_URL_NON_POOLING ||
-    ""
-  );
-}
-
 type ImpactEvent = "interview" | "job";
 type ImpactAnswer = "yes" | "no";
 
@@ -25,13 +15,49 @@ function emptyAllResponses() {
   };
 }
 
+function okResponse(payload: any, init?: ResponseInit) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      ...(init?.headers || {}),
+    },
+  });
+}
+
+function getDbUrl() {
+  // Covers: Vercel Postgres (Storage), Neon, and your earlier manual DATABASE_URL setup
+  const candidates = [
+    // Vercel Postgres (most common)
+    process.env.POSTGRES_URL,
+    process.env.POSTGRES_URL_NON_POOLING,
+    process.env.POSTGRES_PRISMA_URL,
+    process.env.POSTGRES_URL_NO_SSL,
+
+    // Some templates / older variants
+    process.env.VERCEL_POSTGRES_URL,
+    process.env.VERCEL_POSTGRES_URL_NON_POOLING,
+
+    // Your custom names
+    process.env.DATABASE_URL,
+    process.env.DATABASE_POSTGRES_URL,
+    process.env.DATABASE_URL_UNPOOLED,
+    process.env.DATABASE_POSTGRES_URL_NON_POOLING,
+  ].filter(Boolean);
+
+  return (candidates[0] as string) || "";
+}
+
 export async function GET() {
   const dbUrl = getDbUrl();
+
+  // Always return a non-crashy shape, even if DB is missing
   if (!dbUrl) {
-    return NextResponse.json(
+    return okResponse(
       {
         ok: false,
-        error: "Missing DATABASE_URL (Neon/Vercel Storage env var)",
+        error:
+          "Missing database connection string. Set POSTGRES_URL (Vercel Storage) or DATABASE_URL.",
         counts: { interview: 0, job: 0 },
         allResponses: emptyAllResponses(),
       },
@@ -47,7 +73,6 @@ export async function GET() {
   try {
     await client.connect();
 
-    // Return ALL responses grouped by event + answer
     const r = await client.query(
       `select event, answer, count(*)::int as c
        from impact_votes
@@ -57,12 +82,12 @@ export async function GET() {
     const allResponses = emptyAllResponses();
 
     for (const row of r.rows || []) {
-      const event = String(row.event || "") as ImpactEvent;
-      const answer = String(row.answer || "") as ImpactAnswer;
+      const event = String(row.event || "");
+      const answer = String(row.answer || "");
       const c = Number(row.c || 0);
 
       if ((event === "interview" || event === "job") && (answer === "yes" || answer === "no")) {
-        allResponses[event][answer] = c;
+        allResponses[event as ImpactEvent][answer as ImpactAnswer] = c;
       }
     }
 
@@ -71,12 +96,12 @@ export async function GET() {
       job: allResponses.job.yes,
     };
 
-    return NextResponse.json({ ok: true, counts, allResponses });
+    return okResponse({ ok: true, counts, allResponses });
   } catch (e: any) {
     const msg = String(e?.message || "");
     const code = String(e?.code || "");
 
-    // If table missing, return zeros so UI never crashes
+    // Table missing -> return zeros so UI never crashes
     const relationMissing =
       code === "42P01" ||
       (msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist"));
@@ -84,14 +109,14 @@ export async function GET() {
     console.error("impact-stats error:", e);
 
     if (relationMissing) {
-      return NextResponse.json({
+      return okResponse({
         ok: true,
         counts: { interview: 0, job: 0 },
         allResponses: emptyAllResponses(),
       });
     }
 
-    return NextResponse.json(
+    return okResponse(
       {
         ok: false,
         error: msg || "DB error",
