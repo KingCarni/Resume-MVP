@@ -2970,7 +2970,8 @@ export default function ResumeMvp() {
               Print
             </button>
 
-            <ImpactVote feature="resume" template={resumeTemplate} />
+           {false && <ImpactVote feature="resume" template={resumeTemplate} />}
+
 
 
             <button
