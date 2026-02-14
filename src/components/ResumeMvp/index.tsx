@@ -3,6 +3,8 @@
 import Link from "next/link";
 import React, { useMemo, useRef, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
+import ImpactVote from "@/components/ImpactVote";
+
 
 /** ---------------- Types ---------------- */
 
