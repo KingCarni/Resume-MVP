@@ -20,16 +20,10 @@ export default function DonatePage() {
         body: JSON.stringify({ amountCad }),
       });
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        // ignore JSON parse errors
-      }
+      const data = await res.json();
 
       if (!res.ok || !data?.ok || !data?.url) {
-        console.error("Donate API error:", { status: res.status, data });
-        throw new Error(data?.error || `Donate failed (HTTP ${res.status})`);
+        throw new Error(data?.error || "Could not start checkout");
       }
 
       window.location.href = data.url;
@@ -43,7 +37,7 @@ export default function DonatePage() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="text-3xl font-black">Donate</h1>
       <p className="mt-3 opacity-80">
-        If Resume MVP helped you, you can support continued development.
+        If Git-a-Job helped you, you can support continued development.
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">

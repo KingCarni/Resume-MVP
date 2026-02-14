@@ -7,7 +7,7 @@ export default function DonateSuccessPage() {
       <h1 className="text-3xl font-black">Thank you! ❤️</h1>
 
       <p className="mt-3 opacity-80">
-        Your donation helps keep Resume MVP moving forward.
+        Your donation helps keep Git-a-Job moving forward.
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">
