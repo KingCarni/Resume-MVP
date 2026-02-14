@@ -38,7 +38,59 @@ function normalizeResumeText(input: unknown) {
     .trim();
 }
 
-/** ---------------- DOCX helpers (FIX: preserve list bullets) ---------------- */
+/** ---------------- Safety filters (contact / references) ---------------- */
+
+function digitsCount(s: string) {
+  const m = String(s || "").match(/\d/g);
+  return m ? m.length : 0;
+}
+
+function normalizeForContains(s: string) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .trim();
+}
+
+function looksLikeContactOrReferenceLine(line: string) {
+  const l = String(line || "").trim();
+  if (!l) return true;
+
+  const emailRegex = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+  const urlRegex = /\bhttps?:\/\/\S+|\bwww\.\S+/i;
+  const linkedinRegex = /\blinkedin\.com\/in\/\S+/i;
+
+  // explicit contact-ish tokens
+  if (emailRegex.test(l)) return true;
+  if (linkedinRegex.test(l)) return true;
+  if (urlRegex.test(l)) return true;
+
+  // phone-ish: any line with 7+ digits
+  if (digitsCount(l) >= 7) return true;
+
+  // Reference headings / common lines
+  if (/^references?$/i.test(l)) return true;
+  if (/available\s+upon\s+request/i.test(l)) return true;
+
+  // Name-only lines (common in references): "First Last" or "First Middle Last"
+  if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}$/.test(l)) return true;
+
+  // Many resumes have “Role” lines under references (optional but helps your screenshot)
+  if (/^(massage therapist|production manager|2\s*nd\s*ad)\b/i.test(l)) return true;
+
+  return false;
+}
+
+function filterBadBullets(arr: string[]) {
+  return (arr || [])
+    .map((b) => String(b || "").trim())
+    .filter(Boolean)
+    .filter((b) => !looksLikeContactOrReferenceLine(b));
+}
+
+/** ---------------- DOCX helpers (preserve list bullets) ---------------- */
 
 function stripTagsToText(html: string) {
   return String(html ?? "")
@@ -259,7 +311,7 @@ async function extractResumeFromFile(file: File): Promise<{
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
 
-/** ---------------- NEW: Blob URL extraction ---------------- */
+/** ---------------- Blob URL extraction ---------------- */
 
 function inferExtFromUrl(url: string) {
   const clean = url.split("?")[0].toLowerCase();
@@ -291,10 +343,8 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
     return res;
   };
 
-  // 1) Try normal fetch first (works for public blobs or already-signed URLs)
   let res = await tryFetch(false);
 
-  // 2) If forbidden/unauthorized, retry with token (works for private blobs)
   if (!res.ok && (res.status === 401 || res.status === 403)) {
     res = await tryFetch(true);
   }
@@ -323,9 +373,10 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
 
   if (buffer.byteLength > MAX_FILE_BYTES) {
     throw new Error(
-      `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(buffer.byteLength / (1024 * 1024)).toFixed(
-        2
-      )}MB.`
+      `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(
+        buffer.byteLength /
+        (1024 * 1024)
+      ).toFixed(2)}MB.`
     );
   }
 
@@ -343,7 +394,6 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
     return { text, bulletsFromFile: undefined, sizeBytes: buffer.byteLength, detectedType };
   }
 
-  // As a last resort, treat as text/plain
   if (detectedType === "txt" || contentType.toLowerCase().includes("text/plain")) {
     return {
       text: buffer.toString("utf8"),
@@ -403,10 +453,10 @@ export async function POST(req: Request) {
     let jobText = "";
     let onlyExperienceBullets: boolean = true;
 
-    // NEW: file-level bullets (DOCX <li> extraction)
+    // file-level bullets (DOCX <li> extraction)
     let bulletsFromFile: string[] = [];
 
-    // NEW: optional debug about blob fetch
+    // optional debug about blob fetch
     let blobDebug: any = null;
 
     if (contentType.includes("multipart/form-data")) {
@@ -444,7 +494,6 @@ export async function POST(req: Request) {
     } else if (contentType.includes("application/json")) {
       const body = await req.json();
 
-      // ✅ NEW: allow sending a Blob URL instead of file upload
       const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
 
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
@@ -453,7 +502,6 @@ export async function POST(req: Request) {
         onlyExperienceBullets = body.onlyExperienceBullets;
       }
 
-      // If URL exists, prefer it for resume source (but still allow resumeText override for extra context)
       if (resumeBlobUrl) {
         const extracted = await extractResumeFromUrl(resumeBlobUrl);
         resumeText = normalizeResumeText(extracted.text);
@@ -469,8 +517,6 @@ export async function POST(req: Request) {
           url: resumeBlobUrl,
         };
 
-        // Optional: append any pasted resumeText (if user also supplied it)
-        // This can help with scanned PDFs where extraction is weak.
         const extra = normalizeResumeText(body.resumeText);
         if (extra && extra.length >= 200 && extra !== resumeText) {
           resumeText = `${resumeText}\n\n${extra}`;
@@ -558,16 +604,41 @@ export async function POST(req: Request) {
       }
     };
 
-    const seededFileBullets = (bulletsFromFile || [])
-      .map((b) => String(b || "").trim())
-      .filter(Boolean);
+    /**
+     * ✅ Smart DOCX <li> fallback:
+     * - always strip contact/reference bullets
+     * - if onlyExperienceBullets is true, only keep <li> bullets that appear inside the experience slice
+     */
+    const seededFileBulletsRaw = filterBadBullets(bulletsFromFile || []);
+
+    let seededFileBullets = seededFileBulletsRaw;
+
+    if (onlyExperienceBullets) {
+      const expHaystack = normalizeForContains(experienceSlice.experienceText);
+      seededFileBullets = seededFileBullets.filter((b) => {
+        const needle = normalizeForContains(b);
+        if (!needle) return false;
+        return expHaystack.includes(needle);
+      });
+    }
 
     // 1) strict on experience slice
     const strict1 = tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
     const flat1 = flattenFromJobs(experienceJobs);
-    bullets = flat1.outBullets;
+    bullets = filterBadBullets(flat1.outBullets);
     bulletJobIds = flat1.outJobIds;
+
+    // Keep mapping aligned if we filtered
+    if (bullets.length !== flat1.outBullets.length) {
+      const keep = new Set(bullets.map((b) => normalizeForContains(b)));
+      const newIds: string[] = [];
+      for (let i = 0; i < flat1.outBullets.length; i++) {
+        const t = normalizeForContains(flat1.outBullets[i]);
+        if (keep.has(t)) newIds.push(flat1.outJobIds[i]);
+      }
+      bulletJobIds = newIds;
+    }
 
     // 2) if no bullets, try bulletSourceText
     if (!bullets.length) {
@@ -578,19 +649,35 @@ export async function POST(req: Request) {
 
       if (flat2.outBullets.length) {
         experienceJobs = jobs2;
-        bullets = flat2.outBullets;
-        bulletJobIds = flat2.outJobIds;
+
+        const filtered = filterBadBullets(flat2.outBullets);
+        bullets = filtered;
+
+        if (filtered.length !== flat2.outBullets.length) {
+          const keep = new Set(filtered.map((b) => normalizeForContains(b)));
+          const newIds: string[] = [];
+          for (let i = 0; i < flat2.outBullets.length; i++) {
+            const t = normalizeForContains(flat2.outBullets[i]);
+            if (keep.has(t)) newIds.push(flat2.outJobIds[i]);
+          }
+          bulletJobIds = newIds;
+        } else {
+          bulletJobIds = flat2.outJobIds;
+        }
       } else {
-        bullets = (strict2.bullets || [])
+        const raw = (strict2.bullets || [])
           .map((b) => String(b || "").trim())
           .filter(Boolean);
+
+        const filtered = filterBadBullets(raw);
+        bullets = filtered;
 
         const fallbackJobId = experienceJobs[0]?.id || "job_default";
         bulletJobIds = bullets.map(() => fallbackJobId);
       }
     }
 
-    // 3) if still empty, fall back to DOCX list bullets (if present)
+    // 3) if still empty, fall back to DOCX list bullets (smart-gated)
     if (!bullets.length && seededFileBullets.length) {
       bullets = seededFileBullets;
 
@@ -608,7 +695,8 @@ export async function POST(req: Request) {
             foundExperienceSection: experienceSlice.foundSection,
             experienceMode: experienceSlice.mode,
             experienceLen: experienceSlice.experienceText.length,
-            bulletsFromFileCount: seededFileBullets.length,
+            bulletsFromFileCount: (bulletsFromFile || []).length,
+            seededFileBulletsCount: seededFileBullets.length,
             blobDebug,
           },
         },
@@ -698,7 +786,8 @@ export async function POST(req: Request) {
         foundExperienceSection: experienceSlice.foundSection,
         experienceMode: experienceSlice.mode,
 
-        bulletsFromFileCount: seededFileBullets.length,
+        bulletsFromFileCount: (bulletsFromFile || []).length,
+        seededFileBulletsCount: seededFileBullets.length,
 
         jobsDetected: experienceJobs.length,
         jobsWithBullets: experienceJobs.filter((j) => j.bullets?.length).length,
