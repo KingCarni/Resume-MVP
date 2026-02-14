@@ -6,13 +6,37 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type ImpactEvent = "interview" | "job";
-type ImpactAnswer = "yes" | "no";
+type ImpactAnswer = "yes" | "no" | "notyet";
 
-function emptyAllResponses() {
-  return {
-    interview: { yes: 0, no: 0 },
-    job: { yes: 0, no: 0 },
+type StatsPayload = {
+  ok: boolean;
+  error?: string;
+  counts: {
+    interview: { yes: number; no: number; notyet: number };
+    job: { yes: number; no: number; notyet: number };
   };
+  totals: {
+    interviewTotal: number;
+    jobTotal: number;
+    allResponses: number;
+  };
+  helpRates: {
+    interviewHelpRate: number | null;
+    jobHelpRate: number | null;
+  };
+};
+
+function emptyCounts(): StatsPayload["counts"] {
+  return {
+    interview: { yes: 0, no: 0, notyet: 0 },
+    job: { yes: 0, no: 0, notyet: 0 },
+  };
+}
+
+function calcHelpRate(yes: number, no: number) {
+  const denom = yes + no;
+  if (denom <= 0) return null;
+  return Math.round((yes / denom) * 100);
 }
 
 function okResponse(payload: any, init?: ResponseInit) {
@@ -26,19 +50,18 @@ function okResponse(payload: any, init?: ResponseInit) {
 }
 
 function getDbUrl() {
-  // Covers: Vercel Postgres (Storage), Neon, and your earlier manual DATABASE_URL setup
   const candidates = [
-    // Vercel Postgres (most common)
+    // Vercel Postgres
     process.env.POSTGRES_URL,
     process.env.POSTGRES_URL_NON_POOLING,
     process.env.POSTGRES_PRISMA_URL,
     process.env.POSTGRES_URL_NO_SSL,
 
-    // Some templates / older variants
+    // Older variants
     process.env.VERCEL_POSTGRES_URL,
     process.env.VERCEL_POSTGRES_URL_NON_POOLING,
 
-    // Your custom names
+    // Custom/manual
     process.env.DATABASE_URL,
     process.env.DATABASE_POSTGRES_URL,
     process.env.DATABASE_URL_UNPOOLED,
@@ -51,15 +74,20 @@ function getDbUrl() {
 export async function GET() {
   const dbUrl = getDbUrl();
 
-  // Always return a non-crashy shape, even if DB is missing
+  const base: StatsPayload = {
+    ok: true,
+    counts: emptyCounts(),
+    totals: { interviewTotal: 0, jobTotal: 0, allResponses: 0 },
+    helpRates: { interviewHelpRate: null, jobHelpRate: null },
+  };
+
   if (!dbUrl) {
     return okResponse(
       {
+        ...base,
         ok: false,
         error:
           "Missing database connection string. Set POSTGRES_URL (Vercel Storage) or DATABASE_URL.",
-        counts: { interview: 0, job: 0 },
-        allResponses: emptyAllResponses(),
       },
       { status: 500 }
     );
@@ -73,35 +101,50 @@ export async function GET() {
   try {
     await client.connect();
 
+    // Count ALL responses by event + answer (including notyet)
     const r = await client.query(
       `select event, answer, count(*)::int as c
        from impact_votes
        group by event, answer`
     );
 
-    const allResponses = emptyAllResponses();
+    const counts = emptyCounts();
 
     for (const row of r.rows || []) {
-      const event = String(row.event || "");
-      const answer = String(row.answer || "");
+      const event = String(row.event || "") as ImpactEvent;
+      const answer = String(row.answer || "") as ImpactAnswer;
       const c = Number(row.c || 0);
 
-      if ((event === "interview" || event === "job") && (answer === "yes" || answer === "no")) {
-        allResponses[event as ImpactEvent][answer as ImpactAnswer] = c;
+      if (
+        (event === "interview" || event === "job") &&
+        (answer === "yes" || answer === "no" || answer === "notyet")
+      ) {
+        counts[event][answer] = c;
       }
     }
 
-    const counts = {
-      interview: allResponses.interview.yes,
-      job: allResponses.job.yes,
+    const interviewTotal = counts.interview.yes + counts.interview.no + counts.interview.notyet;
+    const jobTotal = counts.job.yes + counts.job.no + counts.job.notyet;
+
+    const payload: StatsPayload = {
+      ok: true,
+      counts,
+      totals: {
+        interviewTotal,
+        jobTotal,
+        allResponses: interviewTotal + jobTotal,
+      },
+      helpRates: {
+        interviewHelpRate: calcHelpRate(counts.interview.yes, counts.interview.no),
+        jobHelpRate: calcHelpRate(counts.job.yes, counts.job.no),
+      },
     };
 
-    return okResponse({ ok: true, counts, allResponses });
+    return okResponse(payload);
   } catch (e: any) {
     const msg = String(e?.message || "");
     const code = String(e?.code || "");
 
-    // Table missing -> return zeros so UI never crashes
     const relationMissing =
       code === "42P01" ||
       (msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist"));
@@ -109,20 +152,15 @@ export async function GET() {
     console.error("impact-stats error:", e);
 
     if (relationMissing) {
-      return okResponse({
-        ok: true,
-        counts: { interview: 0, job: 0 },
-        allResponses: emptyAllResponses(),
-      });
+      // Table missing -> safe zeros
+      return okResponse(base);
     }
 
     return okResponse(
       {
+        ...base,
         ok: false,
         error: msg || "DB error",
-        code: code || undefined,
-        counts: { interview: 0, job: 0 },
-        allResponses: emptyAllResponses(),
       },
       { status: 500 }
     );
