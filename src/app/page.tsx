@@ -4,7 +4,7 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="text-3xl font-black">Resume Tools MVP</h1>
+      <h1 className="text-3xl font-black">Git-a-Job: Toolbelt</h1>
 
       <p className="mt-2 opacity-80">
         Choose a tool:
