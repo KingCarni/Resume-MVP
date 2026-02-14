@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@vercel/blob": "^2.2.0",
     "@vercel/postgres": "^0.10.0",
     "html-to-docx": "^1.8.0",
     "mammoth": "^1.11.0",

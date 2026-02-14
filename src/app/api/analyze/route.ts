@@ -66,44 +66,40 @@ function extractLiText(html: string): string[] {
  * - Pull <li> items as bullets
  * - Also provide a plain-text version that includes "- " lines so downstream parsers work
  */
-async function extractDocxTextAndBullets(file: File): Promise<{
+async function extractDocxTextAndBulletsFromBuffer(buffer: Buffer): Promise<{
   text: string;
   bullets: string[];
   html: string;
 }> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  // Prefer HTML conversion (preserves lists)
   const { value: html } = await mammoth.convertToHtml({ buffer });
   const bullets = extractLiText(html);
 
-  // Plain text from HTML
   const text = stripTagsToText(html);
 
-  // Make sure bullet markers exist in the text for any existing detectors
   const textWithBullets =
     bullets.length > 0 ? `${text}\n\n${bullets.map((b) => `- ${b}`).join("\n")}` : text;
 
   return { text: textWithBullets, bullets, html };
 }
 
+async function extractDocxTextAndBullets(file: File): Promise<{
+  text: string;
+  bullets: string[];
+  html: string;
+}> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return extractDocxTextAndBulletsFromBuffer(buffer);
+}
+
 /** ---------------- Experience section slicing ---------------- */
 
-/**
- * Pull ONLY the Experience section from the resume text.
- * Priority:
- * 1) Recognize headings ("Employment History", "Work Experience", etc.) and slice until next major heading
- * 2) Otherwise, heuristically start at first job header line with a date range and end at Skills / Certificates / References / etc.
- */
 function extractExperienceSection(fullText: string) {
   const text = normalizeResumeText(fullText);
   const lower = text.toLowerCase();
 
-  // More inclusive end headings (avoid ending too early if "summary" appears near top)
   const endHeadingRegex =
     /\n\s*(skills|personal skills|technical skills|certificates|certifications|education|projects|references|achievements|training|volunteer|interests)\b/i;
 
-  // Accept common experience headings
   const startNeedles = [
     "professional experience",
     "work experience",
@@ -136,7 +132,6 @@ function extractExperienceSection(fullText: string) {
     };
   }
 
-  // Heuristic fallback: find first date-range-ish line
   const lines = text.split("\n");
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
@@ -174,11 +169,7 @@ function extractExperienceSection(fullText: string) {
   };
 }
 
-/**
- * Option B: capture metadata blocks (not bullets):
- * - Games Shipped lines
- * - Metrics clusters
- */
+/** Option B: capture metadata blocks (not bullets) */
 function extractMetaBlocks(fullText: string) {
   const text = normalizeResumeText(fullText);
   const lines = text
@@ -203,11 +194,8 @@ function extractMetaBlocks(fullText: string) {
     }
 
     if (l.length <= 110 && metricLikeRegex.test(l)) {
-      // avoid date ranges being treated as metrics
       if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l))
         continue;
-
-      // avoid phone numbers
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
 
       metrics.push(l);
@@ -223,9 +211,7 @@ function extractMetaBlocks(fullText: string) {
 
 /** ---------------- File extraction ---------------- */
 
-async function extractTextFromPdf(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-
+async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
   if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = "";
 
@@ -246,9 +232,13 @@ async function extractTextFromPdf(file: File): Promise<string> {
   return text;
 }
 
+async function extractTextFromPdf(file: File): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return extractTextFromPdfBuffer(buffer);
+}
+
 /**
  * Return BOTH resumeText and any bullets we can confidently extract at file-read time.
- * (DOCX lists often get lost if you only extract raw text.)
  */
 async function extractResumeFromFile(file: File): Promise<{
   text: string;
@@ -269,6 +259,105 @@ async function extractResumeFromFile(file: File): Promise<{
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
 
+/** ---------------- NEW: Blob URL extraction ---------------- */
+
+function inferExtFromUrl(url: string) {
+  const clean = url.split("?")[0].toLowerCase();
+  if (clean.endsWith(".pdf")) return "pdf";
+  if (clean.endsWith(".docx")) return "docx";
+  if (clean.endsWith(".doc")) return "doc";
+  if (clean.endsWith(".txt")) return "txt";
+  return "";
+}
+
+function inferTypeFromContentType(ct: string) {
+  const c = (ct || "").toLowerCase();
+  if (c.includes("application/pdf")) return "pdf";
+  if (c.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+    return "docx";
+  if (c.includes("application/msword")) return "doc";
+  if (c.includes("text/plain")) return "txt";
+  return "";
+}
+
+async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; contentType: string }> {
+  const tryFetch = async (withAuth: boolean) => {
+    const headers: Record<string, string> = {};
+    if (withAuth) {
+      const token = process.env.BLOB_READ_WRITE_TOKEN;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch(url, { headers, cache: "no-store" });
+    return res;
+  };
+
+  // 1) Try normal fetch first (works for public blobs or already-signed URLs)
+  let res = await tryFetch(false);
+
+  // 2) If forbidden/unauthorized, retry with token (works for private blobs)
+  if (!res.ok && (res.status === 401 || res.status === 403)) {
+    res = await tryFetch(true);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Failed to fetch resumeBlobUrl. Status ${res.status}. ${text ? `Body: ${text}` : ""}`
+    );
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  const ab = await res.arrayBuffer();
+  const buffer = Buffer.from(ab);
+
+  return { buffer, contentType };
+}
+
+async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
+  text: string;
+  bulletsFromFile?: string[];
+  sizeBytes: number;
+  detectedType: string;
+}> {
+  const { buffer, contentType } = await fetchBlobAsBuffer(resumeBlobUrl);
+
+  if (buffer.byteLength > MAX_FILE_BYTES) {
+    throw new Error(
+      `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(buffer.byteLength / (1024 * 1024)).toFixed(
+        2
+      )}MB.`
+    );
+  }
+
+  const typeFromCt = inferTypeFromContentType(contentType);
+  const typeFromUrl = inferExtFromUrl(resumeBlobUrl);
+  const detectedType = typeFromCt || typeFromUrl || "";
+
+  if (detectedType === "docx") {
+    const { text, bullets } = await extractDocxTextAndBulletsFromBuffer(buffer);
+    return { text, bulletsFromFile: bullets, sizeBytes: buffer.byteLength, detectedType };
+  }
+
+  if (detectedType === "pdf") {
+    const text = await extractTextFromPdfBuffer(buffer);
+    return { text, bulletsFromFile: undefined, sizeBytes: buffer.byteLength, detectedType };
+  }
+
+  // As a last resort, treat as text/plain
+  if (detectedType === "txt" || contentType.toLowerCase().includes("text/plain")) {
+    return {
+      text: buffer.toString("utf8"),
+      bulletsFromFile: undefined,
+      sizeBytes: buffer.byteLength,
+      detectedType: detectedType || "txt",
+    };
+  }
+
+  throw new Error(
+    `Unsupported resumeBlobUrl file type. Content-Type was "${contentType || "unknown"}". URL was "${resumeBlobUrl}".`
+  );
+}
+
 function parseOnlyExperienceFlagFromFormData(v: FormDataEntryValue | null) {
   if (typeof v !== "string") return undefined;
   const s = v.trim().toLowerCase();
@@ -279,7 +368,6 @@ function parseOnlyExperienceFlagFromFormData(v: FormDataEntryValue | null) {
 
 /**
  * ✅ Convert extracted string bullets (+ optional jobId mapping) into ResumeBullet[]
- * to satisfy suggestKeywordsForBullets(bullets: ResumeBullet[], ...)
  */
 function normalizeBulletsForSuggestions(args: {
   bullets: string[];
@@ -318,6 +406,9 @@ export async function POST(req: Request) {
     // NEW: file-level bullets (DOCX <li> extraction)
     let bulletsFromFile: string[] = [];
 
+    // NEW: optional debug about blob fetch
+    let blobDebug: any = null;
+
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -352,11 +443,41 @@ export async function POST(req: Request) {
       }
     } else if (contentType.includes("application/json")) {
       const body = await req.json();
-      resumeText = normalizeResumeText(body.resumeText);
+
+      // ✅ NEW: allow sending a Blob URL instead of file upload
+      const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
+
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
 
       if (typeof body.onlyExperienceBullets === "boolean") {
         onlyExperienceBullets = body.onlyExperienceBullets;
+      }
+
+      // If URL exists, prefer it for resume source (but still allow resumeText override for extra context)
+      if (resumeBlobUrl) {
+        const extracted = await extractResumeFromUrl(resumeBlobUrl);
+        resumeText = normalizeResumeText(extracted.text);
+
+        bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
+          ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
+          : [];
+
+        blobDebug = {
+          usedBlobUrl: true,
+          detectedType: extracted.detectedType,
+          sizeBytes: extracted.sizeBytes,
+          url: resumeBlobUrl,
+        };
+
+        // Optional: append any pasted resumeText (if user also supplied it)
+        // This can help with scanned PDFs where extraction is weak.
+        const extra = normalizeResumeText(body.resumeText);
+        if (extra && extra.length >= 200 && extra !== resumeText) {
+          resumeText = `${resumeText}\n\n${extra}`;
+          blobDebug.appendedResumeText = true;
+        }
+      } else {
+        resumeText = normalizeResumeText(body.resumeText);
       }
     } else {
       return NextResponse.json(
@@ -370,7 +491,7 @@ export async function POST(req: Request) {
 
     if (!resumeText || !jobText) {
       return NextResponse.json(
-        { ok: false, error: "Missing resumeText (or file) or jobText" },
+        { ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" },
         { status: 400 }
       );
     }
@@ -392,14 +513,6 @@ export async function POST(req: Request) {
     const experienceSlice = extractExperienceSection(resumeText);
     const bulletSourceText = onlyExperienceBullets ? experienceSlice.experienceText : resumeText;
 
-    /**
-     * ✅ Support BOTH extractor return shapes
-     * - old: string[]
-     * - new: { bullets: string[]; jobs: ExtractedJob[] }
-     *
-     * We run strict extraction on experience text, and if empty we try bulletSourceText.
-     * PLUS: for DOCX, we can use bulletsFromFile as an additional fallback.
-     */
     let experienceJobs: any[] = [];
     let bullets: string[] = [];
     let bulletJobIds: string[] = [];
@@ -445,8 +558,6 @@ export async function POST(req: Request) {
       }
     };
 
-    // 0) If we have DOCX list bullets, seed them first (they’re usually the most reliable)
-    // We'll still prefer structured jobs from extractResumeBullets if available.
     const seededFileBullets = (bulletsFromFile || [])
       .map((b) => String(b || "").trim())
       .filter(Boolean);
@@ -458,11 +569,10 @@ export async function POST(req: Request) {
     bullets = flat1.outBullets;
     bulletJobIds = flat1.outJobIds;
 
-    // 2) if no bullets, try bulletSourceText (full resume if toggle off)
+    // 2) if no bullets, try bulletSourceText
     if (!bullets.length) {
       const strict2 = tryExtract(bulletSourceText);
 
-      // if we got jobs with bullets, prefer that
       const jobs2 = normalizeJobs(strict2.jobs);
       const flat2 = flattenFromJobs(jobs2);
 
@@ -471,7 +581,6 @@ export async function POST(req: Request) {
         bullets = flat2.outBullets;
         bulletJobIds = flat2.outJobIds;
       } else {
-        // otherwise use flat bullets if provided (no job grouping)
         bullets = (strict2.bullets || [])
           .map((b) => String(b || "").trim())
           .filter(Boolean);
@@ -489,7 +598,6 @@ export async function POST(req: Request) {
       bulletJobIds = bullets.map(() => fallbackJobId);
     }
 
-    // 4) if still empty, hard fail with useful hint
     if (!bullets.length) {
       return NextResponse.json(
         {
@@ -501,6 +609,7 @@ export async function POST(req: Request) {
             experienceMode: experienceSlice.mode,
             experienceLen: experienceSlice.experienceText.length,
             bulletsFromFileCount: seededFileBullets.length,
+            blobDebug,
           },
         },
         { status: 400 }
@@ -548,10 +657,7 @@ export async function POST(req: Request) {
       }));
     }
 
-    /**
-     * ✅ Attach jobId + verb strength (before) onto each plan item.
-     * This makes your UI auto-assignment deterministic.
-     */
+    // Attach jobId + verb strength (before) onto each plan item.
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
       const original =
         typeof item?.originalBullet === "string"
@@ -572,7 +678,6 @@ export async function POST(req: Request) {
       ok: true,
       ...analysis,
 
-      // ✅ Structured jobs + mapping (for auto sections)
       experienceJobs,
       bullets,
       bulletJobIds,
@@ -604,6 +709,8 @@ export async function POST(req: Request) {
         metaMetricsCount: metaBlocks.metrics.length,
 
         maxFileMb: MAX_FILE_MB,
+
+        blobDebug,
       },
     });
   } catch (e: any) {

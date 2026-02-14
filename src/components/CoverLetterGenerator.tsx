@@ -1512,7 +1512,7 @@ export default function CoverLetterGenerator() {
       </div>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Cover Letter Generator</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
           Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview renders as a
           real HTML document (resume-template style). You can edit the letter below and the preview updates live.

@@ -6,6 +6,8 @@ import ThemeToggle from "@/components/ThemeToggle";
 import ImpactVote from "@/components/ImpactVote";
 import FeedbackWidget from "@/components/FeedbackWidget";
 import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
+import { upload } from "@vercel/blob/client";
+import type { PutBlobResult } from "@vercel/blob";
 
 /** ---------------- Types ---------------- */
 
@@ -1878,6 +1880,9 @@ export default function ResumeMvp() {
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [resumeBlobUrl, setResumeBlobUrl] = useState<string>("");
+  const [uploadingResume, setUploadingResume] = useState(false);
+
 
   const [onlyExperienceBullets, setOnlyExperienceBullets] = useState(true);
 
@@ -1955,6 +1960,26 @@ export default function ResumeMvp() {
       ta.remove();
     }
   }
+    async function ensureResumeUploadedToBlob(file: File) {
+      if (resumeBlobUrl) return resumeBlobUrl;
+
+      setUploadingResume(true);
+      try {
+        const safeName = file.name.replace(/\s+/g, "-");
+        const pathname = `resume/${Date.now()}-${safeName}`;
+
+        const blob = (await upload(pathname, file, {
+          access: "public", // or "public" if you prefer
+          handleUploadUrl: "/api/blob/upload",
+        })) as PutBlobResult;
+
+        setResumeBlobUrl(blob.url);
+        return blob.url;
+      } finally {
+        setUploadingResume(false);
+      }
+    }
+
 
   async function handleDownloadByFormat() {
     if (!effectiveResumeHtml) return;
@@ -2056,25 +2081,33 @@ export default function ResumeMvp() {
         : "";
 
       if (file) {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("jobText", jobText);
+  const url = await ensureResumeUploadedToBlob(file);
 
-        if (resumeTextForApi) fd.append("resumeText", resumeTextForApi);
+  res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      resumeBlobUrl: url,
+      jobText,
+      // keep your existing option:
+      onlyExperienceBullets,
+      // optional override text if you also pasted:
+      resumeText: resumeTextForApi || "",
+    }),
+  });
+} else {
+  // keep your existing JSON branch
+  res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      resumeText: resumeTextForApi || resumeText,
+      jobText,
+      onlyExperienceBullets,
+    }),
+  });
+}
 
-        fd.append("onlyExperienceBullets", String(onlyExperienceBullets));
-        res = await fetch("/api/analyze", { method: "POST", body: fd });
-      } else {
-        res = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resumeText: resumeTextForApi || resumeText,
-            jobText,
-            onlyExperienceBullets,
-          }),
-        });
-      }
 
       const payload = await parseApiResponse(res);
 
@@ -2160,21 +2193,43 @@ export default function ResumeMvp() {
   async function postRewriteWithFallback(body: any) {
   const safeBody = buildRewriteBulletPayload(body);
 
+  // ✅ measure size before sending (platform rejects huge bodies before route runs)
+  const json = JSON.stringify(safeBody);
+  const bytes = new TextEncoder().encode(json).length;
+
+  // Always log at least once while debugging
+  console.log("[rewrite] request bytes:", bytes);
+  if (logNetworkDebug) {
+    console.log("[rewrite] jobText chars:", String(safeBody.jobText ?? "").length);
+    console.log("[rewrite] keywords count:", Array.isArray(safeBody.suggestedKeywords) ? safeBody.suggestedKeywords.length : 0);
+  }
+
+  // ✅ hard stop before Vercel throws FUNCTION_PAYLOAD_TOO_LARGE
+  // (150k is conservative; you can raise later if needed)
+  if (bytes > 150_000) {
+    const jt = String(safeBody.jobText ?? "");
+    const err =
+      `Request too large (${bytes.toLocaleString()} bytes). ` +
+      `jobText is ${jt.length.toLocaleString()} chars. ` +
+      `Trim the job posting (or extract requirements only) before rewriting.`;
+    throw new Error(err);
+  }
+
   const res = await fetch("/api/rewrite-bullet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(safeBody),
+    body: json,
   });
 
-    const payload = await parseApiResponse(res);
+  const payload = await parseApiResponse(res);
 
-    if (logNetworkDebug) {
-      console.log("[rewrite] status:", res.status);
-      console.log("[rewrite] payload:", payload);
-    }
-
-    return { res, payload, url: "/api/rewrite-bullet" };
+  if (logNetworkDebug) {
+    console.log("[rewrite] status:", res.status);
+    console.log("[rewrite] payload:", payload);
   }
+
+  return { res, payload, url: "/api/rewrite-bullet" };
+}
 
   async function handleRewriteBullet(index: number) {
     if (!analysis) return;
@@ -2261,6 +2316,9 @@ export default function ResumeMvp() {
     try {
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
+      // ✅ Keep payload small: cap job text hard (adjust if you want)
+      const jobTextCapped = String(jobText ?? "").slice(0, 6000);
+
 
       const norm = (s: any) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -2361,7 +2419,8 @@ export default function ResumeMvp() {
       const requestBody = {
         originalBullet,
         suggestedKeywords,
-        jobText,
+        jobText: jobTextCapped,
+
 
         constraints: [
           "Do not add responsibilities not present in the original bullet.",
