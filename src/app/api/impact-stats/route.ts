@@ -19,11 +19,7 @@ export async function GET() {
   const dbUrl = getDbUrl();
   if (!dbUrl) {
     return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "Missing DATABASE_URL (or DATABASE_POSTGRES_URL / DATABASE_URL_UNPOOLED / DATABASE_POSTGRES_URL_NON_POOLING)",
-      },
+      { ok: false, error: "Missing DATABASE_URL (Neon/Vercel Storage env var)" },
       { status: 500 }
     );
   }
@@ -36,31 +32,41 @@ export async function GET() {
   try {
     await client.connect();
 
-    // Matches your error log: event, answer, count from impact_votes
+    // Count "yes" votes per event (interview/job)
     const r = await client.query(
-      `select event, answer, count(*)::int as c
+      `select event, count(*)::int as c
        from impact_votes
-       group by event, answer`
+       where answer = 'yes'
+       group by event`
     );
 
-    // Return as a nice nested object for UI
-    // stats[event][answer] = count
-    const stats: Record<string, Record<string, number>> = {};
-    for (const row of r.rows || []) {
-      const event = String(row.event ?? "");
-      const answer = String(row.answer ?? "");
-      const c = Number(row.c ?? 0);
+    const counts = { interview: 0, job: 0 };
 
-      if (!event) continue;
-      if (!stats[event]) stats[event] = {};
-      stats[event][answer] = c;
+    for (const row of r.rows || []) {
+      const e = String(row.event || "");
+      const c = Number(row.c || 0);
+      if (e === "interview") counts.interview = c;
+      if (e === "job") counts.job = c;
     }
 
-    return NextResponse.json({ ok: true, stats });
+    return NextResponse.json({ ok: true, counts });
   } catch (e: any) {
+    const msg = String(e?.message || "");
+    const code = String(e?.code || "");
+
+    // If table missing, return zeros (so UI never crashes)
+    const relationMissing =
+      code === "42P01" ||
+      (msg.toLowerCase().includes("relation") && msg.toLowerCase().includes("does not exist"));
+
     console.error("impact-stats error:", e);
+
+    if (relationMissing) {
+      return NextResponse.json({ ok: true, counts: { interview: 0, job: 0 } });
+    }
+
     return NextResponse.json(
-      { ok: false, error: e?.message ?? "DB error" },
+      { ok: false, error: msg || "DB error", code: code || undefined },
       { status: 500 }
     );
   } finally {
