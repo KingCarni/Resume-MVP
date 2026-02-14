@@ -1,68 +1,69 @@
+// src/app/api/impact-stats/route.ts
 import { NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
+import { Client } from "pg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
 
-type Row = { event: string; answer: string; c: string };
-
-function toNum(x: any) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : 0;
+function getDbUrl() {
+  return (
+    process.env.DATABASE_URL ||
+    process.env.DATABASE_POSTGRES_URL ||
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.DATABASE_POSTGRES_URL_NON_POOLING ||
+    ""
+  );
 }
 
 export async function GET() {
+  const dbUrl = getDbUrl();
+  if (!dbUrl) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "Missing DATABASE_URL (or DATABASE_POSTGRES_URL / DATABASE_URL_UNPOOLED / DATABASE_POSTGRES_URL_NON_POOLING)",
+      },
+      { status: 500 }
+    );
+  }
+
+  const client = new Client({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+  });
+
   try {
-    const r = await sql<Row>`
-      select event, answer, count(*)::text as c
-      from impact_votes
-      group by event, answer
-    `;
+    await client.connect();
 
-    const counts = {
-      interview: { yes: 0, no: 0, notyet: 0 },
-      job: { yes: 0, no: 0, notyet: 0 },
-    };
+    // Matches your error log: event, answer, count from impact_votes
+    const r = await client.query(
+      `select event, answer, count(*)::int as c
+       from impact_votes
+       group by event, answer`
+    );
 
-    for (const row of r.rows) {
-      const ev = row.event as "interview" | "job";
-      const an = row.answer as "yes" | "no" | "notyet";
-      if (counts[ev] && typeof (counts as any)[ev][an] === "number") {
-        (counts as any)[ev][an] = toNum(row.c);
-      }
+    // Return as a nice nested object for UI
+    // stats[event][answer] = count
+    const stats: Record<string, Record<string, number>> = {};
+    for (const row of r.rows || []) {
+      const event = String(row.event ?? "");
+      const answer = String(row.answer ?? "");
+      const c = Number(row.c ?? 0);
+
+      if (!event) continue;
+      if (!stats[event]) stats[event] = {};
+      stats[event][answer] = c;
     }
 
-    const interviewTotal = counts.interview.yes + counts.interview.no + counts.interview.notyet;
-    const jobTotal = counts.job.yes + counts.job.no + counts.job.notyet;
-
-    const interviewRateDen = counts.interview.yes + counts.interview.no;
-    const jobRateDen = counts.job.yes + counts.job.no;
-
-    const interviewHelpRate =
-      interviewRateDen > 0 ? Math.round((counts.interview.yes / interviewRateDen) * 100) : null;
-
-    const jobHelpRate =
-      jobRateDen > 0 ? Math.round((counts.job.yes / jobRateDen) * 100) : null;
-
-    return NextResponse.json({
-      ok: true,
-      counts,
-      totals: {
-        interviewTotal,
-        jobTotal,
-        allResponses: interviewTotal + jobTotal,
-      },
-      helpRates: {
-        interviewHelpRate, // Yes / (Yes+No)
-        jobHelpRate,       // Yes / (Yes+No)
-      },
-    });
+    return NextResponse.json({ ok: true, stats });
   } catch (e: any) {
     console.error("impact-stats error:", e);
     return NextResponse.json(
-      { ok: false, error: e?.message || "Failed to fetch stats." },
+      { ok: false, error: e?.message ?? "DB error" },
       { status: 500 }
     );
+  } finally {
+    await client.end().catch(() => {});
   }
 }

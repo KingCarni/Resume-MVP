@@ -4,7 +4,7 @@ import Link from "next/link";
 import React, { useMemo, useRef, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import ImpactVote from "@/components/ImpactVote";
-
+import FeedbackWidget from "@/components/FeedbackWidget";
 
 /** ---------------- Types ---------------- */
 
@@ -2602,25 +2602,33 @@ export default function ResumeMvp() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/resume"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-          >
-            Resume Compiler
-          </Link>
-          <Link
-            href="/cover-letter"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-          >
-            Cover Letter Generator
-          </Link>
-        </div>
+    {/* Top bar */}
+<div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+  {/* LEFT: nav buttons */}
+  <div className="flex flex-wrap items-center gap-2">
+    <Link
+      href="/resume"
+      className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+    >
+      Resume Compiler
+    </Link>
 
-        <ThemeToggle />
-      </div>
+    <Link
+      href="/cover-letter"
+      className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+    >
+      Cover Letter Generator
+    </Link>
+  </div>
+
+  {/* MIDDLE: feedback pill */}
+  <FeedbackWidget variant="header" surface="resume" delayDays={3} enabled />
+
+  {/* RIGHT: theme toggle */}
+  <ThemeToggle />
+</div>
+
+
 
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Resume MVP</h1>
@@ -2962,6 +2970,9 @@ export default function ResumeMvp() {
               Print
             </button>
 
+            <ImpactVote feature="resume" template={resumeTemplate} />
+
+
             <button
               type="button"
               onClick={openEditPreview}
@@ -3037,6 +3048,7 @@ export default function ResumeMvp() {
               bullet to generate the resume HTML preview.
             </div>
           )}
+            
 
           {analysis && rewritePlan.length ? (
             <div className="mt-4">
