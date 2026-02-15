@@ -11,74 +11,101 @@ type ReqBody = {
   filename?: string;
 };
 
-function toPureArrayBuffer(input: Uint8Array | ArrayBuffer): ArrayBuffer {
-  if (input instanceof ArrayBuffer) return input;
-
-  const ab = new ArrayBuffer(input.byteLength);
-  new Uint8Array(ab).set(input);
-  return ab;
-}
-
 function safePdfFilename(name: string) {
   const base = (name || "document.pdf").trim() || "document.pdf";
   const withExt = base.toLowerCase().endsWith(".pdf") ? base : `${base}.pdf`;
   return withExt.replace(/[\/\\<>:"|?*\x00-\x1F]/g, "_");
 }
 
+function toPureArrayBuffer(input: Uint8Array | ArrayBuffer): ArrayBuffer {
+  if (input instanceof ArrayBuffer) return input;
+  const ab = new ArrayBuffer(input.byteLength);
+  new Uint8Array(ab).set(input);
+  return ab;
+}
+
+type ChromiumLike = {
+  args: string[];
+  executablePath: (input?: string) => Promise<string>;
+};
+
+function isChromiumLike(x: any): x is ChromiumLike {
+  return (
+    x &&
+    typeof x === "object" &&
+    Array.isArray(x.args) &&
+    typeof x.executablePath === "function"
+  );
+}
+
 /**
- * ✅ Robust loader for @sparticuz/chromium-min across TS/ESM/CJS export shapes.
- * Some builds expose a default export; others expose named exports.
+ * ✅ Robustly resolve @sparticuz/chromium-min export shapes across ESM/CJS/bundlers.
+ * We try several likely locations and pick the first that looks like chromium.
  */
-async function loadChromium() {
+async function loadChromiumMin(): Promise<ChromiumLike> {
   const mod: any = await import("@sparticuz/chromium-min");
-  return mod?.default ?? mod;
+
+  // Try common shapes:
+  const candidates = [
+    mod,
+    mod?.default,
+    mod?.default?.default,
+    mod?.chromium,
+    mod?.default?.chromium,
+    mod?.default?.default?.chromium,
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    if (isChromiumLike(c)) return c;
+  }
+
+  // Helpful debug (shows what we actually got in Vercel logs)
+  const keys = (v: any) => (v && typeof v === "object" ? Object.keys(v) : []);
+  console.error("chromium-min import shape debug:", {
+    modKeys: keys(mod),
+    defaultKeys: keys(mod?.default),
+    defaultDefaultKeys: keys(mod?.default?.default),
+    chromiumKeys: keys(mod?.chromium),
+  });
+
+  throw new Error(
+    "Failed to load a valid chromium object from @sparticuz/chromium-min (executablePath/args missing). " +
+      "Check that @sparticuz/chromium-min is installed and @sparticuz/chromium is uninstalled."
+  );
 }
 
 /**
  * ✅ chromium-min requires CHROMIUM_REMOTE_EXEC_PATH on Vercel.
- * Cache across warm invocations to avoid repeated downloads.
+ * Cache across warm invocations to avoid re-downloading.
  */
 let cachedExecutablePath: string | null = null;
 let downloading: Promise<string> | null = null;
 
-async function resolveExecutablePath(): Promise<{ executablePath: string; chromium: any }> {
-  const chromium = await loadChromium();
-
-  if (cachedExecutablePath) return { executablePath: cachedExecutablePath, chromium };
+async function resolveExecutablePath(chromium: ChromiumLike): Promise<string> {
+  if (cachedExecutablePath) return cachedExecutablePath;
 
   const remote = String(process.env.CHROMIUM_REMOTE_EXEC_PATH || "").trim();
   if (!remote) {
     throw new Error(
-      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel to a chromium-*-pack.tar.br URL."
+      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel (Production + Preview) to a chromium-*-pack.tar.br URL."
     );
   }
 
-    if (!downloading) {
-    if (typeof chromium?.executablePath !== "function") {
-      throw new Error(
-        "Chromium module loaded, but executablePath() is missing. " +
-          "This usually means an export-shape mismatch. (default vs namespace import)"
-      );
-    }
-
+  if (!downloading) {
     downloading = chromium.executablePath(remote).then((p: string) => {
       cachedExecutablePath = p;
       return p;
     });
   }
 
-  const dl = downloading; // ✅ TS now knows this is not null in this branch
-  if (!dl) {
-    throw new Error("Internal error: chromium download promise was not initialized.");
-  }
-
-  const executablePath = await dl;
-  return { executablePath, chromium };
-
+  const dl = downloading;
+  if (!dl) throw new Error("Internal error: chromium download promise not initialized.");
+  return dl;
 }
 
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
-  const { executablePath, chromium } = await resolveExecutablePath();
+  const chromium = await loadChromiumMin();
+  const executablePath = await resolveExecutablePath(chromium);
 
   const browser = await puppeteer.launch({
     args: chromium.args,
