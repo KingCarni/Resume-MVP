@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
    * Prevent Next from trying to bundle these into the route handler.
    * We want Node to resolve them normally at runtime.
    */
-  serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium"],
+  serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium-min"],
 
   /**
    * Ensure the Chromium package files (including its bin/brotli assets)
