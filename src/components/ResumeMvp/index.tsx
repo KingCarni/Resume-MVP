@@ -2690,6 +2690,36 @@ export default function ResumeMvp() {
   <ThemeToggle />
 </div>
 
+// inside the Resume Compiler "Preview" panel JSX
+
+<div className="rounded-xl border border-white/10 bg-black/20 p-4">
+  <div className="mb-3 flex items-center justify-between">
+    <div className="text-sm font-semibold text-white/90">Preview</div>
+    <div className="text-xs text-white/50">
+      {effectiveResumeHtml ? "Ready" : "Waiting for analyze"}
+    </div>
+  </div>
+
+  {/* Always show the white document page, even before analyze */}
+  <div className="rounded-lg bg-white shadow-inner">
+    <div className="h-[740px] overflow-auto p-10">
+      {effectiveResumeHtml ? (
+        <div
+          className="prose max-w-none"
+          dangerouslySetInnerHTML={{ __html: effectiveResumeHtml }}
+        />
+      ) : (
+        // optional: keep this super subtle
+        <div className="text-sm text-black/40">
+          Run Analyze and rewrite at least one bullet to generate the resume preview.
+        </div>
+      )}
+    </div>
+  </div>
+
+  {/* keep your Copy/Download/Print controls below as-is */}
+</div>
+
 
 
       <div className="mb-4">
