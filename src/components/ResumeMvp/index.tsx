@@ -1943,17 +1943,17 @@ export default function ResumeMvp() {
     setPreviewHtmlOverride("");
   }
 
-  type DownloadFormat = ".txt" | ".doc" | ".docx" | ".pdf" | ".mhtml";
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".txt");
+  type DownloadFormat = ".pdf" | ".mhtml";
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".pdf");
 
   async function handleCopyOutput() {
     if (!effectiveResumeHtml) return;
-    const txt = htmlToPlainText(effectiveResumeHtml);
+    const pdf = htmlToPlainText(effectiveResumeHtml);
     try {
-      await navigator.clipboard.writeText(txt);
+      await navigator.clipboard.writeText(pdf);
     } catch {
       const ta = document.createElement("textarea");
-      ta.value = txt;
+      ta.value = pdf;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
@@ -1987,9 +1987,6 @@ export default function ResumeMvp() {
     const base = "resume";
     const html = effectiveResumeHtml;
 
-    if (downloadFormat === ".txt") return downloadAsTxt(base, html);
-    if (downloadFormat === ".doc") return downloadAsDoc(base, html);
-    if (downloadFormat === ".docx") return downloadAsDocx(base, html);
     if (downloadFormat === ".mhtml") return downloadAsMhtml(base, html);
 
     if (downloadFormat === ".pdf") {
