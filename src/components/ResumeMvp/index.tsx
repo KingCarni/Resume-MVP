@@ -3014,19 +3014,7 @@ export default function ResumeMvp() {
                           {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite this bullet"}
                         </button>
 
-                        {item?.suggestedKeywords?.length ? (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-extrabold text-black/60 dark:text-white/60">
-                              Suggested:
-                            </span>
-                            {keywordsToArray(item.suggestedKeywords)
-                              .slice(0, 10)
-                              .map((k) => (
-                                <Chip key={k} text={k} />
-                              ))}
-                          </div>
-                        ) : null}
-                      </div>
+                        </div>
                     </div>
                   );
                 })}
