@@ -1,6 +1,5 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
-import * as chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
 
 export const runtime = "nodejs";
@@ -12,38 +11,70 @@ type ReqBody = {
   filename?: string;
 };
 
-function toPureArrayBuffer(input: Uint8Array | Buffer | ArrayBuffer): ArrayBuffer {
-  if (input instanceof ArrayBuffer) return input;
-
-  const u8 = input instanceof Uint8Array ? input : new Uint8Array(input);
-  const ab = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(ab).set(u8);
-  return ab;
-}
-
 function safePdfFilename(name: string) {
   const base = (name || "document.pdf").trim() || "document.pdf";
   const withExt = base.toLowerCase().endsWith(".pdf") ? base : `${base}.pdf`;
   return withExt.replace(/[\/\\<>:"|?*\x00-\x1F]/g, "_");
 }
 
+function toPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  const ab = new ArrayBuffer(u8.byteLength);
+  new Uint8Array(ab).set(u8);
+  return ab;
+}
+
+type ChromiumLike = {
+  args: string[];
+  executablePath: (input?: string) => Promise<string>;
+};
+
+function isChromiumLike(x: any): x is ChromiumLike {
+  return x && typeof x === "object" && Array.isArray(x.args) && typeof x.executablePath === "function";
+}
+
+function keys(v: any) {
+  return v && typeof v === "object" ? Object.keys(v) : [];
+}
+
 /**
- * ✅ chromium-min requires a remote "pack" URL on Vercel.
- * Set Vercel env var:
- *   CHROMIUM_REMOTE_EXEC_PATH=https://.../chromium-...-pack.tar.br
- *
- * We cache across warm invocations to avoid re-downloading.
+ * Robust loader for chromium-min across ESM/CJS bundling.
+ * Returns { chromium, debug } so errors can show what we got.
  */
+async function loadChromiumMin(): Promise<{ chromium: ChromiumLike | null; debug: any }> {
+  const mod: any = await import("@sparticuz/chromium-min");
+
+  const candidates = [
+    { label: "mod", value: mod },
+    { label: "mod.default", value: mod?.default },
+    { label: "mod.default.default", value: mod?.default?.default },
+    { label: "mod.chromium", value: mod?.chromium },
+    { label: "mod.default.chromium", value: mod?.default?.chromium },
+  ];
+
+  const found = candidates.find((c) => isChromiumLike(c.value));
+
+  const debug = {
+    importKeys: keys(mod),
+    defaultKeys: keys(mod?.default),
+    defaultDefaultKeys: keys(mod?.default?.default),
+    chromiumKeys: keys(mod?.chromium),
+    picked: found?.label ?? null,
+    pickedHasExecutablePath: found ? typeof found.value.executablePath === "function" : false,
+  };
+
+  return { chromium: found?.value ?? null, debug };
+}
+
 let cachedExecutablePath: string | null = null;
 let downloading: Promise<string> | null = null;
 
-async function resolveExecutablePath(): Promise<string> {
+async function resolveExecutablePath(chromium: ChromiumLike): Promise<string> {
   if (cachedExecutablePath) return cachedExecutablePath;
 
   const remote = String(process.env.CHROMIUM_REMOTE_EXEC_PATH || "").trim();
   if (!remote) {
     throw new Error(
-      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel to a chromium-*-pack.tar.br URL."
+      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel (Production + Preview) to a chromium-*-pack.tar.br URL."
     );
   }
 
@@ -54,36 +85,34 @@ async function resolveExecutablePath(): Promise<string> {
     });
   }
 
-  return downloading;
+  const dl = downloading;
+  if (!dl) throw new Error("Internal error: download promise not initialized.");
+  return dl;
 }
 
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
-  const executablePath = await resolveExecutablePath();
+  const { chromium, debug } = await loadChromiumMin();
+  if (!chromium) {
+    throw new Error("chromium-min import did not yield a usable chromium object. debug=" + JSON.stringify(debug));
+  }
+
+  const executablePath = await resolveExecutablePath(chromium);
 
   const browser = await puppeteer.launch({
     args: chromium.args,
     executablePath,
-    headless: true, // keep it simple + TS-friendly
+    headless: true,
   });
 
   try {
     const page = await browser.newPage();
-
-    // Your HTML contains the template CSS already
     await page.setContent(html, { waitUntil: "networkidle0" });
-
-    // Ensure print CSS is applied
     await page.emulateMediaType("print");
 
     const pdfBuffer = await page.pdf({
-      format: "Letter", // change to "A4" if you prefer
+      format: "Letter",
       printBackground: true,
-      margin: {
-        top: "0.5in",
-        right: "0.5in",
-        bottom: "0.5in",
-        left: "0.5in",
-      },
+      margin: { top: "0.5in", right: "0.5in", bottom: "0.5in", left: "0.5in" },
     });
 
     return new Uint8Array(pdfBuffer);
@@ -115,15 +144,6 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("render-pdf error:", e);
-
-    const msg = String(e?.message || "PDF render failed");
-    const hint =
-      msg.includes("Unexpected status code: 404")
-        ? "\n\nHint: Your CHROMIUM_REMOTE_EXEC_PATH URL is likely wrong (404), or not set in this environment (Preview/Prod)."
-        : msg.includes("Missing CHROMIUM_REMOTE_EXEC_PATH")
-        ? "\n\nHint: Set CHROMIUM_REMOTE_EXEC_PATH in Vercel (Production + Preview)."
-        : "";
-
-    return NextResponse.json({ ok: false, error: msg + hint }, { status: 500 });
+    return NextResponse.json({ ok: false, error: String(e?.message || "PDF render failed") }, { status: 500 });
   }
 }
