@@ -208,25 +208,29 @@ async function downloadDocxViaApi(filename: string, html: string) {
   const res = await fetch("/api/export-docx", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ html }),
+    body: JSON.stringify({ html, filename }),
   });
 
-  // ✅ Handle errors without assuming JSON
+  const contentType = res.headers.get("content-type") || "";
+
+  // ❗ If request failed, read as TEXT (not JSON) to avoid JSZip crash
   if (!res.ok) {
-    const contentType = res.headers.get("content-type") || "";
-    const raw = await res.text().catch(() => "");
+    const text = await res.text();
+    throw new Error(
+      text || `DOCX export failed (${res.status})`
+    );
+  }
 
-    // If API returned JSON, try to extract { error }
-    if (contentType.includes("application/json")) {
-      try {
-        const j = JSON.parse(raw) as any;
-        if (j?.error) throw new Error(String(j.error));
-      } catch {
-        // fall through to raw text
-      }
-    }
-
-    throw new Error(raw || `DOCX export failed (${res.status}).`);
+  // ❗ Ensure we actually received a docx file
+  if (
+    !contentType.includes(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+  ) {
+    const text = await res.text();
+    throw new Error(
+      `Unexpected response type: ${contentType}\n` + (text || "")
+    );
   }
 
   const blob = await res.blob();
@@ -240,6 +244,7 @@ async function downloadDocxViaApi(filename: string, html: string) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
 
 function openPrintWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
