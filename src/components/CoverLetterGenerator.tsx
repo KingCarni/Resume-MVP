@@ -1369,7 +1369,7 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-  const [downloadFormat, setDownloadFormat] = useState<"txt" | "doc" | "docx" | "pdf" | "mhtml">("txt");
+  const [downloadFormat, setDownloadFormat] = useState<"pdf">("pdf");
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1763,10 +1763,7 @@ export default function CoverLetterGenerator() {
                     onChange={(e) => setDownloadFormat(e.target.value as any)}
                     disabled={!coverLetterDraft}
                     className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
-                  >
-                    <option value="txt">.txt</option>
-                    <option value="doc">.doc</option>
-                    <option value="docx">.docx</option>
+                  >                
                     <option value="pdf">.pdf</option>
                     <option value="mhtml">.mhtml</option>
                   </select>
@@ -1778,13 +1775,8 @@ export default function CoverLetterGenerator() {
                       if (!coverLetterDraft) return;
 
                       try {
-                        if (downloadFormat === "txt") {
-                          downloadTxt("cover-letter.txt", coverLetterDraft);
-                          return;
-                        }
-
-                        if (downloadFormat === "doc") {
-                          downloadDoc("cover-letter.doc", coverLetterHtml || "");
+                        if (downloadFormat === "pdf") {
+                          downloadTxt("cover-letter.pdf", coverLetterDraft);
                           return;
                         }
 
@@ -1793,15 +1785,6 @@ export default function CoverLetterGenerator() {
                           return;
                         }
 
-                        if (downloadFormat === "docx") {
-                          await downloadDocxViaApi("cover-letter.docx", coverLetterHtml || "");
-                          return;
-                        }
-
-                        if (downloadFormat === "pdf") {
-                          await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-                          return;
-                        }
                       } catch (e: any) {
                         setError(e?.message || "Download failed");
                       }
