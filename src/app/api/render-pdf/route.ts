@@ -1,9 +1,7 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
+import * as chromium from "@sparticuz/chromium-min";
 import puppeteer from "puppeteer-core";
-import path from "path";
-import fs from "fs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,32 +27,34 @@ function safePdfFilename(name: string) {
   return withExt.replace(/[\/\\<>:"|?*\x00-\x1F]/g, "_");
 }
 
+/**
+ * ✅ chromium-min requires a remote "pack" URL on Vercel.
+ * Set Vercel env var:
+ *   CHROMIUM_REMOTE_EXEC_PATH=https://.../chromium-...-pack.tar.br
+ *
+ * We cache across warm invocations to avoid re-downloading.
+ */
+let cachedExecutablePath: string | null = null;
+let downloading: Promise<string> | null = null;
+
 async function resolveExecutablePath(): Promise<string> {
-  /**
-   * On Vercel/Next bundling, the chromium package’s bin/brotli assets can be omitted
-   * unless outputFileTracingIncludes is configured. If they exist, prefer them.
-   */
-  const brotliDir = path.join(process.cwd(), "node_modules", "@sparticuz", "chromium", "bin");
+  if (cachedExecutablePath) return cachedExecutablePath;
 
-  try {
-    if (fs.existsSync(brotliDir)) {
-      // Provide the brotli dir explicitly (avoids “bin missing” + remote fetch edge cases)
-      const p = await chromium.executablePath(brotliDir);
-      if (p) return p;
-    }
-  } catch {
-    // fall through to default method
-  }
-
-  // Default behavior (may download pack on first run)
-  const p = await chromium.executablePath();
-  if (!p) {
+  const remote = String(process.env.CHROMIUM_REMOTE_EXEC_PATH || "").trim();
+  if (!remote) {
     throw new Error(
-      "Could not resolve Chromium executablePath(). " +
-        "Make sure next.config.ts includes outputFileTracingIncludes for @sparticuz/chromium."
+      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel to a chromium-*-pack.tar.br URL."
     );
   }
-  return p;
+
+  if (!downloading) {
+    downloading = chromium.executablePath(remote).then((p) => {
+      cachedExecutablePath = p;
+      return p;
+    });
+  }
+
+  return downloading;
 }
 
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
@@ -63,7 +63,7 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   const browser = await puppeteer.launch({
     args: chromium.args,
     executablePath,
-    headless: true, // ✅ boolean, avoids TS warning
+    headless: true, // keep it simple + TS-friendly
   });
 
   try {
@@ -76,7 +76,7 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
     await page.emulateMediaType("print");
 
     const pdfBuffer = await page.pdf({
-      format: "Letter",
+      format: "Letter", // change to "A4" if you prefer
       printBackground: true,
       margin: {
         top: "0.5in",
@@ -116,12 +116,12 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("render-pdf error:", e);
 
-    // Extra hint for the exact failure you’re seeing
     const msg = String(e?.message || "PDF render failed");
     const hint =
       msg.includes("Unexpected status code: 404")
-        ? "\n\nHint: This often happens when @sparticuz/chromium assets were not included in the Vercel function bundle. " +
-          "Add outputFileTracingIncludes + serverExternalPackages in next.config.ts and redeploy."
+        ? "\n\nHint: Your CHROMIUM_REMOTE_EXEC_PATH URL is likely wrong (404), or not set in this environment (Preview/Prod)."
+        : msg.includes("Missing CHROMIUM_REMOTE_EXEC_PATH")
+        ? "\n\nHint: Set CHROMIUM_REMOTE_EXEC_PATH in Vercel (Production + Preview)."
         : "";
 
     return NextResponse.json({ ok: false, error: msg + hint }, { status: 500 });
