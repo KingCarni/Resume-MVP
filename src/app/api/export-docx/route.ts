@@ -1,29 +1,28 @@
 // src/app/api/export-docx/route.ts
 import { NextResponse } from "next/server";
+import HTMLtoDOCX from "html-to-docx";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 type ReqBody = {
   html: string;
   filename?: string;
 };
 
-function startsWithPK(u8: Uint8Array) {
-  // ZIP magic header: 0x50 0x4B ("PK")
-  return u8.length >= 2 && u8[0] === 0x50 && u8[1] === 0x4b;
+function safeDocxFilename(name: string) {
+  const base = (name || "document.docx").trim() || "document.docx";
+  const withExt = base.toLowerCase().endsWith(".docx") ? base : `${base}.docx`;
+  // strip path separators + illegal characters (Windows + general safety)
+  return withExt.replace(/[\/\\<>:"|?*\x00-\x1F]/g, "_");
 }
 
-/**
- * Convert unknown “bytes-like” output to a Uint8Array safely.
- * Covers Buffer, Uint8Array, ArrayBuffer, and typed array views.
- */
 function toUint8Array(input: unknown): Uint8Array {
   if (input instanceof Uint8Array) return input;
-
   if (input instanceof ArrayBuffer) return new Uint8Array(input);
 
-  // Typed array / Buffer / DataView etc (anything with .buffer + byte info)
+  // Buffer / TypedArray / DataView etc.
   if (
     input &&
     typeof input === "object" &&
@@ -37,47 +36,40 @@ function toUint8Array(input: unknown): Uint8Array {
     return new Uint8Array(view.buffer, byteOffset, byteLength);
   }
 
-  // Last resort: try to construct (will throw if unsupported)
+  // last resort (will throw if unsupported)
   return new Uint8Array(input as any);
 }
 
-/**
- * Ensure we return a REAL ArrayBuffer containing exactly the bytes (not the whole underlying buffer).
- * This avoids TS warnings and prevents accidental extra bytes in the response.
- */
 function toExactArrayBuffer(u8: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(u8.byteLength);
   copy.set(u8);
   return copy.buffer;
 }
 
+function startsWithPK(u8: Uint8Array) {
+  return u8.length >= 2 && u8[0] === 0x50 && u8[1] === 0x4b; // "PK"
+}
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<ReqBody>;
     const html = String(body?.html ?? "").trim();
-    const filename = String(body?.filename ?? "resume").replace(/[^\w\-]+/g, "-");
+    const filename = safeDocxFilename(String(body?.filename ?? "document.docx"));
 
     if (!html) {
       return NextResponse.json({ ok: false, error: "Missing html" }, { status: 400 });
     }
 
-    // Dynamic import (serverless-safe)
-    const mod = (await import("html-to-docx")) as unknown;
-    const htmlToDocx =
-      typeof (mod as { default?: unknown }).default === "function"
-        ? ((mod as { default: (html: string) => Promise<unknown> }).default)
-        : (mod as unknown as (html: string) => Promise<unknown>);
+    // html-to-docx can accept full HTML; but it behaves best with a single doc root.
+    // Your cover letter HTML is already a complete document, so just pass it through.
+    const docxLike = await HTMLtoDOCX(html, undefined, {
+      // keep it simple and serverless-safe
+      table: { row: { cantSplit: true } },
+      footer: false,
+      pageNumber: false,
+    });
 
-    if (typeof htmlToDocx !== "function") {
-      return NextResponse.json(
-        { ok: false, error: "html-to-docx import failed: no function export found." },
-        { status: 500 }
-      );
-    }
-
-    const rawBytes = await htmlToDocx(html);
-    const u8 = toUint8Array(rawBytes);
+    const u8 = toUint8Array(docxLike);
 
     // Sanity check: must be a valid ZIP header
     if (!startsWithPK(u8)) {
@@ -85,7 +77,8 @@ export async function POST(req: Request) {
         {
           ok: false,
           error:
-            "DOCX generator returned non-DOCX bytes (not a ZIP/PK file). This can happen if html-to-docx fails in serverless.",
+            "DOCX generator returned non-DOCX bytes (not a ZIP/PK file). " +
+            "This usually means html-to-docx failed and returned an error payload instead of a document.",
         },
         { status: 500 }
       );
@@ -93,19 +86,20 @@ export async function POST(req: Request) {
 
     const ab = toExactArrayBuffer(u8);
 
-    // ✅ Use Response for binary; NextResponse.json is for JSON
-    return new Response(ab, {
+    return new NextResponse(ab, {
       status: 200,
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="${filename}.docx"`,
+        "Content-Disposition": `attachment; filename="${filename}"`,
         "Cache-Control": "no-store, max-age=0",
       },
     });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "DOCX export failed";
+  } catch (e: any) {
     console.error("export-docx error:", e);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "DOCX export failed" },
+      { status: 500 }
+    );
   }
 }

@@ -1381,7 +1381,8 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-  const [downloadFormat, setDownloadFormat] = useState<"txt" | "doc" | "docx" | "pdf" | "mhtml">("txt");
+ const [downloadFormat, setDownloadFormat] = useState<"pdf">("pdf");
+
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1846,26 +1847,7 @@ export default function CoverLetterGenerator() {
                       if (!coverLetterDraft) return;
 
                       try {
-                        if (downloadFormat === "txt") {
-                          downloadTxt("cover-letter.txt", coverLetterDraft);
-                          return;
-                        }
-
-                        if (downloadFormat === "doc") {
-                          downloadDoc("cover-letter.doc", coverLetterHtml || "");
-                          return;
-                        }
-
-                        if (downloadFormat === "mhtml") {
-                          downloadMhtml("cover-letter.mhtml", coverLetterHtml || "");
-                          return;
-                        }
-
-                        if (downloadFormat === "docx") {
-                          await downloadDocxViaApi("cover-letter.docx", coverLetterHtml || "");
-                          return;
-                        }
-
+                       
                         if (downloadFormat === "pdf") {
                           await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
                           return;
