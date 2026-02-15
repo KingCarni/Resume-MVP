@@ -1,7 +1,9 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium-min";
+import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
+import path from "path";
+import fs from "fs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,10 +13,6 @@ type ReqBody = {
   html: string;
   filename?: string;
 };
-
-// cache across warm invocations (helps speed; avoids re-downloading pack repeatedly)
-let cachedExecutablePath: string | null = null;
-let downloading: Promise<string> | null = null;
 
 function toPureArrayBuffer(input: Uint8Array | Buffer | ArrayBuffer): ArrayBuffer {
   if (input instanceof ArrayBuffer) return input;
@@ -31,39 +29,50 @@ function safePdfFilename(name: string) {
   return withExt.replace(/[\/\\<>:"|?*\x00-\x1F]/g, "_");
 }
 
-async function getExecutablePath() {
-  if (cachedExecutablePath) return cachedExecutablePath;
+async function resolveExecutablePath(): Promise<string> {
+  /**
+   * On Vercel/Next bundling, the chromium package’s bin/brotli assets can be omitted
+   * unless outputFileTracingIncludes is configured. If they exist, prefer them.
+   */
+  const brotliDir = path.join(process.cwd(), "node_modules", "@sparticuz", "chromium", "bin");
 
-  const remote = String(process.env.CHROMIUM_REMOTE_EXEC_PATH || "").trim();
-  if (!remote) {
+  try {
+    if (fs.existsSync(brotliDir)) {
+      // Provide the brotli dir explicitly (avoids “bin missing” + remote fetch edge cases)
+      const p = await chromium.executablePath(brotliDir);
+      if (p) return p;
+    }
+  } catch {
+    // fall through to default method
+  }
+
+  // Default behavior (may download pack on first run)
+  const p = await chromium.executablePath();
+  if (!p) {
     throw new Error(
-      "Missing CHROMIUM_REMOTE_EXEC_PATH env var. Set it in Vercel to a chromium-*-pack.tar.br URL."
+      "Could not resolve Chromium executablePath(). " +
+        "Make sure next.config.ts includes outputFileTracingIncludes for @sparticuz/chromium."
     );
   }
-
-  if (!downloading) {
-    downloading = chromium.executablePath(remote).then((p) => {
-      cachedExecutablePath = p;
-      return p;
-    });
-  }
-
-  return downloading;
+  return p;
 }
 
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
-  const executablePath = await getExecutablePath();
+  const executablePath = await resolveExecutablePath();
 
   const browser = await puppeteer.launch({
     args: chromium.args,
     executablePath,
-    headless: true,
+    headless: true, // ✅ boolean, avoids TS warning
   });
 
   try {
     const page = await browser.newPage();
 
+    // Your HTML contains the template CSS already
     await page.setContent(html, { waitUntil: "networkidle0" });
+
+    // Ensure print CSS is applied
     await page.emulateMediaType("print");
 
     const pdfBuffer = await page.pdf({
@@ -106,9 +115,15 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("render-pdf error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message || "PDF render failed" },
-      { status: 500 }
-    );
+
+    // Extra hint for the exact failure you’re seeing
+    const msg = String(e?.message || "PDF render failed");
+    const hint =
+      msg.includes("Unexpected status code: 404")
+        ? "\n\nHint: This often happens when @sparticuz/chromium assets were not included in the Vercel function bundle. " +
+          "Add outputFileTracingIncludes + serverExternalPackages in next.config.ts and redeploy."
+        : "";
+
+    return NextResponse.json({ ok: false, error: msg + hint }, { status: 500 });
   }
 }
