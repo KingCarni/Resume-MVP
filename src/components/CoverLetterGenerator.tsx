@@ -241,7 +241,6 @@ async function downloadDocxViaApi(filename: string, html: string) {
   URL.revokeObjectURL(url);
 }
 
-
 function openPrintWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
   if (!w) return;
@@ -1397,11 +1396,34 @@ export default function CoverLetterGenerator() {
     try {
       let res: Response;
 
+    // ✅ Keep requests under Vercel payload limits
+    const MAX_CHARS = 120_000;
+
+    const clamp = (s: string) =>
+      String(s || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+\n/g, "\n")
+        .trim()
+        .slice(0, MAX_CHARS);
+
+    const safeResumeText = clamp(resumeText);
+    const safeJobText = clamp(jobText);
+
+    // Optional: warn if we had to truncate (helps debugging)
+    if (resumeText && safeResumeText.length < resumeText.trim().length) {
+      setError("Resume text was very large — truncated for upload safety.");
+    }
+    if (jobText && safeJobText.length < jobText.trim().length) {
+      setError("Job text was very large — truncated for upload safety.");
+    }
+
+
       if (file) {
         const fd = new FormData();
         fd.append("file", file);
-        fd.append("jobText", jobText);
-        if (resumeText.trim()) fd.append("resumeText", resumeText.trim());
+        fd.append("jobText", safeJobText);
+        if (safeResumeText) fd.append("resumeText", safeResumeText);
+
 
         fd.append("fullName", profile.fullName);
         fd.append("locationLine", profile.locationLine);
@@ -1416,8 +1438,8 @@ export default function CoverLetterGenerator() {
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
         const body = {
-          resumeText,
-          jobText,
+        resumeText: safeResumeText,
+        jobText: safeJobText,
 
           fullName: profile.fullName,
           locationLine: profile.locationLine,
@@ -1566,7 +1588,21 @@ export default function CoverLetterGenerator() {
               <input
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+               onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+
+              // ✅ Vercel payload guard (client-side)
+              if (f && f.size > 3.5 * 1024 * 1024) {
+                setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
+                e.target.value = "";
+                setFile(null);
+                return;
+              }
+
+              setError(null);
+              setFile(f);
+            }}
+
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
               />
               {file ? (
