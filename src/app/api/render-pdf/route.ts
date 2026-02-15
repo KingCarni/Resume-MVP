@@ -1,6 +1,6 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Viewport } from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import fs from "fs";
 import path from "path";
@@ -27,7 +27,6 @@ function toPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
 }
 
 async function resolveExecutablePath(): Promise<string> {
-  // This directory MUST exist in the deployed function bundle (we’ll enforce via next.config.ts)
   const brotliDir = path.join(
     process.cwd(),
     "node_modules",
@@ -36,19 +35,17 @@ async function resolveExecutablePath(): Promise<string> {
     "bin"
   );
 
-  // Prefer explicit brotliDir if it exists (avoids the “bin does not exist” crash)
   if (fs.existsSync(brotliDir)) {
     const p = await chromium.executablePath(brotliDir);
     if (p) return p;
   }
 
-  // Fallback (still works locally; may fail on Vercel if assets weren’t traced)
   const p = await chromium.executablePath();
   if (!p) {
     throw new Error(
       "Could not resolve chromium executablePath(). " +
         "This usually means @sparticuz/chromium assets were not included in the server bundle. " +
-        "Ensure next.config.ts outputFileTracingIncludes includes @sparticuz/chromium/bin/** and redeploy."
+        'Ensure next.config.ts has outputFileTracingIncludes: {"*": ["node_modules/@sparticuz/chromium/**"]} and redeploy.'
     );
   }
   return p;
@@ -57,16 +54,21 @@ async function resolveExecutablePath(): Promise<string> {
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   const executablePath = await resolveExecutablePath();
 
+  // ✅ Puppeteer expects headless to be boolean | "new" (depending on version)
+  // ✅ defaultViewport expects Viewport | null
+  const headless: boolean = true;
+  const defaultViewport: Viewport | null = null;
+
   const browser = await puppeteer.launch({
     args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
     executablePath,
-    headless: chromium.headless, // boolean in this package
+    headless,
+    defaultViewport,
   });
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "networkidle2" });
     await page.emulateMediaType("print");
 
     const pdfBuffer = await page.pdf({
