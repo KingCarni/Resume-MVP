@@ -44,7 +44,6 @@ async function resolveExecutablePath(): Promise<string> {
   if (!p) {
     throw new Error(
       "Could not resolve chromium executablePath(). " +
-        "This usually means @sparticuz/chromium assets were not included in the server bundle. " +
         'Ensure next.config.ts has outputFileTracingIncludes: {"*": ["node_modules/@sparticuz/chromium/**"]} and redeploy.'
     );
   }
@@ -54,8 +53,7 @@ async function resolveExecutablePath(): Promise<string> {
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   const executablePath = await resolveExecutablePath();
 
-  // ✅ Puppeteer expects headless to be boolean | "new" (depending on version)
-  // ✅ defaultViewport expects Viewport | null
+  // Avoid TS warnings / keep puppeteer happy
   const headless: boolean = true;
   const defaultViewport: Viewport | null = null;
 
@@ -68,12 +66,25 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
 
   try {
     const page = await browser.newPage();
+
+    // ✅ Load the doc as the preview sees it
     await page.setContent(html, { waitUntil: "networkidle2" });
-    await page.emulateMediaType("print");
+
+    // ✅ CRITICAL: render like the iframe preview (screen), NOT print
+    await page.emulateMediaType("screen");
+
+    // Helps preserve backgrounds/colors exactly
+    await page.addStyleTag({
+      content: `
+        html { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      `,
+    });
 
     const pdfBuffer = await page.pdf({
       format: "Letter",
       printBackground: true,
+      preferCSSPageSize: true,
       margin: {
         top: "0.5in",
         right: "0.5in",
