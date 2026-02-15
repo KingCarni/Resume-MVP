@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^143.0.4",
     "@vercel/blob": "^2.2.0",
     "@vercel/postgres": "^0.10.0",
     "html-to-docx": "^1.8.0",
@@ -20,6 +21,7 @@
     "pdfjs-dist": "^5.4.624",
     "pg": "^8.18.0",
     "puppeteer": "^24.37.2",
+    "puppeteer-core": "^24.37.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "stripe": "^20.3.1"
