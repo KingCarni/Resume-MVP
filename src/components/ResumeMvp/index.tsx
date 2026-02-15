@@ -2776,6 +2776,7 @@ export default function ResumeMvp() {
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={6}
+                placeholder="Paste job posting here"
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
             </label>
