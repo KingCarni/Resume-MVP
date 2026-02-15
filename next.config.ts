@@ -2,23 +2,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /**
-   * Prevent Next from trying to bundle these into the route handler.
-   * We want Node to resolve them normally at runtime.
-   */
-  serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium-min"],
+  // Keep these server-only packages out of the Next bundler.
+  serverExternalPackages: ["puppeteer-core", "@sparticuz/chromium"],
 
-  /**
-   * Ensure the Chromium package files (including its bin/brotli assets)
-   * are included in the serverless function bundle for the route handler.
-   *
-   * Keys are route globs (picomatch), values are file globs to include.
-   */
+  // Force Next to include chromium’s brotli/bin assets in the server function bundle.
+  // The key "*" applies to all traced server entries.
   outputFileTracingIncludes: {
-    "/api/render-pdf": [
-      "./node_modules/@sparticuz/chromium/**",
-      "./node_modules/puppeteer-core/**",
-    ],
+    "*": ["node_modules/@sparticuz/chromium/**"],
   },
 };
 

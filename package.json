@@ -9,7 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@sparticuz/chromium-min": "^143.0.4",
+    "@sparticuz/chromium": "^143.0.4",
     "@vercel/blob": "^2.2.0",
     "@vercel/postgres": "^0.10.0",
     "html-to-docx": "^1.8.0",

@@ -1,6 +1,9 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
+import fs from "fs";
+import path from "path";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,85 +26,42 @@ function toPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
   return ab;
 }
 
-type ChromiumLike = {
-  args: string[];
-  executablePath: (input?: string) => Promise<string>;
-};
+async function resolveExecutablePath(): Promise<string> {
+  // This directory MUST exist in the deployed function bundle (we’ll enforce via next.config.ts)
+  const brotliDir = path.join(
+    process.cwd(),
+    "node_modules",
+    "@sparticuz",
+    "chromium",
+    "bin"
+  );
 
-function isChromiumLike(x: any): x is ChromiumLike {
-  return x && typeof x === "object" && Array.isArray(x.args) && typeof x.executablePath === "function";
-}
+  // Prefer explicit brotliDir if it exists (avoids the “bin does not exist” crash)
+  if (fs.existsSync(brotliDir)) {
+    const p = await chromium.executablePath(brotliDir);
+    if (p) return p;
+  }
 
-function keys(v: any) {
-  return v && typeof v === "object" ? Object.keys(v) : [];
-}
-
-/**
- * Robust loader for chromium-min across ESM/CJS bundling.
- * Returns { chromium, debug } so errors can show what we got.
- */
-async function loadChromiumMin(): Promise<{ chromium: ChromiumLike | null; debug: any }> {
-  const mod: any = await import("@sparticuz/chromium-min");
-
-  const candidates = [
-    { label: "mod", value: mod },
-    { label: "mod.default", value: mod?.default },
-    { label: "mod.default.default", value: mod?.default?.default },
-    { label: "mod.chromium", value: mod?.chromium },
-    { label: "mod.default.chromium", value: mod?.default?.chromium },
-  ];
-
-  const found = candidates.find((c) => isChromiumLike(c.value));
-
-  const debug = {
-    importKeys: keys(mod),
-    defaultKeys: keys(mod?.default),
-    defaultDefaultKeys: keys(mod?.default?.default),
-    chromiumKeys: keys(mod?.chromium),
-    picked: found?.label ?? null,
-    pickedHasExecutablePath: found ? typeof found.value.executablePath === "function" : false,
-  };
-
-  return { chromium: found?.value ?? null, debug };
-}
-
-let cachedExecutablePath: string | null = null;
-let downloading: Promise<string> | null = null;
-
-async function resolveExecutablePath(chromium: ChromiumLike): Promise<string> {
-  if (cachedExecutablePath) return cachedExecutablePath;
-
-  const remote = String(process.env.CHROMIUM_REMOTE_EXEC_PATH || "").trim();
-  if (!remote) {
+  // Fallback (still works locally; may fail on Vercel if assets weren’t traced)
+  const p = await chromium.executablePath();
+  if (!p) {
     throw new Error(
-      "Missing CHROMIUM_REMOTE_EXEC_PATH. Set it in Vercel (Production + Preview) to a chromium-*-pack.tar.br URL."
+      "Could not resolve chromium executablePath(). " +
+        "This usually means @sparticuz/chromium assets were not included in the server bundle. " +
+        "Ensure next.config.ts outputFileTracingIncludes includes @sparticuz/chromium/bin/** and redeploy."
     );
   }
-
-  if (!downloading) {
-    downloading = chromium.executablePath(remote).then((p) => {
-      cachedExecutablePath = p;
-      return p;
-    });
-  }
-
-  const dl = downloading;
-  if (!dl) throw new Error("Internal error: download promise not initialized.");
-  return dl;
+  return p;
 }
 
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
-  const { chromium, debug } = await loadChromiumMin();
-  if (!chromium) {
-    throw new Error("chromium-min import did not yield a usable chromium object. debug=" + JSON.stringify(debug));
-  }
-
-  const executablePath = await resolveExecutablePath(chromium);
+  const executablePath = await resolveExecutablePath();
 
   const browser = await puppeteer.launch({
     args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
     executablePath,
-    headless: true,
+    headless: chromium.headless, // boolean in this package
   });
 
   try {
@@ -112,7 +72,12 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
     const pdfBuffer = await page.pdf({
       format: "Letter",
       printBackground: true,
-      margin: { top: "0.5in", right: "0.5in", bottom: "0.5in", left: "0.5in" },
+      margin: {
+        top: "0.5in",
+        right: "0.5in",
+        bottom: "0.5in",
+        left: "0.5in",
+      },
     });
 
     return new Uint8Array(pdfBuffer);
@@ -144,6 +109,9 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("render-pdf error:", e);
-    return NextResponse.json({ ok: false, error: String(e?.message || "PDF render failed") }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "PDF render failed" },
+      { status: 500 }
+    );
   }
 }
