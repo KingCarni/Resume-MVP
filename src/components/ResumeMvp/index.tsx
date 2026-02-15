@@ -1943,8 +1943,8 @@ export default function ResumeMvp() {
     setPreviewHtmlOverride("");
   }
 
-  type DownloadFormat = ".pdf" | ".mhtml";
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".pdf");
+  type DownloadFormat = ".txt" | ".doc" | ".docx" | ".pdf" | ".mhtml";
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".txt");
 
   async function handleCopyOutput() {
     if (!effectiveResumeHtml) return;
@@ -1987,7 +1987,9 @@ export default function ResumeMvp() {
     const base = "resume";
     const html = effectiveResumeHtml;
 
-    
+    if (downloadFormat === ".txt") return downloadAsTxt(base, html);
+    if (downloadFormat === ".doc") return downloadAsDoc(base, html);
+    if (downloadFormat === ".docx") return downloadAsDocx(base, html);
     if (downloadFormat === ".mhtml") return downloadAsMhtml(base, html);
 
     if (downloadFormat === ".pdf") {
@@ -3094,6 +3096,7 @@ export default function ResumeMvp() {
             </div>
           ) : null}
 
+          
             <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-white">
           {/* “Paper” container always visible */}
           <div className="h-[720px] w-full overflow-auto">
