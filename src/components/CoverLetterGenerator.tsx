@@ -203,7 +203,7 @@ ${html}
   URL.revokeObjectURL(url);
 }
 
-/** ✅ REAL .docx export via server route (no fs errors) */
+//** ✅ REAL .docx export via server route (no fs errors) */
 async function downloadDocxViaApi(filename: string, html: string) {
   const res = await fetch("/api/export-docx", {
     method: "POST",
@@ -211,15 +211,22 @@ async function downloadDocxViaApi(filename: string, html: string) {
     body: JSON.stringify({ html }),
   });
 
+  // ✅ Handle errors without assuming JSON
   if (!res.ok) {
-    let msg = "DOCX export failed.";
-    try {
-      const j = await res.json();
-      if (j?.error) msg = String(j.error);
-    } catch {
-      // ignore
+    const contentType = res.headers.get("content-type") || "";
+    const raw = await res.text().catch(() => "");
+
+    // If API returned JSON, try to extract { error }
+    if (contentType.includes("application/json")) {
+      try {
+        const j = JSON.parse(raw) as any;
+        if (j?.error) throw new Error(String(j.error));
+      } catch {
+        // fall through to raw text
+      }
     }
-    throw new Error(msg);
+
+    throw new Error(raw || `DOCX export failed (${res.status}).`);
   }
 
   const blob = await res.blob();
@@ -233,6 +240,7 @@ async function downloadDocxViaApi(filename: string, html: string) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
 
 function openPrintWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
@@ -1369,7 +1377,7 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-  const [downloadFormat, setDownloadFormat] = useState<"pdf">("pdf");
+  const [downloadFormat, setDownloadFormat] = useState<"txt" | "doc" | "docx" | "pdf" | "mhtml">("txt");
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1429,9 +1437,27 @@ export default function CoverLetterGenerator() {
         });
       }
 
-      const payload = (await res.json()) as ApiResp;
+      const contentType = res.headers.get("content-type") || "";
+      const raw = await res.text();
 
-      if (!res.ok || !payload.ok) {
+      // If server returned an error (often plain text/HTML), show it.
+      if (!res.ok) {
+        throw new Error(raw || `Cover letter generation failed (${res.status})`);
+      }
+
+      // We expect JSON on success — but be defensive.
+      let payload: ApiResp;
+      if (contentType.includes("application/json")) {
+        try {
+          payload = JSON.parse(raw) as ApiResp;
+        } catch {
+          throw new Error(`Cover letter route returned invalid JSON: ${raw.slice(0, 200)}`);
+        }
+      } else {
+        throw new Error(`Cover letter route returned non-JSON (${contentType}): ${raw.slice(0, 200)}`);
+      }
+
+      if (!payload.ok) {
         throw new Error((payload as any)?.error || "Cover letter generation failed");
       }
 
@@ -1439,6 +1465,7 @@ export default function CoverLetterGenerator() {
       if (!text) throw new Error("Empty cover letter returned");
 
       setCoverLetterDraft(text);
+
     } catch (e: any) {
       setError(e?.message || "Generation failed");
     } finally {
@@ -1579,7 +1606,7 @@ export default function CoverLetterGenerator() {
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={8}
-                placeholder="Paste job posting here"
+                  placeholder="Paste job posting here"
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
             </label>
@@ -1763,7 +1790,10 @@ export default function CoverLetterGenerator() {
                     onChange={(e) => setDownloadFormat(e.target.value as any)}
                     disabled={!coverLetterDraft}
                     className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
-                  >                
+                  >
+                    <option value="txt">.txt</option>
+                    <option value="doc">.doc</option>
+                    <option value="docx">.docx</option>
                     <option value="pdf">.pdf</option>
                     <option value="mhtml">.mhtml</option>
                   </select>
@@ -1775,8 +1805,13 @@ export default function CoverLetterGenerator() {
                       if (!coverLetterDraft) return;
 
                       try {
-                        if (downloadFormat === "pdf") {
-                          downloadTxt("cover-letter.pdf", coverLetterDraft);
+                        if (downloadFormat === "txt") {
+                          downloadTxt("cover-letter.txt", coverLetterDraft);
+                          return;
+                        }
+
+                        if (downloadFormat === "doc") {
+                          downloadDoc("cover-letter.doc", coverLetterHtml || "");
                           return;
                         }
 
@@ -1785,6 +1820,15 @@ export default function CoverLetterGenerator() {
                           return;
                         }
 
+                        if (downloadFormat === "docx") {
+                          await downloadDocxViaApi("cover-letter.docx", coverLetterHtml || "");
+                          return;
+                        }
+
+                        if (downloadFormat === "pdf") {
+                          await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                          return;
+                        }
                       } catch (e: any) {
                         setError(e?.message || "Download failed");
                       }
