@@ -68,7 +68,7 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle2" });
+    await page.setContent(html, { waitUntil: "networkidle0" });
     await page.emulateMediaType("print");
 
     const pdfBuffer = await page.pdf({
