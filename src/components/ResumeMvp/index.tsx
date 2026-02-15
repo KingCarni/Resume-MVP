@@ -2690,38 +2690,6 @@ export default function ResumeMvp() {
   <ThemeToggle />
 </div>
 
-// inside the Resume Compiler "Preview" panel JSX
-
-<div className="rounded-xl border border-white/10 bg-black/20 p-4">
-  <div className="mb-3 flex items-center justify-between">
-    <div className="text-sm font-semibold text-white/90">Preview</div>
-    <div className="text-xs text-white/50">
-      {effectiveResumeHtml ? "Ready" : "Waiting for analyze"}
-    </div>
-  </div>
-
-  {/* Always show the white document page, even before analyze */}
-  <div className="rounded-lg bg-white shadow-inner">
-    <div className="h-[740px] overflow-auto p-10">
-      {effectiveResumeHtml ? (
-        <div
-          className="prose max-w-none"
-          dangerouslySetInnerHTML={{ __html: effectiveResumeHtml }}
-        />
-      ) : (
-        // optional: keep this super subtle
-        <div className="text-sm text-black/40">
-          Run Analyze and rewrite at least one bullet to generate the resume preview.
-        </div>
-      )}
-    </div>
-  </div>
-
-  {/* keep your Copy/Download/Print controls below as-is */}
-</div>
-
-
-
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
@@ -2806,7 +2774,7 @@ export default function ResumeMvp() {
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={6}
-                placeholder="Paste job posting here"
+                placeholder="Post job description/requirements here"
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
             </label>
@@ -3128,20 +3096,24 @@ export default function ResumeMvp() {
             </div>
           ) : null}
 
-          {resumeHtml ? (
-            <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 dark:border-white/10">
+            <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-white">
+          {/* “Paper” container always visible */}
+          <div className="h-[720px] w-full overflow-auto">
+            {effectiveResumeHtml ? (
               <iframe
                 title="Resume preview"
                 className="h-[720px] w-full border-0"
                 srcDoc={effectiveResumeHtml}
               />
-            </div>
-          ) : (
-            <div className="mt-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 dark:border-white/15 dark:text-white/60">
-              Run <span className="font-extrabold">Analyze</span> and then rewrite at least one
-              bullet to generate the resume HTML preview.
-            </div>
-          )}
+            ) : (
+              <div className="p-10 text-sm text-black/40">
+                Run <span className="font-extrabold text-black/60">Analyze</span> and then rewrite at least
+                one bullet to generate the resume preview.
+              </div>
+            )}
+          </div>
+        </div>
+
             
 
           {analysis && rewritePlan.length ? (
