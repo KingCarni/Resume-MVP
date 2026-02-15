@@ -1752,8 +1752,8 @@ export default function ResumeMvp() {
     setPreviewHtmlOverride("");
   }
 
-  type DownloadFormat = ".txt" | ".doc" | ".docx" | ".pdf" | ".mhtml";
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".txt");
+  type DownloadFormat = ".pdf";
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".pdf");
 
   async function handleCopyOutput() {
     if (!effectiveResumeHtml) return;
@@ -1795,11 +1795,6 @@ export default function ResumeMvp() {
 
     const base = "resume";
     const html = effectiveResumeHtml;
-
-    if (downloadFormat === ".txt") return downloadAsTxt(base, html);
-    if (downloadFormat === ".doc") return downloadAsDoc(base, html);
-    if (downloadFormat === ".docx") return downloadAsDocx(base, html);
-    if (downloadFormat === ".mhtml") return downloadAsMhtml(base, html);
 
     if (downloadFormat === ".pdf") {
       const res = await fetch("/api/resume-pdf", {
@@ -2810,16 +2805,12 @@ export default function ResumeMvp() {
             </button>
 
             <select
-              value={downloadFormat}
-              onChange={(e) => setDownloadFormat(e.target.value as DownloadFormat)}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-white/10 dark:text-white"
-              disabled={!effectiveResumeHtml}
+              <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+  .pdf
+</div>
+
             >
-              <option value=".txt">.txt</option>
-              <option value=".doc">.doc</option>
-              <option value=".docx">.docx</option>
               <option value=".pdf">.pdf</option>
-              <option value=".mhtml">.mhtml</option>
             </select>
 
             <button

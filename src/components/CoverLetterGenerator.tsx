@@ -111,18 +111,6 @@ function Callout({
   );
 }
 
-function downloadTxt(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".txt") ? filename : `${filename}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 async function downloadPdfFromHtml(filename: string, html: string) {
   const res = await fetch("/api/render-pdf", {
     method: "POST",
@@ -146,113 +134,6 @@ async function downloadPdfFromHtml(filename: string, html: string) {
   a.remove();
 
   URL.revokeObjectURL(url);
-}
-
-/** ✅ .doc (HTML-in-a-Word-wrapper) */
-function downloadDoc(filename: string, html: string) {
-  const wordHtml = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${filename}</title>
-  <style>
-    @page { margin: 24pt; }
-    html, body { background: white !important; }
-    .page { box-shadow: none !important; }
-  </style>
-</head>
-<body>
-${html}
-</body>
-</html>`;
-
-  const blob = new Blob([wordHtml], {
-    type: "application/msword;charset=utf-8;",
-  });
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".doc") ? filename : `${filename}.doc`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function downloadMhtml(filename: string, html: string) {
-  const mhtml = `MIME-Version: 1.0
-Content-Type: multipart/related; boundary="NEXT_PART"
-
---NEXT_PART
-Content-Type: text/html; charset="utf-8"
-Content-Location: file:///document.html
-
-${html}
-
---NEXT_PART--`;
-
-  const blob = new Blob([mhtml], { type: "application/x-mimearchive" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".mhtml") ? filename : `${filename}.mhtml`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-//** ✅ REAL .docx export via server route (no fs errors) */
-async function downloadDocxViaApi(filename: string, html: string) {
-  const res = await fetch("/api/export-docx", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ html, filename }),
-  });
-
-  const contentType = res.headers.get("content-type") || "";
-
-  // ❗ If request failed, read as TEXT (not JSON) to avoid JSZip crash
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      text || `DOCX export failed (${res.status})`
-    );
-  }
-
-  // ❗ Ensure we actually received a docx file
-  if (
-    !contentType.includes(
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-  ) {
-    const text = await res.text();
-    throw new Error(
-      `Unexpected response type: ${contentType}\n` + (text || "")
-    );
-  }
-
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".docx") ? filename : `${filename}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-
-function openPrintWindow(html: string) {
-  const w = window.open("", "_blank", "noopener,noreferrer");
-  if (!w) return;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => w.print(), 250);
 }
 
 /** ---------------- HTML templates (MATCH RESUME STYLES) ---------------- */
@@ -1827,48 +1708,45 @@ export default function CoverLetterGenerator() {
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <select
-                    value={downloadFormat}
-                    onChange={(e) => setDownloadFormat(e.target.value as any)}
-                    disabled={!coverLetterDraft}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
-                  >
-                    <option value="txt">.txt</option>
-                    <option value="doc">.doc</option>
-                    <option value="docx">.docx</option>
-                    <option value="pdf">.pdf</option>
-                    <option value="mhtml">.mhtml</option>
-                  </select>
+                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+                  .pdf
+                </div>
+
 
                   <button
                     type="button"
                     disabled={!coverLetterDraft}
                     onClick={async () => {
-                      if (!coverLetterDraft) return;
+                    if (!coverLetterDraft) return;
 
-                      try {
-                       
-                        if (downloadFormat === "pdf") {
-                          await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-                          return;
-                        }
-                      } catch (e: any) {
-                        setError(e?.message || "Download failed");
-                      }
-                    }}
+                    try {
+                      await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                    } catch (e: any) {
+                      setError(e?.message || "Download failed");
+                    }
+                  }}
+
                     className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
                   >
                     Download
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openPrintWindow(coverLetterHtml)}
-                  disabled={!coverLetterHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                >
-                  Print
+               <button
+                type="button"
+                onClick={async () => {
+                  if (!coverLetterDraft) return;
+
+                  try {
+                    await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                  } catch (e: any) {
+                    setError(e?.message || "Download failed");
+                  }
+                }}
+                disabled={!coverLetterDraft}
+                className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold hover:opacity-80 disabled:opacity-50 dark:border-white/10 dark:bg-black/20"
+              >
+                Download PDF
                 </button>
               </div>
             }
