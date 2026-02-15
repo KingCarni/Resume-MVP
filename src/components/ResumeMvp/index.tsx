@@ -1948,12 +1948,12 @@ export default function ResumeMvp() {
 
   async function handleCopyOutput() {
     if (!effectiveResumeHtml) return;
-    const pdf = htmlToPlainText(effectiveResumeHtml);
+    const txt = htmlToPlainText(effectiveResumeHtml);
     try {
-      await navigator.clipboard.writeText(pdf);
+      await navigator.clipboard.writeText(txt);
     } catch {
       const ta = document.createElement("textarea");
-      ta.value = pdf;
+      ta.value = txt;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
@@ -1987,6 +1987,7 @@ export default function ResumeMvp() {
     const base = "resume";
     const html = effectiveResumeHtml;
 
+    
     if (downloadFormat === ".mhtml") return downloadAsMhtml(base, html);
 
     if (downloadFormat === ".pdf") {
