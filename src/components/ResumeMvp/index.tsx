@@ -32,26 +32,6 @@ type RewritePlanItem = {
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
 };
-function templateStylesResume(template: ResumeTemplateId) {
-  return `
-${templateStyles(template)}
-
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
-@media print {
-  body{
-    background: var(--bodybg) !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .page{
-    background: var(--pagebg) !important;
-    box-shadow: none !important;
-    margin: 0 !important;
-  }
-  .top:after{ display:none !important; }
-}
-`.trim();
-}
 
 type ResumeTemplateId =
   | "modern"
@@ -264,9 +244,7 @@ function defaultTrainingRewrite(original: string) {
   if (!raw) return "";
 
   const startsWithTrainingVerb =
-    /^(completed|earned|achieved|graduated|attended|finished|passed|certified|trained)\b/i.test(
-      raw
-    );
+    /^(completed|earned|achieved|graduated|attended|finished|passed|certified|trained)\b/i.test(raw);
 
   const base = raw.replace(/\s+/g, " ").trim();
   const cleaned = base.replace(/^\s*completed\s+/i, "Completed ");
@@ -423,15 +401,49 @@ function headerContactChipsCss() {
 `.trim();
 }
 
+function printLockCss() {
+  const PAGE_SIZE = "Letter";
+  const PAGE_MARGIN = "0.35in";
+
+  return `
+html, body{
+  margin:0;
+  padding:0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+@page{
+  size: ${PAGE_SIZE};
+  margin: ${PAGE_MARGIN};
+}
+
+@media print{
+  .page{
+    width: 8.5in !important;
+    min-height: 11in !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+  }
+}
+`.trim();
+}
+
+/**
+ * IMPORTANT: Theme parity (Resume ⇄ Cover Letter)
+ * - Use the SAME CSS variables naming as the cover letter generator (lowercase).
+ * - Ensure .page uses --pagebg (not --bodybg), and print keeps both.
+ */
 type ThemeArgs = {
-  font: "sans" | "serif";
+  font: "sans" | "serif" | "mono";
   ink: string;
   muted: string;
   line: string;
   accent: string;
   accent2?: string;
 
-  bodyBg: string;
+  bodyBg: string; // body background
+  pageBg: string; // page background
   headerBg: string;
   cardBg: string;
 
@@ -439,7 +451,6 @@ type ThemeArgs = {
   shadow: string;
 
   borderStyle?: "solid" | "dashed";
-  hasChips?: boolean;
   headerAfterGrid?: boolean;
 };
 
@@ -450,6 +461,13 @@ function mkThemeCss(t: ThemeArgs) {
   const PAGE_SIZE = "Letter";
   const PAGE_MARGIN = "0.35in";
 
+  const fontFamily =
+    t.font === "serif"
+      ? `ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`
+      : t.font === "mono"
+      ? `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace`
+      : `ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"`;
+
   return `
 :root{
   --ink:${t.ink};
@@ -457,12 +475,16 @@ function mkThemeCss(t: ThemeArgs) {
   --line:${t.line};
   --accent:${t.accent};
   --accent2:${accent2};
-  --bodyBg:${t.bodyBg};
-  --headerBg:${t.headerBg};
-  --cardBg:${t.cardBg};
+
+  /* ✅ cover-letter parity variable names */
+  --bodybg:${t.bodyBg};
+  --pagebg:${t.pageBg};
+  --headerbg:${t.headerBg};
+  --cardbg:${t.cardBg};
+
   --radius:${t.radius}px;
   --shadow:${t.shadow};
-  --borderStyle:${borderStyle};
+  --borderstyle:${borderStyle};
 }
 
 *{ box-sizing:border-box; }
@@ -472,17 +494,16 @@ html, body{
   padding:0;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-}
-
-html, body{
   height: 100%;
 }
 
 body{
   min-height: 100vh;
-}
-body{
   padding: 18px;
+  font-family: ${fontFamily};
+  color: var(--ink);
+  background: var(--bodybg);
+  line-height: 1.35;
 }
 
 @page{
@@ -490,24 +511,13 @@ body{
   margin: ${PAGE_MARGIN};
 }
 
-body{
-  font-family: ${
-    t.font === "serif"
-      ? `ui-serif, Georgia, Cambria, "Times New Roman", Times, serif`
-      : `ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"`
-  };
-  color: var(--ink);
-  background: var(--bodyBg);
-  line-height: 1.35;
-}
-
 .page{
   width: 8.5in;
   min-height: 11in;
   margin: 0 auto;
   padding: 18px 22px;
-background: var(--bodyBg);
-border-radius: var(--radius);
+  background: var(--pagebg);
+  border-radius: var(--radius);
 }
 
 .top{
@@ -516,9 +526,9 @@ border-radius: var(--radius);
   justify-content:space-between;
   gap:16px;
   padding: 14px 16px;
-  border: 1px var(--borderStyle) var(--line);
+  border: 1px var(--borderstyle) var(--line);
   border-radius: var(--radius);
-  background: var(--headerBg);
+  background: var(--headerbg);
   box-shadow: var(--shadow);
 }
 
@@ -539,8 +549,8 @@ border-radius: var(--radius);
   display:inline-block;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px var(--borderStyle) var(--line);
-  background: var(--cardBg);
+  border: 1px var(--borderstyle) var(--line);
+  background: var(--cardbg);
   box-shadow: 0 10px 25px rgba(2,6,23,.06);
 }
 
@@ -584,10 +594,10 @@ border-radius: var(--radius);
 }
 
 .box{
-  border: 1px var(--borderStyle) var(--line);
+  border: 1px var(--borderstyle) var(--line);
   border-radius: var(--radius);
   padding: 12px;
-  background: var(--cardBg);
+  background: var(--cardbg);
   box-shadow: var(--shadow);
 }
 
@@ -611,7 +621,7 @@ border-radius: var(--radius);
   justify-content:space-between;
   gap: 10px;
   padding-bottom: 6px;
-  border-bottom: 1px var(--borderStyle) var(--line);
+  border-bottom: 1px var(--borderstyle) var(--line);
   margin-bottom: 8px;
 }
 
@@ -639,38 +649,15 @@ ${t.headerAfterGrid ? `.top:after{content:"";display:block;height:10px;margin-to
 ${headerContactChipsCss()}
 
 @media print{
-  body{ background: var(--bodyBg) !important; }
-  .page{
-    width: 8.5in !important;
-    min-height: 11in !important;
-    margin: 0 auto !important;
+  body{
+    background: var(--bodybg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 0 !important;
   }
-}
-`.trim();
-}
-
-function printLockCss() {
-  const PAGE_SIZE = "Letter";
-  const PAGE_MARGIN = "0.35in";
-
-  return `
-html, body{
-  margin:0;
-  padding:0;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-@page{
-  size: ${PAGE_SIZE};
-  margin: ${PAGE_MARGIN};
-}
-
-@media print{
   .page{
-    width: 8.5in !important;
-    min-height: 11in !important;
-    max-width: none !important;
+    background: var(--pagebg) !important;
+    box-shadow: none !important;
     margin: 0 auto !important;
   }
 }
@@ -678,120 +665,150 @@ html, body{
 }
 
 /**
- * ✅ INCLUDED: your full templateStyles() (with one IMPORTANT fix)
- * Your old version ended with: `return templateStyles("classic");` which is infinite recursion.
- * I fixed it by returning the classic CSS string directly at the end.
+ * ✅ Resume-specific print parity wrapper (keeps theme backgrounds)
+ * NOTE: uses lowercase vars for 1:1 parity with cover letter generator.
+ */
+function templateStylesResume(template: ResumeTemplateId) {
+  return `
+${templateStyles(template)}
+
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
+@media print {
+  body{
+    background: var(--bodybg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page{
+    background: var(--pagebg) !important;
+    box-shadow: none !important;
+    margin: 0 auto !important;
+  }
+  .top:after{ display:none !important; }
+}
+`.trim();
+}
+
+/**
+ * ✅ INCLUDED: full templateStyles() with theme parity fixes
+ * - No recursion
+ * - Lowercase variables matching cover letter generator
+ * - .page uses --pagebg
  */
 function templateStyles(template: ResumeTemplateId) {
   // ---------- Canonical "classic" CSS fallback ----------
   const classicCss = `
-    :root {
-      --ink: #111;
-      --muted: #444;
-      --line: #e7e7e7;
-      --accent: #111;
-      --accent2: #111;
-    }
-    body {
-      font-family: Calibri, Arial, Helvetica, sans-serif;
-      color: var(--ink);
-      margin: 0;
-      background: #fff;
-    }
-    .page {
-      max-width: 850px;
-      margin: 18px auto;
-      border: 1px solid var(--line);
-      padding: 18px 22px;
-    }
-    .top {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 10px;
-    }
-    .name {
-      font-size: 28px;
-      font-weight: 900;
-      margin: 0;
-    }
-    .title {
-      margin-top: 6px;
-      font-size: 13px;
-      color: var(--muted);
-      font-weight: 700;
-    }
-    .contact {
-      font-size: 12px;
-      color: var(--muted);
-      text-align: right;
-      display: grid;
-      gap: 4px;
-    }
-    .h {
-      margin: 14px 0 6px;
-      font-size: 13px;
-      font-weight: 900;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: .06em;
-    }
-    .summary {
-      color: var(--muted);
-      line-height: 1.45;
-      font-size: 13px;
-    }
-    .job {
-      margin-top: 10px;
-      border-top: 1px solid var(--line);
-      padding-top: 10px;
-    }
-    .jobhead {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .jobtitle {
-      font-weight: 900;
-    }
-    .jobmeta {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    ul {
-      margin: 6px 0 0 18px;
-      padding: 0;
-    }
-    li {
-      margin: 6px 0;
-      line-height: 1.35;
-    }
-    .meta {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-    }
-    .box {
-      border: 1px solid var(--line);
-      padding: 10px;
-    }
-    .boxtitle {
-      font-weight: 900;
-      font-size: 12px;
-      margin: 0 0 6px;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-    }
-    .small {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    ${headerContactChipsCss()}
-    ${printLockCss()}
-  `.trim();
+:root{
+  --ink:#111;
+  --muted:#444;
+  --line:#e7e7e7;
+  --accent:#111;
+  --accent2:#111;
+
+  --bodybg:#ffffff;
+  --pagebg:#ffffff;
+  --headerbg:#ffffff;
+  --cardbg:#ffffff;
+
+  --radius: 0px;
+  --shadow: none;
+  --borderstyle: solid;
+}
+
+body{
+  font-family: Calibri, Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  margin: 0;
+  background: var(--bodybg);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.page{
+  max-width: 850px;
+  margin: 18px auto;
+  border: 1px solid var(--line);
+  padding: 18px 22px;
+  background: var(--pagebg);
+}
+.top{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+  background: var(--headerbg);
+}
+.name{
+  font-size: 28px;
+  font-weight: 900;
+  margin: 0;
+}
+.title{
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.contact{
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  display: grid;
+  gap: 4px;
+}
+.h{
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.summary{
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 13px;
+}
+.job{
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.jobhead{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.jobtitle{ font-weight: 900; }
+.jobmeta{
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+ul{ margin: 6px 0 0 18px; padding: 0; }
+li{ margin: 6px 0; line-height: 1.35; }
+.meta{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.box{
+  border: 1px solid var(--line);
+  padding: 10px;
+  background: var(--cardbg);
+}
+.boxtitle{
+  font-weight: 900;
+  font-size: 12px;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.small{ font-size: 12px; color: var(--muted); }
+${headerContactChipsCss()}
+${printLockCss()}
+`.trim();
 
   // ---------- Themed layouts ----------
   if (template === "modern") {
@@ -803,8 +820,9 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#2563eb",
       accent2: "#10b981",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(37,99,235,.06)",
-      cardBg: "rgba(255,255,255,.9)",
+      cardBg: "rgba(255,255,255,.92)",
       radius: 16,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
       borderStyle: "solid",
@@ -820,6 +838,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       accent2: "#111827",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(17,24,39,.04)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 14,
@@ -837,6 +856,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#7c3aed",
       accent2: "#111827",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(124,58,237,.06)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 18,
@@ -847,13 +867,13 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "compact") {
     return `
-      ${classicCss}
-      .page { padding: 14px 18px; }
-      .name { font-size: 24px; }
-      li { margin: 4px 0; }
-      .job { margin-top: 8px; padding-top: 8px; }
-      ${printLockCss()}
-    `.trim();
+${classicCss}
+.page { padding: 14px 18px; }
+.name { font-size: 24px; }
+li { margin: 4px 0; }
+.job { margin-top: 8px; padding-top: 8px; }
+${printLockCss()}
+`.trim();
   }
 
   if (template === "serif") {
@@ -865,6 +885,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0f172a",
       accent2: "#0f172a",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(15,23,42,.04)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 16,
@@ -876,77 +897,113 @@ function templateStyles(template: ResumeTemplateId) {
   if (template === "ats") {
     // ultra-plain: no bars, no fancy boxes
     return `
-      ${classicCss}
-      .page{ border: none; }
-      .top{ border-bottom: 1px solid #111; }
-      .chip{ border: none; background: transparent; box-shadow: none; padding: 0; }
-      .meta, .box{ border: none; padding: 0; }
-      .h{ color: #111; letter-spacing: 0; }
-      ${printLockCss()}
-    `.trim();
+${classicCss}
+.page{ border: none; }
+.top{ border-bottom: 1px solid #111; }
+.chip{ border: none; background: transparent; box-shadow: none; padding: 0; }
+.meta, .box{ border: none; padding: 0; background: transparent; }
+.h{ color: #111; letter-spacing: 0; }
+${printLockCss()}
+`.trim();
   }
 
   if (template === "sidebar") {
+    // Sidebar uses same variable naming scheme too.
     return `
-      :root{
-        --ink:#0f172a;
-        --muted: rgba(15,23,42,.72);
-        --line: rgba(15,23,42,.14);
-        --accent:#2563eb;
-        --accent2:#10b981;
-      }
-      body{ margin:0; background:#fff; color:var(--ink);
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-      }
-      .page{
-        width: 8.5in; min-height: 11in; margin: 0 auto;
-        padding: 18px 22px;
-        display:grid;
-        grid-template-columns: 2.7fr 5.3fr;
-        gap: 16px;
-      }
-      .side{
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 14px 14px;
-        background: rgba(37,99,235,.06);
-        box-shadow: 0 18px 50px rgba(2,6,23,.08);
-      }
-      .main{
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 14px 16px;
-        background: rgba(255,255,255,.95);
-        box-shadow: 0 18px 50px rgba(2,6,23,.06);
-      }
-      .name{ margin:0; font-size: 26px; letter-spacing: -.2px; }
-      .title{ margin-top: 6px; color: var(--muted); font-size: 13px; font-weight: 700; }
-      .contact{ margin-top: 10px; display:grid; gap: 8px; }
-      .chip{ display:inline-flex; align-items:center; gap:8px;
-        border:1px solid var(--line); border-radius: 999px;
-        padding: 6px 10px; background: rgba(255,255,255,.85);
-      }
-      .section{ margin-top: 12px; }
-      .h{
-        font-weight: 800; text-transform: uppercase;
-        letter-spacing: .14em; font-size: 12px; margin: 0 0 8px 0;
-      }
-      .summary{ font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-      .meta{ display:grid; grid-template-columns: 1fr; gap: 10px; }
-      .box{ border:1px solid var(--line); border-radius: 14px; padding: 10px; background: rgba(255,255,255,.9); }
-      .boxtitle{ font-weight: 800; margin-bottom: 6px; }
-      .small{ font-size: 12px; color: var(--muted); line-height: 1.45; }
-      .job{ margin-top: 12px; }
-      .jobhead{ display:flex; justify-content:space-between; gap: 10px; padding-bottom: 6px;
-        border-bottom: 1px solid var(--line); margin-bottom: 8px; flex-wrap:wrap;
-      }
-      .jobtitle{ font-weight: 800; }
-      .jobmeta{ color: var(--muted); font-size: 12px; white-space: nowrap; }
-      ul{ margin:0; padding-left: 18px; }
-      li{ margin: 0 0 6px 0; }
-      ${printLockCss()}
-    `.trim();
+:root{
+  --ink:#0f172a;
+  --muted: rgba(15,23,42,.72);
+  --line: rgba(15,23,42,.14);
+  --accent:#2563eb;
+  --accent2:#10b981;
+
+  --bodybg:#ffffff;
+  --pagebg:#ffffff;
+  --headerbg: rgba(37,99,235,.06);
+  --cardbg: rgba(255,255,255,.92);
+
+  --radius:16px;
+  --shadow: 0 18px 50px rgba(2,6,23,.08);
+  --borderstyle: solid;
+}
+body{
+  margin:0;
+  background: var(--bodybg);
+  color:var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  padding: 18px;
+}
+.page{
+  width: 8.5in; min-height: 11in; margin: 0 auto;
+  padding: 18px 22px;
+  display:grid;
+  grid-template-columns: 2.7fr 5.3fr;
+  gap: 16px;
+  background: var(--pagebg);
+  border-radius: var(--radius);
+}
+.side{
+  border: 1px var(--borderstyle) solid var(--line);
+  border-radius: 16px;
+  padding: 14px 14px;
+  background: var(--headerbg);
+  box-shadow: var(--shadow);
+}
+.main{
+  border: 1px var(--borderstyle) solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,.95);
+  box-shadow: 0 18px 50px rgba(2,6,23,.06);
+}
+.name{ margin:0; font-size: 26px; letter-spacing: -.2px; }
+.title{ margin-top: 6px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.contact{ margin-top: 10px; display:grid; gap: 8px; }
+.chip{
+  display:inline-flex; align-items:center; gap:8px;
+  border:1px var(--borderstyle) solid var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--cardbg);
+}
+.section{ margin-top: 12px; }
+.h{
+  font-weight: 800; text-transform: uppercase;
+  letter-spacing: .14em; font-size: 12px; margin: 0 0 8px 0;
+}
+.summary{ font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.meta{ display:grid; grid-template-columns: 1fr; gap: 10px; }
+.box{
+  border:1px var(--borderstyle) solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  background: var(--cardbg);
+  box-shadow: var(--shadow);
+}
+.boxtitle{ font-weight: 800; margin-bottom: 6px; }
+.small{ font-size: 12px; color: var(--muted); line-height: 1.45; }
+.job{ margin-top: 12px; }
+.jobhead{
+  display:flex; justify-content:space-between; gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px var(--borderstyle) solid var(--line);
+  margin-bottom: 8px;
+  flex-wrap:wrap;
+}
+.jobtitle{ font-weight: 800; }
+.jobmeta{ color: var(--muted); font-size: 12px; white-space: nowrap; }
+ul{ margin:0; padding-left: 18px; }
+li{ margin: 0 0 6px 0; }
+${headerContactChipsCss()}
+${printLockCss()}
+
+@media print{
+  body{ padding: 0 !important; background: var(--bodybg) !important; }
+  .page{ background: var(--pagebg) !important; }
+}
+`.trim();
   }
 
   if (template === "arcade") {
@@ -958,6 +1015,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#a855f7",
       accent2: "#22c55e",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(168,85,247,.10), rgba(34,197,94,.08))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 18,
@@ -976,6 +1034,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#22d3ee",
       accent2: "#f472b6",
       bodyBg: "#05060a",
+      pageBg: "#05060a",
       headerBg: "linear-gradient(135deg, rgba(34,211,238,.10), rgba(244,114,182,.10))",
       cardBg: "rgba(255,255,255,.06)",
       radius: 18,
@@ -985,52 +1044,21 @@ function templateStyles(template: ResumeTemplateId) {
   }
 
   if (template === "terminal") {
-    return `
-      :root{
-        --ink:#d1fae5;
-        --muted: rgba(209,250,229,.76);
-        --line: rgba(209,250,229,.18);
-        --accent:#34d399;
-        --accent2:#22c55e;
-      }
-      body{
-        margin:0;
-        background:#06120b;
-        color: var(--ink);
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-      }
-      .page{
-        width: 8.5in; min-height: 11in; margin:0 auto;
-        padding: 18px 22px;
-      }
-      .top{
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 14px 16px;
-        background: rgba(52,211,153,.07);
-      }
-      .name{ margin:0; font-size: 26px; }
-      .title{ margin-top:6px; font-size: 12px; color: var(--muted); }
-      .contact{ margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; }
-      .chip{ border:1px solid var(--line); border-radius:999px; padding: 6px 10px; background: rgba(255,255,255,.04); }
-      .section{ margin-top: 14px; }
-      .h{ font-weight: 900; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; margin-bottom: 8px; }
-      .bar{ display:inline-block; width:14px; height:8px; border-radius:999px; background: linear-gradient(90deg,var(--accent),var(--accent2)); margin-right:10px;}
-      .summary{ font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-      .meta{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .box{ border:1px solid var(--line); border-radius: 14px; padding: 12px; background: rgba(255,255,255,.04); }
-      .boxtitle{ font-weight: 900; margin-bottom:6px; }
-      .small{ font-size: 12px; color: var(--muted); line-height:1.45; }
-      .job{ margin-top: 12px; }
-      .jobhead{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:6px; margin-bottom:8px; }
-      .jobtitle{ font-weight: 900; }
-      .jobmeta{ color: var(--muted); font-size: 12px; white-space: nowrap; }
-      ul{ margin:0; padding-left:18px; }
-      li{ margin:0 0 6px 0; }
-      ${headerContactChipsCss()}
-      ${printLockCss()}
-    `.trim();
+    return mkThemeCss({
+      font: "mono",
+      ink: "#d1fae5",
+      muted: "rgba(209,250,229,.76)",
+      line: "rgba(209,250,229,.18)",
+      accent: "#34d399",
+      accent2: "#22c55e",
+      bodyBg: "#06120b",
+      pageBg: "#06120b",
+      headerBg: "rgba(52,211,153,.07)",
+      cardBg: "rgba(255,255,255,.04)",
+      radius: 14,
+      shadow: "0 22px 60px rgba(0,0,0,.20)",
+      borderStyle: "solid",
+    });
   }
 
   if (template === "blueprint") {
@@ -1042,7 +1070,9 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#2563eb",
       accent2: "#0ea5e9",
       bodyBg: "#ffffff",
-      headerBg: "repeating-linear-gradient(45deg, rgba(37,99,235,.05), rgba(37,99,235,.05) 8px, rgba(14,165,233,.04) 8px, rgba(14,165,233,.04) 16px)",
+      pageBg: "#ffffff",
+      headerBg:
+        "repeating-linear-gradient(45deg, rgba(37,99,235,.05), rgba(37,99,235,.05) 8px, rgba(14,165,233,.04) 8px, rgba(14,165,233,.04) 16px)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 16,
       shadow: "0 20px 55px rgba(2,6,23,.08)",
@@ -1060,6 +1090,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       accent2: "#374151",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(17,24,39,.04)",
       cardBg: "rgba(255,255,255,.94)",
       radius: 18,
@@ -1076,6 +1107,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#fbbf24",
       accent2: "#f472b6",
       bodyBg: "#0a0a0b",
+      pageBg: "#0a0a0b",
       headerBg: "linear-gradient(135deg, rgba(251,191,36,.10), rgba(244,114,182,.08))",
       cardBg: "rgba(255,255,255,.06)",
       radius: 18,
@@ -1092,6 +1124,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#b45309",
       accent2: "#92400e",
       bodyBg: "#fff7ed",
+      pageBg: "#fff7ed",
       headerBg: "rgba(180,83,9,.06)",
       cardBg: "rgba(255,255,255,.85)",
       radius: 18,
@@ -1109,6 +1142,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0f172a",
       accent2: "#0f172a",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(15,23,42,.03)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 18,
@@ -1126,6 +1160,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0ea5e9",
       accent2: "#2563eb",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(14,165,233,.06)",
       cardBg: "rgba(255,255,255,.94)",
       radius: 16,
@@ -1142,6 +1177,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#000000",
       accent2: "#111827",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(0,0,0,.04)",
       cardBg: "rgba(255,255,255,.96)",
       radius: 14,
@@ -1158,6 +1194,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#22c55e",
       accent2: "#16a34a",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "rgba(34,197,94,.06)",
       cardBg: "rgba(255,255,255,.92)",
       radius: 22,
@@ -1174,6 +1211,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#2563eb",
       accent2: "#22c55e",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg:
         "linear-gradient(135deg, rgba(37,99,235,.07), rgba(34,197,94,.05)), repeating-linear-gradient(0deg, rgba(37,99,235,.06), rgba(37,99,235,.06) 1px, transparent 1px, transparent 16px), repeating-linear-gradient(90deg, rgba(37,99,235,.06), rgba(37,99,235,.06) 1px, transparent 1px, transparent 16px)",
       cardBg: "rgba(255,255,255,.92)",
@@ -1192,6 +1230,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#f97316",
       accent2: "#f59e0b",
       bodyBg: "#fff7ed",
+      pageBg: "#fff7ed",
       headerBg: "linear-gradient(135deg, rgba(249,115,22,.10), rgba(245,158,11,.10))",
       cardBg: "rgba(255,255,255,.86)",
       radius: 20,
@@ -1209,6 +1248,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#a78bfa",
       accent2: "#34d399",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(167,139,250,.14), rgba(52,211,153,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1226,6 +1266,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#10b981",
       accent2: "#22c55e",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(16,185,129,.14), rgba(34,197,94,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1243,6 +1284,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#a78bfa",
       accent2: "#7c3aed",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(167,139,250,.16), rgba(124,58,237,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1259,6 +1301,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#fb7185",
       accent2: "#f59e0b",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(251,113,133,.14), rgba(245,158,11,.12))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1275,6 +1318,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#16a34a",
       accent2: "#22c55e",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(22,163,74,.14), rgba(34,197,94,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1291,6 +1335,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0ea5e9",
       accent2: "#2563eb",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(14,165,233,.14), rgba(37,99,235,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1307,6 +1352,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#d97706",
       accent2: "#b45309",
       bodyBg: "#fffbeb",
+      pageBg: "#fffbeb",
       headerBg: "linear-gradient(135deg, rgba(217,119,6,.12), rgba(180,83,9,.08))",
       cardBg: "rgba(255,255,255,.86)",
       radius: 20,
@@ -1323,6 +1369,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#2563eb",
       accent2: "#7c3aed",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(37,99,235,.14), rgba(124,58,237,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1339,6 +1386,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#f59e0b",
       accent2: "#fbbf24",
       bodyBg: "#ffffff",
+      pageBg: "#ffffff",
       headerBg: "linear-gradient(135deg, rgba(245,158,11,.12), rgba(251,191,36,.10))",
       cardBg: "rgba(255,255,255,.92)",
       radius: 20,
@@ -1349,7 +1397,6 @@ function templateStyles(template: ResumeTemplateId) {
 
   if (template === "classic") return classicCss;
 
-  // ✅ FIXED: no recursion
   return classicCss;
 }
 
@@ -1362,8 +1409,7 @@ function buildResumeHtml(args: {
   metaMetrics: string[];
   includeMeta: boolean;
 }) {
-  const { template, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMeta } =
-    args;
+  const { template, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMeta } = args;
 
   const safe = (s: string) => escapeHtml(s || "");
 
@@ -1467,7 +1513,7 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStyles(template)}
+    ${templateStylesResume(template)}
   </style>
 </head>
 <body>
@@ -1524,7 +1570,7 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStyles(template)}
+    ${templateStylesResume(template)}
   </style>
 </head>
 <body>
@@ -1837,7 +1883,9 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        throw new Error(typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed");
+        throw new Error(
+          typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed"
+        );
       }
 
       if (typeof payload === "string") {
@@ -2089,9 +2137,7 @@ export default function ResumeMvp() {
         if (txt) otherTexts.push(txt);
       }
 
-      const usedOpeners = Array.from(
-        new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean))
-      );
+      const usedOpeners = Array.from(new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean)));
 
       const phraseCounts = new Map<string, number>();
       for (const t of otherTexts) {
@@ -2521,15 +2567,14 @@ export default function ResumeMvp() {
               />
               {resumeText.trim() ? (
                 <div className="text-xs text-black/60 dark:text-white/60">
-                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on Analyze.
+                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on
+                  Analyze.
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Job posting text
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -2541,9 +2586,7 @@ export default function ResumeMvp() {
 
             {/* Template */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
-                Template
-              </div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Template</div>
 
               <select
                 value={resumeTemplate}
@@ -2560,9 +2603,7 @@ export default function ResumeMvp() {
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
-                Header details
-              </div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
@@ -2632,9 +2673,7 @@ export default function ResumeMvp() {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Only experience bullets
-                </span>
+                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">Only experience bullets</span>
               </label>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2647,7 +2686,7 @@ export default function ResumeMvp() {
                   {loadingAnalyze ? "Analyzing…" : "Analyze"}
                 </button>
 
-                                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
                     type="checkbox"
                     checked={includeMetaInResumeDoc}
@@ -2816,47 +2855,43 @@ export default function ResumeMvp() {
         </section>
       </div>
 
-     {/* ✅ BULLETS PANEL */}
-{analysis && effectivePlan.length ? (
-  <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="text-base font-extrabold">Bullets</h2>
+      {/* ✅ BULLETS PANEL */}
+      {analysis && effectivePlan.length ? (
+        <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-extrabold">Bullets</h2>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => selectAll(effectivePlan.length)}
-          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Select all
-        </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => selectAll(effectivePlan.length)}
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              >
+                Select all
+              </button>
 
-        <button
-          type="button"
-          onClick={selectNone}
-          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Select none
-        </button>
+              <button
+                type="button"
+                onClick={selectNone}
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              >
+                Select none
+              </button>
 
-        {/* 🔥 MOVED HERE */}
-        <button
-          type="button"
-          onClick={handleRewriteSelected}
-          disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-          className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-        >
-          {loadingBatchRewrite
-            ? "Rewriting…"
-            : `Rewrite Selected (${selectedCount})`}
-        </button>
+              <button
+                type="button"
+                onClick={handleRewriteSelected}
+                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+              >
+                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+              </button>
 
-        <div className="text-xs text-black/60 dark:text-white/60">
-          Selecting a bullet applies its rewrite (if available) to the compiled resume.
-        </div>
-      </div>
-    </div>
-
+              <div className="text-xs text-black/60 dark:text-white/60">
+                Selecting a bullet applies its rewrite (if available) to the compiled resume.
+              </div>
+            </div>
+          </div>
 
           <div className="mt-3 grid gap-3">
             {effectivePlan.map((item, i) => {
@@ -2921,9 +2956,7 @@ export default function ResumeMvp() {
                   ) : null}
 
                   <div className="mt-2 grid gap-2">
-                    <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
-                      Original
-                    </div>
+                    <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Original</div>
                     <div className="whitespace-pre-wrap text-sm">{original}</div>
 
                     {rewritten ? (
