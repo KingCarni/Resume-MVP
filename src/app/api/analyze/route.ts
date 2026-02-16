@@ -62,22 +62,17 @@ function looksLikeContactOrReferenceLine(line: string) {
   const urlRegex = /\bhttps?:\/\/\S+|\bwww\.\S+/i;
   const linkedinRegex = /\blinkedin\.com\/in\/\S+/i;
 
-  // explicit contact-ish tokens
   if (emailRegex.test(l)) return true;
   if (linkedinRegex.test(l)) return true;
   if (urlRegex.test(l)) return true;
 
-  // phone-ish: any line with 7+ digits
   if (digitsCount(l) >= 7) return true;
 
-  // Reference headings / common lines
   if (/^references?$/i.test(l)) return true;
   if (/available\s+upon\s+request/i.test(l)) return true;
 
-  // Name-only lines (common in references): "First Last" or "First Middle Last"
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}$/.test(l)) return true;
 
-  // Many resumes have “Role” lines under references (optional but helps your screenshot)
   if (/^(massage therapist|production manager|2\s*nd\s*ad)\b/i.test(l)) return true;
 
   return false;
@@ -88,6 +83,51 @@ function filterBadBullets(arr: string[]) {
     .map((b) => String(b || "").trim())
     .filter(Boolean)
     .filter((b) => !looksLikeContactOrReferenceLine(b));
+}
+
+/** ---------------- Magic-byte sniffing ---------------- */
+
+type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
+
+function startsWith(buf: Buffer, bytes: number[]) {
+  if (!Buffer.isBuffer(buf)) return false;
+  if (buf.length < bytes.length) return false;
+  for (let i = 0; i < bytes.length; i++) {
+    if (buf[i] !== bytes[i]) return false;
+  }
+  return true;
+}
+
+function sniffBufferType(buf: Buffer): SniffedType {
+  // PDF: %PDF-
+  if (buf.length >= 5 && buf.slice(0, 5).toString("ascii") === "%PDF-") return "pdf";
+
+  // ZIP/DOCX: PK..
+  if (buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b) return "docx";
+
+  // DOC (OLE2): D0 CF 11 E0 A1 B1 1A E1
+  if (startsWith(buf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return "doc";
+
+  // Heuristic text: mostly printable in first chunk
+  const head = buf.slice(0, Math.min(buf.length, 4096));
+  if (head.length) {
+    let printable = 0;
+    for (const b of head) {
+      // allow tab/newline/carriage return + common ASCII printable range
+      if (b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e)) printable++;
+    }
+    const ratio = printable / head.length;
+    if (ratio > 0.92) return "txt";
+  }
+
+  return "unknown";
+}
+
+function friendlyUnsupportedDocMsg(extra?: string) {
+  return (
+    "Unsupported Word format (.doc). Please convert it to .docx or export to PDF, then upload again." +
+    (extra ? ` ${extra}` : "")
+  );
 }
 
 /** ---------------- DOCX helpers (preserve list bullets) ---------------- */
@@ -123,6 +163,15 @@ async function extractDocxTextAndBulletsFromBuffer(buffer: Buffer): Promise<{
   bullets: string[];
   html: string;
 }> {
+  // Guard: ensure it's actually ZIP/DOCX
+  const sniffed = sniffBufferType(buffer);
+  if (sniffed !== "docx") {
+    if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
+    throw new Error(
+      `File is not a valid .docx (zip). Detected: ${sniffed}. Please upload a real DOCX or PDF.`
+    );
+  }
+
   const { value: html } = await mammoth.convertToHtml({ buffer });
   const bullets = extractLiText(html);
 
@@ -134,15 +183,6 @@ async function extractDocxTextAndBulletsFromBuffer(buffer: Buffer): Promise<{
   return { text: textWithBullets, bullets, html };
 }
 
-async function extractDocxTextAndBullets(file: File): Promise<{
-  text: string;
-  bullets: string[];
-  html: string;
-}> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  return extractDocxTextAndBulletsFromBuffer(buffer);
-}
-
 /** ---------------- Experience section slicing ---------------- */
 
 function extractExperienceSection(fullText: string) {
@@ -152,12 +192,7 @@ function extractExperienceSection(fullText: string) {
   const endHeadingRegex =
     /\n\s*(skills|personal skills|technical skills|certificates|certifications|education|projects|references|achievements|training|volunteer|interests)\b/i;
 
-  const startNeedles = [
-    "professional experience",
-    "work experience",
-    "employment history",
-    "experience",
-  ];
+  const startNeedles = ["professional experience", "work experience", "employment history", "experience"];
 
   let bestStartIdx = -1;
   let bestNeedle = "";
@@ -284,29 +319,39 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   return text;
 }
 
-async function extractTextFromPdf(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  return extractTextFromPdfBuffer(buffer);
-}
-
 /**
  * Return BOTH resumeText and any bullets we can confidently extract at file-read time.
+ * ✅ Uses magic-byte sniffing so DOC won't crash mammoth/jszip.
  */
 async function extractResumeFromFile(file: File): Promise<{
   text: string;
   bulletsFromFile?: string[];
 }> {
-  const name = file.name.toLowerCase();
+  const buffer = Buffer.from(await file.arrayBuffer());
 
-  if (name.endsWith(".docx")) {
-    const { text, bullets } = await extractDocxTextAndBullets(file);
+  const sniffed = sniffBufferType(buffer);
+
+  if (sniffed === "pdf") {
+    const text = await extractTextFromPdfBuffer(buffer);
+    return { text, bulletsFromFile: undefined };
+  }
+
+  if (sniffed === "docx") {
+    const { text, bullets } = await extractDocxTextAndBulletsFromBuffer(buffer);
     return { text, bulletsFromFile: bullets };
   }
 
-  if (name.endsWith(".pdf")) {
-    const text = await extractTextFromPdf(file);
-    return { text, bulletsFromFile: undefined };
+  if (sniffed === "doc") {
+    throw new Error(friendlyUnsupportedDocMsg());
   }
+
+  if (sniffed === "txt") {
+    return { text: buffer.toString("utf8"), bulletsFromFile: undefined };
+  }
+
+  // last-resort: filename fallback (but keep it safe)
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".doc")) throw new Error(friendlyUnsupportedDocMsg("(It looks like a legacy Word .doc file.)"));
 
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
@@ -380,9 +425,12 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
     );
   }
 
+  // ✅ Prefer magic-byte sniffing over headers/extension (those lie all the time)
+  const sniffed = sniffBufferType(buffer);
   const typeFromCt = inferTypeFromContentType(contentType);
   const typeFromUrl = inferExtFromUrl(resumeBlobUrl);
-  const detectedType = typeFromCt || typeFromUrl || "";
+
+  const detectedType = sniffed !== "unknown" ? sniffed : typeFromCt || typeFromUrl || "unknown";
 
   if (detectedType === "docx") {
     const { text, bullets } = await extractDocxTextAndBulletsFromBuffer(buffer);
@@ -394,17 +442,25 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
     return { text, bulletsFromFile: undefined, sizeBytes: buffer.byteLength, detectedType };
   }
 
-  if (detectedType === "txt" || contentType.toLowerCase().includes("text/plain")) {
+  if (detectedType === "doc") {
+    throw new Error(
+      friendlyUnsupportedDocMsg(
+        `(Detected content-type "${contentType || "unknown"}", url "${resumeBlobUrl}")`
+      )
+    );
+  }
+
+  if (detectedType === "txt") {
     return {
       text: buffer.toString("utf8"),
       bulletsFromFile: undefined,
       sizeBytes: buffer.byteLength,
-      detectedType: detectedType || "txt",
+      detectedType,
     };
   }
 
   throw new Error(
-    `Unsupported resumeBlobUrl file type. Content-Type was "${contentType || "unknown"}". URL was "${resumeBlobUrl}".`
+    `Unsupported resumeBlobUrl file type. Detected "${detectedType}". Content-Type was "${contentType || "unknown"}".`
   );
 }
 
