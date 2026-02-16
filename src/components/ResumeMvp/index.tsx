@@ -674,16 +674,16 @@ function templateStylesResume(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white)
+   IMPORTANT: variables are lowercase: --bodybg, --pagebg */
 @media print {
   body{
     background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    padding: 0 !important;
   }
   .page{
-    background: var(--pagebg) !important;
+    background: var(--pagebg, var(--bodybg)) !important;
     box-shadow: none !important;
     margin: 0 auto !important;
   }
@@ -691,6 +691,7 @@ ${templateStyles(template)}
 }
 `.trim();
 }
+
 
 /**
  * ✅ INCLUDED: full templateStyles() with theme parity fixes

@@ -14,6 +14,54 @@ function safeFilename(name: string) {
   return base.replace(/[^\w.-]+/g, "_");
 }
 
+type PuppeteerModule = {
+  launch: (opts: {
+    args?: string[];
+    executablePath?: string;
+    headless?: boolean;
+    defaultViewport?: { width: number; height: number; deviceScaleFactor?: number };
+  }) => Promise<{
+    newPage: () => Promise<{
+      emulateMediaType?: (t: "screen" | "print") => Promise<void>;
+      setContent: (
+        html: string,
+        opts?: { waitUntil?: "load" | "domcontentloaded" | "networkidle0" | "networkidle2" }
+      ) => Promise<void>;
+      evaluate: <T>(fn: () => Promise<T> | T) => Promise<T>;
+      pdf: (opts: {
+        format?: "Letter";
+        printBackground?: boolean;
+        preferCSSPageSize?: boolean;
+        margin?: { top: string; right: string; bottom: string; left: string };
+      }) => Promise<Uint8Array>;
+    }>;
+    close: () => Promise<void>;
+  }>;
+};
+
+type ChromiumModule = {
+  args: string[];
+  headless?: boolean;
+  executablePath?: () => Promise<string> | string;
+  setHeadlessMode?: boolean;
+  setGraphicsMode?: boolean;
+};
+
+async function loadPdfDeps(): Promise<{ puppeteer: PuppeteerModule; chromium: ChromiumModule }> {
+  const puppeteerImport = (await import("puppeteer-core")) as unknown as {
+    default?: PuppeteerModule;
+  } & PuppeteerModule;
+
+  const chromiumImport = (await import("@sparticuz/chromium")) as unknown as {
+    default?: ChromiumModule;
+  } & ChromiumModule;
+
+  const puppeteer = (puppeteerImport.default ?? puppeteerImport) as PuppeteerModule;
+  const chromium = (chromiumImport.default ?? chromiumImport) as ChromiumModule;
+
+  return { puppeteer, chromium };
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<Body>;
@@ -24,32 +72,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing html" }, { status: 400 });
     }
 
-    // ✅ Vercel-safe PDF rendering:
-    // puppeteer-core + @sparticuz/chromium (no Playwright install step)
-    let puppeteer: any;
-    let chromium: any;
+    let puppeteer: PuppeteerModule;
+    let chromium: ChromiumModule;
 
     try {
-      puppeteer = (await import("puppeteer-core")).default ?? (await import("puppeteer-core"));
-      chromium = (await import("@sparticuz/chromium")).default ?? (await import("@sparticuz/chromium"));
-    } catch (e: any) {
+      ({ puppeteer, chromium } = await loadPdfDeps());
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       return NextResponse.json(
         {
           ok: false,
           error: "Missing PDF deps. Install: npm i puppeteer-core @sparticuz/chromium",
-          details: e?.message,
+          details: message,
         },
         { status: 501 }
       );
     }
 
-    // Sparticuz docs recommend these toggles; types vary by version,
-    // so we only set them if they exist to avoid TS warnings.
     if (typeof chromium.setHeadlessMode !== "undefined") chromium.setHeadlessMode = true;
     if (typeof chromium.setGraphicsMode !== "undefined") chromium.setGraphicsMode = false;
 
     const executablePath =
-      (await chromium.executablePath?.()) ||
+      (typeof chromium.executablePath === "function" ? await chromium.executablePath() : chromium.executablePath) ||
       process.env.CHROME_EXECUTABLE_PATH ||
       undefined;
 
@@ -64,43 +108,49 @@ export async function POST(req: Request) {
       );
     }
 
+    // Letter @ 96dpi
+    const LETTER_W = 816;
+    const LETTER_H = 1056;
+
     const browser = await puppeteer.launch({
       args: chromium.args,
-      defaultViewport: { width: 1200, height: 1600 },
       executablePath,
       headless: chromium.headless ?? true,
+      defaultViewport: { width: LETTER_W, height: LETTER_H, deviceScaleFactor: 1 },
     });
 
     try {
       const page = await browser.newPage();
 
-      // ✅ Match iframe preview: use "screen" media, not "print"
+      // Match iframe preview: "screen" media
       if (typeof page.emulateMediaType === "function") {
         await page.emulateMediaType("screen");
       }
 
-      // Load HTML and wait for layout/fonts/assets to settle
       await page.setContent(html, { waitUntil: "networkidle0" });
 
-      // Wait for web fonts if supported (safe no-op otherwise)
       await page
         .evaluate(async () => {
-          const fonts = (document as any).fonts;
+          const fonts = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts;
           if (fonts?.ready) await fonts.ready;
         })
         .catch(() => {});
 
-      // Tiny settle for gradients/layout
       await new Promise((r) => setTimeout(r, 50));
 
-      const pdfBuffer = await page.pdf({
+      const pdfBytes = await page.pdf({
         format: "Letter",
         printBackground: true,
         preferCSSPageSize: true,
-        margin: { top: "0.4in", right: "0.4in", bottom: "0.4in", left: "0.4in" },
+        margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
       });
 
-      return new NextResponse(pdfBuffer, {
+      // ✅ TS-proof: force a *real* ArrayBuffer (never SharedArrayBuffer)
+      const copy = new Uint8Array(pdfBytes.byteLength);
+      copy.set(pdfBytes);
+      const arrayBuffer: ArrayBuffer = copy.buffer;
+
+      return new Response(arrayBuffer, {
         status: 200,
         headers: {
           "Content-Type": "application/pdf",
@@ -111,10 +161,8 @@ export async function POST(req: Request) {
     } finally {
       await browser.close();
     }
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "PDF export failed" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, error: message || "PDF export failed" }, { status: 500 });
   }
 }
