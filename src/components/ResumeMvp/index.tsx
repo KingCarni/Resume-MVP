@@ -402,9 +402,7 @@ function headerContactChipsCss() {
 }
 
 function printLockCss() {
-  const PAGE_SIZE = "Letter";
-  const PAGE_MARGIN = "0.35in";
-
+  // Media-invariant lock: same in iframe preview AND pdf render
   return `
 html, body{
   margin:0;
@@ -413,21 +411,22 @@ html, body{
   print-color-adjust: exact;
 }
 
-@page{
-  size: ${PAGE_SIZE};
-  margin: ${PAGE_MARGIN};
+/* ✅ Always lock "paper" geometry, not just print */
+.page{
+  width: 8.5in !important;
+  min-height: 11in !important;
+  max-width: none !important;
+  margin: 0 auto !important;
 }
 
-@media print{
-  .page{
-    width: 8.5in !important;
-    min-height: 11in !important;
-    max-width: none !important;
-    margin: 0 auto !important;
-  }
+/* ✅ Avoid browser-specific print inset surprises */
+@page{
+  size: Letter;
+  margin: 0;
 }
 `.trim();
 }
+
 
 /**
  * IMPORTANT: Theme parity (Resume ⇄ Cover Letter)
