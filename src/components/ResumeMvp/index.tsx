@@ -162,6 +162,42 @@ function keywordsToArray(k: any): string[] {
   return [];
 }
 
+function HtmlDocPreview({
+  html,
+  footer,
+  title = "Document Preview (HTML)",
+  iframeTitle = "doc-preview",
+  heightClass = "h-[820px]",
+}: {
+  html: string;
+  footer?: React.ReactNode;
+  title?: string;
+  iframeTitle?: string;
+  heightClass?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-sm font-extrabold text-black/80 dark:text-white/85">
+          {title}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+        <iframe
+          title={iframeTitle}
+          className={`${heightClass} w-full`}
+          sandbox="allow-same-origin"
+          srcDoc={html || "<!doctype html><html><head><meta charset='utf-8' /></head><body></body></html>"}
+        />
+      </div>
+
+      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
+    </div>
+  );
+}
+
+
 function csvToArray(s: string): string[] {
   return (s || "")
     .split(",")
@@ -2734,228 +2770,76 @@ export default function ResumeMvp() {
         </section>
 
         {/* Preview */}
-        <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-white/60">
-              {effectiveResumeHtml ? "Ready" : "Waiting for rewrite"}
-            </div>
-          </div>
+        {/* Preview */}
+<HtmlDocPreview
+  html={effectiveResumeHtml}
+  title="Document Preview (HTML)"
+  iframeTitle="resume-preview"
+  heightClass="h-[820px]"
+  footer={
+    <>
+      <div className="text-xs text-black/60 dark:text-white/60 mr-auto">
+        {effectiveResumeHtml ? "Ready" : "Waiting for rewrite"}
+      </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleCopyOutput}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Copy
-            </button>
+      <button
+        type="button"
+        onClick={handleCopyOutput}
+        disabled={!effectiveResumeHtml}
+        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+      >
+        Copy
+      </button>
 
-            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-              .pdf
-            </div>
+      <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+        .pdf
+      </div>
 
-                      <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Download
-            </button>
+      <button
+        type="button"
+        onClick={handleDownloadPdf}
+        disabled={!effectiveResumeHtml}
+        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+      >
+        Download
+      </button>
 
-            <button
-              type="button"
-              onClick={handlePrintPdf}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Print
-            </button>
+      <button
+        type="button"
+        onClick={handlePrintPdf}
+        disabled={!effectiveResumeHtml}
+        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+      >
+        Print
+      </button>
 
-           {false && <ImpactVote feature="resume" template={resumeTemplate} />}
+      {false && <ImpactVote feature="resume" template={resumeTemplate} />}
 
+      {/* If you want true 1:1, I recommend removing this button entirely.
+          If you insist, keep it behind a flag like this. */}
+      {false && (
+        <button
+          type="button"
+          onClick={openEditPreview}
+          disabled={!effectiveResumeHtml}
+          className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          Edit Live Preview
+        </button>
+      )}
 
+      <button
+        type="button"
+        onClick={handleViewPreview}
+        disabled={!effectiveResumeHtml}
+        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+      >
+        Preview
+      </button>
+    </>
+  }
+/>
 
-            <button
-              type="button"
-              onClick={openEditPreview}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Edit Live Preview
-            </button>
-
-            <button
-              type="button"
-              onClick={handleViewPreview}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              Preview
-            </button>
-          </div>
-
-          {showPreviewEditor ? (
-            <div className="mt-3 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-extrabold">Edit Live Preview (HTML)</div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={applyPreviewEdits}
-                    className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 dark:border-white/10"
-                  >
-                    Apply
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetPreviewEdits}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePreviewEditor}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-
-              <textarea
-                value={previewHtmlDraft}
-                onChange={(e) => setPreviewHtmlDraft(e.target.value)}
-                rows={14}
-                spellCheck={false}
-                className="mt-3 w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
-              />
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Tip: “Apply” sets the override. Download / View / Print will use the edited HTML.
-              </div>
-            </div>
-          ) : null}
-
-          
-            <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-white">
-          {/* “Paper” container always visible */}
-          <div className="h-[720px] w-full overflow-auto">
-            {effectiveResumeHtml ? (
-              <iframe
-                title="Resume preview"
-                className="h-[720px] w-full border-0"
-                srcDoc={effectiveResumeHtml}
-              />
-            ) : (
-              <div className="p-10 text-sm text-black/40">
-                Run <span className="font-extrabold text-black/60">Analyze</span> and then rewrite at least
-                one bullet to generate the resume preview.
-              </div>
-            )}
-          </div>
-        </div>
-
-            
-
-          {analysis && rewritePlan.length ? (
-            <div className="mt-4">
-              <div className="flex flex-wrap items-end justify-between gap-2">
-            <h3 className="text-sm font-extrabold">Rewrite Plan (select bullets)</h3>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* ✅ Move Rewrite Selected here */}
-              <button
-                type="button"
-                onClick={handleRewriteSelected}
-                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-              >
-                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => selectAll(rewritePlan.length)}
-                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-              >
-                Select all
-              </button>
-
-              <button
-                type="button"
-                onClick={selectNone}
-                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-              >
-                Select none
-              </button>
-            </div>
-          </div>
-
-
-              <div className="mt-3 grid gap-3">
-                {rewritePlan.map((item, i) => {
-                  const original = planItemToText(item);
-                  const rewritten = String(item?.rewrittenBullet ?? "").trim();
-                  const isSelected = selectedBulletIdx.has(i);
-
-                  
-                  return (
-                    <div
-                      key={i}
-                      className="rounded-2xl border border-black/10 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-black/10"
-                    >
-                      <label className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelected(i)}
-                          className="h-4 w-4"
-                        />
-                        <strong className="text-sm">Bullet #{i + 1}</strong>
-
-                        <span className="ml-auto" />
-
-                      </label>
-
-                      <div className="mt-3 text-sm leading-relaxed">
-                        <div className="mb-1 text-xs font-extrabold text-black/60 dark:text-white/60">
-                          Original
-                        </div>
-                        <div className="text-black/90 dark:text-white/90">
-                          {original || <em>(empty)</em>}
-                        </div>
-                      </div>
-
-                      {rewritten ? (
-                        <div className="mt-3 text-sm leading-relaxed">
-                          <div className="mb-1 text-xs font-extrabold text-black/60 dark:text-white/60">
-                            Rewrite
-                          </div>
-                          <div className="text-black/90 dark:text-white/90">{rewritten}</div>
-                        </div>
-                      ) : null}
-
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRewriteBullet(i)}
-                          disabled={loadingRewriteIndex !== null}
-                          className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-                        >
-                          {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite this bullet"}
-                        </button>
-
-                        </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </section>
       </div>
     </main>
   );
