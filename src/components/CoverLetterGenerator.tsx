@@ -1486,7 +1486,7 @@ export default function CoverLetterGenerator() {
         <div className="flex flex-wrap items-center gap-2">
 
           <a
-            href="https://buymeacoffee.com/YOUR_LINK"
+            href="https://git-a-job.com/donate"
             target="_blank"
             className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
 bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"

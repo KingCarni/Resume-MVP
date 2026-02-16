@@ -2497,7 +2497,7 @@ export default function ResumeMvp() {
 
         <div className="flex flex-wrap items-center gap-2">
           <a
-            href="https://buymeacoffee.com/YOUR_LINK"
+            href="https://git-a-job.com/donate"
             target="_blank"
             rel="noreferrer"
             className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
