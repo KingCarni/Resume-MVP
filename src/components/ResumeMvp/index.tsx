@@ -2028,6 +2028,50 @@ export default function ResumeMvp() {
 
     return { res, payload };
   }
+function handleUndoRewrite(index: number) {
+  // Also unselect it, since "selected + rewritten" is what applies to the resume output
+  setSelectedBulletIdx((prev) => {
+    const next = new Set(prev);
+    next.delete(index);
+    return next;
+  });
+
+  setAnalysis((prev) => {
+    if (!prev) return prev;
+
+    const prevBullets = Array.isArray(prev.bullets) ? prev.bullets : [];
+    const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
+
+    // If rewritePlan doesn't exist for some reason, synthesize it (same pattern you use elsewhere)
+    const nextPlan =
+      prevPlan.length > 0
+        ? [...prevPlan]
+        : prevBullets.slice(0, 200).map((b) => ({
+            originalBullet: bulletToText(b),
+            suggestedKeywords: [],
+            rewrittenBullet: "",
+            needsMoreInfo: false,
+            notes: [],
+            keywordHits: [],
+            blockedKeywords: [],
+            verbStrength: undefined,
+            jobId: undefined,
+          }));
+
+    if (!nextPlan[index]) return prev;
+
+    nextPlan[index] = {
+      ...nextPlan[index],
+      rewrittenBullet: "",
+      needsMoreInfo: false,
+      notes: [],
+      keywordHits: [],
+      blockedKeywords: [],
+    };
+
+    return { ...prev, rewritePlan: nextPlan };
+  });
+}
 
   async function handleRewriteBullet(index: number) {
     if (!analysis) return;
@@ -2943,6 +2987,16 @@ export default function ResumeMvp() {
                       >
                         {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite"}
                       </button>
+                      {rewritten ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUndoRewrite(i)}
+                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                        >
+                          Undo Rewrite
+                        </button>
+                      ) : null}
+
                     </div>
                   </div>
 
