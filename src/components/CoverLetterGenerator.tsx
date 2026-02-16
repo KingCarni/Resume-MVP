@@ -149,10 +149,9 @@ function escapeHtml(s: string) {
 /**
  * mkThemeCss is used by the “new” themes.
  *
- * ✅ IMPORTANT PARITY FIX:
- * - We now support BOTH:
- *   - body background (outside the sheet)
- *   - page background (the sheet itself)
+ * Supports BOTH:
+ * - body background (outside the sheet)
+ * - page background (the sheet itself)
  */
 function mkThemeCss(opts: {
   font?: "sans" | "serif" | "mono";
@@ -247,12 +246,6 @@ function mkThemeCss(opts: {
     )}px; padding: 12px; background:var(--cardbg); }
     .boxtitle { font-weight: 950; font-size: 12px; color: var(--ink); margin:0 0 6px; }
     .small { font-size: 12px; color: var(--muted); }
-
-    @media print {
-      body{background:white;}
-      .page{box-shadow:none; margin:0; border:none; border-radius:0; background:white;}
-      .top:after{display:none;}
-    }
   `;
 }
 
@@ -291,7 +284,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 12px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 900; font-size: 12px; color: var(--ink); margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} }
     `;
   }
 
@@ -317,7 +309,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border-top:1px solid var(--line); padding-top:10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{margin:0; padding:0 10px 10px;} }
     `;
   }
 
@@ -357,7 +348,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 1000; font-size: 12px; color: var(--ink); margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0; background:white;} .top:after{display:none;} }
     `;
   }
 
@@ -370,7 +360,6 @@ function templateStyles(template: ResumeTemplateId) {
           radial-gradient(900px 500px at 20% 10%, rgba(0,229,255,.14), rgba(255,255,255,0)),
           radial-gradient(900px 500px at 80% 20%, rgba(255,0,229,.10), rgba(255,255,255,0)),
           #f7f9ff;
-        /* ✅ tint sheet (more visible) */
         --pagebg: #eef7ff;
         --radius: 18px;
         --shadow: 0 18px 50px rgba(11,16,32,.10);
@@ -397,7 +386,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0; background:white;} .bar{box-shadow:none;} }
     `;
   }
 
@@ -433,13 +421,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; background:#061a10; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; color:var(--accent); }
       .small { font-size: 12px; color: var(--muted); }
-      @media print {
-        body{background:white; color:black;}
-        .page{box-shadow:none; margin:0; border:1px solid #ddd; border-radius:0; background:white;}
-        .name,.h,.boxtitle{color:#111;}
-        .summary,.jobmeta,.contact,.small{color:#333;}
-        .chip{background:#fff; border:1px solid #ddd; color:#111;}
-      }
     `;
   }
 
@@ -478,7 +459,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px dashed var(--line); border-radius: 14px; padding: 12px; background:#fff; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0; background:white;} }
     `;
   }
 
@@ -503,7 +483,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 12px; }
       .boxtitle { font-weight: 950; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 10px 10px;} }
     `;
   }
 
@@ -528,7 +507,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 950; font-size: 11px; margin:0 0 6px; }
       .small { font-size: 11px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
     `;
   }
 
@@ -557,7 +535,6 @@ function templateStyles(template: ResumeTemplateId) {
       .small { font-size: 12px; color: var(--muted); }
       .content { padding:0; }
       .section { margin-top: 0; }
-      @media print { body{background:white;} .page{box-shadow:none; margin:0; border:none; border-radius:0;} .side{background:white;} }
     `;
   }
 
@@ -582,7 +559,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { body{background:white;} .page{border:none; margin:0; padding:0 10px 10px;} }
     `;
   }
 
@@ -607,7 +583,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 800; font-size: 11px; margin:0 0 6px; }
       .small { font-size: 11px; color: var(--muted); }
-      @media print { .page{margin:0; padding:0 10px 10px;} }
     `;
   }
 
@@ -633,7 +608,6 @@ function templateStyles(template: ResumeTemplateId) {
       .box { border:1px solid var(--line); padding: 10px; }
       .boxtitle { font-weight: 900; font-size: 12px; margin:0 0 6px; }
       .small { font-size: 12px; color: var(--muted); }
-      @media print { .page{border:none; margin:0; padding:0 8px 8px;} }
     `;
   }
 
@@ -646,7 +620,6 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e2e8f0",
       accent: "#111827",
       bodyBg: "#f8fafc",
-      // ✅ make the sheet tinted like gold behavior (instead of pure white)
       pageBg: "#f8fafc",
       headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
@@ -739,7 +712,6 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#0b0f18",
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
-      // ✅ tint the sheet slightly so the cover letter doesn’t look like it’s on a white slab
       pageBg: "#f7f7f7",
       headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
@@ -758,7 +730,6 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#eef2f7",
       accent: "#111827",
       bodyBg: "#ffffff",
-      // ✅ subtle tint for parity with “colored sheet” behavior
       pageBg: "#fbfbfc",
       headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
@@ -838,7 +809,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#06b6d4",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f7fbff",
-      pageBg: "#effdf6", // ✅ greener “sheet” tint (was near-white)
+      pageBg: "#effdf6",
       headerBg: "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
@@ -952,7 +923,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#7c3aed",
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(29,78,216,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7f9ff",
-      pageBg: "#f2f0ff", // ✅ purple-tinted “sheet”
+      pageBg: "#f2f0ff",
       headerBg: "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
       cardBg: "#ffffff",
       radius: 18,
@@ -985,14 +956,16 @@ function templateStyles(template: ResumeTemplateId) {
 }
 
 /**
- * ✅ Cover letter wrapper
+ * Cover letter wrapper
  *
- * ✅ PARITY FIX (all themes):
- * - We force the “resume box” behind the letter text to use:
+ * Parity:
+ * - The inner “letter card” uses:
  *   - terminal -> var(--cardbg) (dark)
  *   - everything else -> var(--pagebg) (tinted sheet color)
  *
- * This guarantees you don’t get a random white slab for non-gold themes.
+ * ✅ PDF parity:
+ * - Do NOT force white backgrounds in print.
+ * - We override any template @media print rules after template CSS is injected.
  */
 function templateStylesCover(template: ResumeTemplateId) {
   const isTerminal = template === "terminal";
@@ -1013,10 +986,10 @@ ${templateStyles(template)}
   border-radius: calc(var(--radius, 16px) - 2px);
   padding: 18px;
 
-  /* ✅ critical: match the theme sheet color for ALL themes */
+  /* critical: match the theme sheet color for ALL themes */
   background: ${letterCardBg};
 
-  /* optional: remove floating-card vibe to keep it “sheet-like” */
+  /* keep it “sheet-like” */
   box-shadow: none;
 }
 
@@ -1027,11 +1000,22 @@ ${templateStyles(template)}
 /* Signature spacing */
 .sig { margin-top: 16px; }
 
-/* Print parity */
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  body{ background:white !important; }
-  .page{ box-shadow:none !important; margin:0 !important; border:none !important; border-radius:0 !important; background:white !important; }
-  .letter-card{ background: transparent !important; border:none !important; }
+  body{
+    background: var(--bodybg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page{
+    background: var(--pagebg) !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  .top:after{ display:none !important; }
+  .letter-card{
+    background: ${letterCardBg} !important;
+  }
 }
 `.trim();
 }
@@ -1069,7 +1053,9 @@ function buildCoverLetterHtml(args: {
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
   ].filter(Boolean);
 
-  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
+  const useChips =
+    template !== "terminal" && template !== "ats" && template !== "compact";
+
   const topContact = useChips
     ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
     : contactBits.map((c) => `<div>${c}</div>`).join("<br/>");
@@ -1165,7 +1151,13 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+function HtmlDocPreview({
+  html,
+  footer,
+}: {
+  html: string;
+  footer?: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1183,7 +1175,9 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
         />
       </div>
 
-      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
+      {footer ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div>
+      ) : null}
     </div>
   );
 }
@@ -1193,10 +1187,41 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
 function recommendToneHeuristic(jobText: string) {
   const t = String(jobText || "").toLowerCase();
 
-  const startupSignals = ["startup", "0-1", "zero-to-one", "fast-paced", "scrappy", "wear multiple hats"];
-  const enterpriseSignals = ["enterprise", "stakeholders", "cross-functional", "governance", "compliance", "risk"];
-  const leadershipSignals = ["lead", "manager", "mentored", "managed", "owned", "strategy", "roadmap"];
-  const technicalSignals = ["api", "automation", "ci/cd", "pipeline", "performance", "observability", "kpi", "metrics"];
+  const startupSignals = [
+    "startup",
+    "0-1",
+    "zero-to-one",
+    "fast-paced",
+    "scrappy",
+    "wear multiple hats",
+  ];
+  const enterpriseSignals = [
+    "enterprise",
+    "stakeholders",
+    "cross-functional",
+    "governance",
+    "compliance",
+    "risk",
+  ];
+  const leadershipSignals = [
+    "lead",
+    "manager",
+    "mentored",
+    "managed",
+    "owned",
+    "strategy",
+    "roadmap",
+  ];
+  const technicalSignals = [
+    "api",
+    "automation",
+    "ci/cd",
+    "pipeline",
+    "performance",
+    "observability",
+    "kpi",
+    "metrics",
+  ];
 
   const score = (arr: string[]) => arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
 
@@ -1262,7 +1287,6 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
     const hasJob = jobText.trim().length > 0;
@@ -1281,34 +1305,32 @@ export default function CoverLetterGenerator() {
     try {
       let res: Response;
 
-    // ✅ Keep requests under Vercel payload limits
-    const MAX_CHARS = 120_000;
+      // Keep requests under Vercel payload limits
+      const MAX_CHARS = 120_000;
 
-    const clamp = (s: string) =>
-      String(s || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/[ \t]+\n/g, "\n")
-        .trim()
-        .slice(0, MAX_CHARS);
+      const clamp = (s: string) =>
+        String(s || "")
+          .replace(/\r\n/g, "\n")
+          .replace(/[ \t]+\n/g, "\n")
+          .trim()
+          .slice(0, MAX_CHARS);
 
-    const safeResumeText = clamp(resumeText);
-    const safeJobText = clamp(jobText);
+      const safeResumeText = clamp(resumeText);
+      const safeJobText = clamp(jobText);
 
-    // Optional: warn if we had to truncate (helps debugging)
-    if (resumeText && safeResumeText.length < resumeText.trim().length) {
-      setError("Resume text was very large — truncated for upload safety.");
-    }
-    if (jobText && safeJobText.length < jobText.trim().length) {
-      setError("Job text was very large — truncated for upload safety.");
-    }
-
+      // Optional: warn if we had to truncate (helps debugging)
+      if (resumeText && safeResumeText.length < resumeText.trim().length) {
+        setError("Resume text was very large — truncated for upload safety.");
+      }
+      if (jobText && safeJobText.length < jobText.trim().length) {
+        setError("Job text was very large — truncated for upload safety.");
+      }
 
       if (file) {
         const fd = new FormData();
         fd.append("file", file);
         fd.append("jobText", safeJobText);
         if (safeResumeText) fd.append("resumeText", safeResumeText);
-
 
         fd.append("fullName", profile.fullName);
         fd.append("locationLine", profile.locationLine);
@@ -1323,8 +1345,8 @@ export default function CoverLetterGenerator() {
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
         const body = {
-        resumeText: safeResumeText,
-        jobText: safeJobText,
+          resumeText: safeResumeText,
+          jobText: safeJobText,
 
           fullName: profile.fullName,
           locationLine: profile.locationLine,
@@ -1347,12 +1369,10 @@ export default function CoverLetterGenerator() {
       const contentType = res.headers.get("content-type") || "";
       const raw = await res.text();
 
-      // If server returned an error (often plain text/HTML), show it.
       if (!res.ok) {
         throw new Error(raw || `Cover letter generation failed (${res.status})`);
       }
 
-      // We expect JSON on success — but be defensive.
       let payload: ApiResp;
       if (contentType.includes("application/json")) {
         try {
@@ -1372,7 +1392,6 @@ export default function CoverLetterGenerator() {
       if (!text) throw new Error("Empty cover letter returned");
 
       setCoverLetterDraft(text);
-
     } catch (e: any) {
       setError(e?.message || "Generation failed");
     } finally {
@@ -1392,11 +1411,8 @@ export default function CoverLetterGenerator() {
 
       const apiTone = await tryRecommendToneViaApi(jobText);
 
-      if (apiTone) {
-        setTone(apiTone);
-      } else {
-        setTone(recommendToneHeuristic(jobText));
-      }
+      if (apiTone) setTone(apiTone);
+      else setTone(recommendToneHeuristic(jobText));
     } catch (e: any) {
       setError(e?.message || "Could not recommend tone");
     } finally {
@@ -1422,40 +1438,39 @@ export default function CoverLetterGenerator() {
   }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
 
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
-const navBtn =
-  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-  "border-black/10 bg-black/5 text-black hover:bg-black/10 " +
-  "dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
+
+  const navBtn =
+    "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+    "border-black/10 bg-black/5 text-black hover:bg-black/10 " +
+    "dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
 
   return (
-  <main className="mx-auto max-w-6xl px-4 py-6">
-    {/* Top bar */}
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* Top bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {/* LEFT: nav buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/resume" className={navBtn}>
+            Resume Compiler
+          </Link>
 
-      {/* LEFT: nav buttons */}
-      <div className="flex flex-wrap items-center gap-2">
-        
-<Link href="/resume" className={navBtn}>
-  Resume Compiler
-</Link>
+          <Link href="/cover-letter" className={navBtn}>
+            Cover Letter Generator
+          </Link>
+        </div>
 
-
-        <Link href="/cover-letter" className={navBtn}>
-  Cover Letter Generator
-</Link>
-
+        {/* RIGHT: theme toggle */}
+        <ThemeToggle />
       </div>
 
-      {/* RIGHT: theme toggle */}
-      <ThemeToggle />
-    </div>
-
-
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">
+          Git-a-Job: Cover Letter Generator
+        </h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview renders as a
-          real HTML document (resume-template style). You can edit the letter below and the preview updates live.
+          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
+          Preview renders as a real HTML document (resume-template style). You can edit the letter
+          below and the preview updates live.
         </p>
       </div>
 
@@ -1475,30 +1490,35 @@ const navBtn =
           <div className="mt-3 grid gap-3">
             {/* File input */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume file (optional)</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume file (optional)
+              </div>
               <input
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
-               onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
 
-              // ✅ Vercel payload guard (client-side)
-              if (f && f.size > 3.5 * 1024 * 1024) {
-                setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
-                e.target.value = "";
-                setFile(null);
-                return;
-              }
+                  // Vercel payload guard (client-side)
+                  if (f && f.size > 3.5 * 1024 * 1024) {
+                    setError(
+                      "File too large. Please upload a smaller file (under ~3.5MB) or paste text instead."
+                    );
+                    e.target.value = "";
+                    setFile(null);
+                    return;
+                  }
 
-              setError(null);
-              setFile(f);
-            }}
-
+                  setError(null);
+                  setFile(f);
+                }}
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
               />
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">{file.name}</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    {file.name}
+                  </div>
                   <button
                     type="button"
                     onClick={clearFile}
@@ -1528,19 +1548,23 @@ const navBtn =
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Job posting text
+              </div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={8}
-                  placeholder="Paste job posting here"
+                placeholder="Paste job posting here"
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
             </label>
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Template</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Template
+              </div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
@@ -1552,12 +1576,16 @@ const navBtn =
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/60 dark:text-white/60">Selected: {templateLabel}</div>
+              <div className="text-xs text-black/60 dark:text-white/60">
+                Selected: {templateLabel}
+              </div>
             </label>
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">Header details</div>
+              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">
+                Header details
+              </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
@@ -1567,7 +1595,9 @@ const navBtn =
                 />
                 <input
                   value={profile.locationLine}
-                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, locationLine: e.target.value }))
+                  }
                   placeholder="Location"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
@@ -1585,7 +1615,9 @@ const navBtn =
                 />
                 <input
                   value={profile.linkedin}
-                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, linkedin: e.target.value }))
+                  }
                   placeholder="LinkedIn"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
                 />
@@ -1596,7 +1628,9 @@ const navBtn =
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Tone</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                    Tone
+                  </div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
@@ -1615,7 +1649,9 @@ const navBtn =
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Length</div>
+                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                  Length
+                </div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
@@ -1643,7 +1679,9 @@ const navBtn =
             {/* Signature */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Signature block</div>
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
+                  Signature block
+                </div>
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
                     type="checkbox"
@@ -1673,8 +1711,8 @@ const navBtn =
               </div>
 
               <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate
-                “Sincerely”).
+                Leave “Closing” empty if your generated text already includes a sign-off (prevents
+                duplicate “Sincerely”).
               </div>
             </div>
 
@@ -1712,43 +1750,26 @@ const navBtn =
                 </button>
 
                 <div className="flex items-center gap-2">
-  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-    .pdf
-  </div>
+                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+                    .pdf
+                  </div>
 
-  <button
-    type="button"
-    disabled={!coverLetterDraft}
-    onClick={async () => {
-      if (!coverLetterDraft) return;
-      try {
-        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-      } catch (e: any) {
-        setError(e?.message || "Download failed");
-      }
-    }}
-    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-  >
-    Download PDF
-  </button>
-</div>
-
-               <button
-                type="button"
-                onClick={async () => {
-                  if (!coverLetterDraft) return;
-
-                  try {
-                    await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-                  } catch (e: any) {
-                    setError(e?.message || "Download failed");
-                  }
-                }}
-                disabled={!coverLetterDraft}
-                className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold hover:opacity-80 disabled:opacity-50 dark:border-white/10 dark:bg-black/20"
-              >
-                Download PDF
-                </button>
+                  <button
+                    type="button"
+                    disabled={!coverLetterDraft}
+                    onClick={async () => {
+                      if (!coverLetterDraft) return;
+                      try {
+                        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                      } catch (e: any) {
+                        setError(e?.message || "Download failed");
+                      }
+                    }}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  >
+                    Download PDF
+                  </button>
+                </div>
               </div>
             }
           />
