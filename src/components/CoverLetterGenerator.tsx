@@ -1484,9 +1484,6 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
           <ThemeToggle />
 
         </div>
-
-        {/* RIGHT: theme toggle */}
-        <ThemeToggle />
       </div>
 
       <div className="mb-4">

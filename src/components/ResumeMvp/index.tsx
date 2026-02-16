@@ -2615,16 +2615,7 @@ export default function ResumeMvp() {
                   {loadingAnalyze ? "Analyzing…" : "Analyze"}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleRewriteSelected}
-                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                >
-                  {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
-                </button>
-
-                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
                     type="checkbox"
                     checked={includeMetaInResumeDoc}
@@ -2793,31 +2784,47 @@ export default function ResumeMvp() {
         </section>
       </div>
 
-      {/* ✅ BULLETS PANEL (restored) */}
-      {analysis && effectivePlan.length ? (
-        <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-extrabold">Bullets</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => selectAll(effectivePlan.length)}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                onClick={selectNone}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-              >
-                Select none
-              </button>
-              <div className="text-xs text-black/60 dark:text-white/60">
-                Selecting a bullet applies its rewrite (if available) to the compiled resume.
-              </div>
-            </div>
-          </div>
+     {/* ✅ BULLETS PANEL */}
+{analysis && effectivePlan.length ? (
+  <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-base font-extrabold">Bullets</h2>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => selectAll(effectivePlan.length)}
+          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          Select all
+        </button>
+
+        <button
+          type="button"
+          onClick={selectNone}
+          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          Select none
+        </button>
+
+        {/* 🔥 MOVED HERE */}
+        <button
+          type="button"
+          onClick={handleRewriteSelected}
+          disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+          className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+        >
+          {loadingBatchRewrite
+            ? "Rewriting…"
+            : `Rewrite Selected (${selectedCount})`}
+        </button>
+
+        <div className="text-xs text-black/60 dark:text-white/60">
+          Selecting a bullet applies its rewrite (if available) to the compiled resume.
+        </div>
+      </div>
+    </div>
+
 
           <div className="mt-3 grid gap-3">
             {effectivePlan.map((item, i) => {
