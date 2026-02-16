@@ -1422,6 +1422,10 @@ export default function CoverLetterGenerator() {
   }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
 
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
+const navBtn =
+  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+  "border-black/10 bg-black/5 text-black hover:bg-black/10 " +
+  "dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
 
   return (
   <main className="mx-auto max-w-6xl px-4 py-6">
@@ -1430,21 +1434,16 @@ export default function CoverLetterGenerator() {
 
       {/* LEFT: nav buttons */}
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href="/resume"
-          className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-                     dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Resume Compiler
-        </Link>
+        
+<Link href="/resume" className={navBtn}>
+  Resume Compiler
+</Link>
 
-        <Link
-          href="/cover-letter"
-          className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-                     dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Cover Letter Generator
-        </Link>
+
+        <Link href="/cover-letter" className={navBtn}>
+  Cover Letter Generator
+</Link>
+
       </div>
 
       {/* RIGHT: theme toggle */}

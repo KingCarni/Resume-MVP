@@ -2388,29 +2388,27 @@ export default function ResumeMvp() {
     return Array.from(new Set(hits));
   }, [rewritePlan, guardrailTerms]);
 
+    const navBtn =
+      "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+      "border-black/10 bg-black/5 text-black hover:bg-black/10 " +
+      "dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
+
+
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        {/* LEFT: nav buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/resume"
-           className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            <main className="mx-auto max-w-6xl px-4 py-6">
+              {/* Top bar */}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                {/* LEFT: nav buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href="/resume" className={navBtn}>
+          Resume Compiler
+        </Link>
 
-          >
-            Resume Compiler
-          </Link>
 
-          <Link
-            href="/cover-letter"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  <Link href="/cover-letter" className={navBtn}>
+          Cover Letter Generator
+        </Link>
 
-          >
-            Cover Letter Generator
-          </Link>
         </div>
 
         {/* MIDDLE: feedback pill */}
