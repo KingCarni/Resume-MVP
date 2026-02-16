@@ -145,6 +145,26 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+function templateStylesResume(template: ResumeTemplateId) {
+  return `
+${templateStyles(template)}
+
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
+@media print {
+  body{
+    background: var(--bodybg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page{
+    background: var(--pagebg) !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  .top:after{ display:none !important; }
+}
+`.trim();
+}
 
 /**
  * mkThemeCss is used by the “new” themes.
@@ -1081,7 +1101,7 @@ function buildCoverLetterHtml(args: {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cover Letter - ${safe(profile.fullName || "Updated")}</title>
-  <style>${templateStylesCover(template)}</style>
+  <style>${templateStylesResume(template)}</style>
 </head>
 <body>
   <div class="page">
@@ -1170,7 +1190,7 @@ function HtmlDocPreview({
         <iframe
           title="cover-letter-preview"
           className="h-[820px] w-full"
-          sandbox="allow-same-origin"
+          sandbox="allow-same-origin allow-scripts"
           srcDoc={html || "<!doctype html><html><body></body></html>"}
         />
       </div>
@@ -1181,6 +1201,7 @@ function HtmlDocPreview({
     </div>
   );
 }
+
 
 /** ---------------- Tone recommendation ---------------- */
 

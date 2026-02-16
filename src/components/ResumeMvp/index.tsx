@@ -454,6 +454,17 @@ html, body{
   print-color-adjust: exact;
 }
 
+html, body{
+  height: 100%;
+}
+
+body{
+  min-height: 100vh;
+}
+body{
+  padding: 18px;
+}
+
 @page{
   size: ${PAGE_SIZE};
   margin: ${PAGE_MARGIN};
@@ -2731,7 +2742,7 @@ export default function ResumeMvp() {
             </button>
           </div>
 
-          <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+          <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-transparent dark:border-white/10">
             <iframe
               title="resume-preview"
               className="h-[820px] w-full border-0"
