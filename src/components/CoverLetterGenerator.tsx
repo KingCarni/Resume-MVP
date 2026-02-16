@@ -1427,7 +1427,8 @@ export default function CoverLetterGenerator() {
     <main className="mx-auto max-w-6xl px-4 py-6">
       {/* Top bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
+           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15">
           <Link
             href="/resume"
             className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
