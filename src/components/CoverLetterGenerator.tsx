@@ -1496,11 +1496,12 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
           </a>
 
           <a
-            href="mailto:your@email.com"
-            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-          >
-            Feedback
-          </a>
+          href="https://git-a-job.com/feedback"
+          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+        >
+          Feedback
+        </a>
+
 
           <ThemeToggle />
 
