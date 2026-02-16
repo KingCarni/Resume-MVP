@@ -549,7 +549,6 @@ export async function POST(req: Request) {
       ok: true,
       rewrittenBullet: bestRewrite,
       needsMoreInfo,
-      notes,
 
       // transparency / debugging
       safeKeywords,

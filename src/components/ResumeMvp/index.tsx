@@ -944,27 +944,8 @@ ${printLockCss()}
 `.trim();
   }
 
-  // Sidebar + remaining templates unchanged (same as your file)
-  // To keep this response usable, we keep all other template branches exactly as you had them.
-  // NOTE: your original file already contains the rest of the templates below this point.
-  // ------------------------------
-  // (NO CHANGES BELOW HERE besides keyword UI removal and navBtn dedupe)
-  // ------------------------------
-
-  // --- The rest of your template branches ---
-  // ✅ Instead of re-pasting the entire theme section again here, we keep the content identical
-  // by returning classicCss for any template that isn't explicitly handled above in this excerpt.
-  //
-  // BUT your file includes those branches already, so below we paste them exactly.
-
-  // ---- PASTE ORIGINAL REMAINING TEMPLATE BRANCHES ----
-
-  // ⚠️ For correctness: I’m keeping your full original templateStyles() branch list below.
-  // (It’s long, but it’s the safest way to avoid missing a theme.)
-
-  // ---- BEGIN ORIGINAL BRANCHES ----
-
   if (template === "sidebar") {
+    // Sidebar uses same variable naming scheme too.
     return `
 :root{
   --ink:#0f172a;
@@ -1499,7 +1480,8 @@ function buildResumeHtml(args: {
     template === "ocean" ||
     template === "sand" ||
     template === "royal" ||
-    template === "gold";
+    template === "gold" ||
+    template === "terminal";
 
   const metaHtml =
     includeMeta && (metaGames.length || metaMetrics.length)
@@ -1601,7 +1583,9 @@ function buildResumeHtml(args: {
 </html>`;
   }
 
-  const useChips = template !== "ats";
+  // ✅ Terminal parity: cover letter shows plain contact lines (no chips)
+  const useChips = template !== "ats" && template !== "terminal";
+
   const topContact = contactBits
     .map((c) => (useChips ? `<div class="chip">${c}</div>` : `<div>${c}</div>`))
     .join("");
@@ -1627,6 +1611,18 @@ function buildResumeHtml(args: {
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
     ${templateStylesResume(template)}
+    ${
+      template === "terminal"
+        ? `
+/* ✅ Terminal contact layout parity (no chips, simple stacked lines) */
+.top .contact{
+  margin-top: 10px !important;
+  display: grid !important;
+  gap: 6px !important;
+}
+`
+        : ""
+    }
   </style>
 </head>
 <body>
@@ -2028,50 +2024,6 @@ export default function ResumeMvp() {
 
     return { res, payload };
   }
-function handleUndoRewrite(index: number) {
-  // Also unselect it, since "selected + rewritten" is what applies to the resume output
-  setSelectedBulletIdx((prev) => {
-    const next = new Set(prev);
-    next.delete(index);
-    return next;
-  });
-
-  setAnalysis((prev) => {
-    if (!prev) return prev;
-
-    const prevBullets = Array.isArray(prev.bullets) ? prev.bullets : [];
-    const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
-
-    // If rewritePlan doesn't exist for some reason, synthesize it (same pattern you use elsewhere)
-    const nextPlan =
-      prevPlan.length > 0
-        ? [...prevPlan]
-        : prevBullets.slice(0, 200).map((b) => ({
-            originalBullet: bulletToText(b),
-            suggestedKeywords: [],
-            rewrittenBullet: "",
-            needsMoreInfo: false,
-            notes: [],
-            keywordHits: [],
-            blockedKeywords: [],
-            verbStrength: undefined,
-            jobId: undefined,
-          }));
-
-    if (!nextPlan[index]) return prev;
-
-    nextPlan[index] = {
-      ...nextPlan[index],
-      rewrittenBullet: "",
-      needsMoreInfo: false,
-      notes: [],
-      keywordHits: [],
-      blockedKeywords: [],
-    };
-
-    return { ...prev, rewritePlan: nextPlan };
-  });
-}
 
   async function handleRewriteBullet(index: number) {
     if (!analysis) return;
@@ -2355,6 +2307,35 @@ function handleUndoRewrite(index: number) {
     }
   }
 
+  function handleUndoRewrite(index: number) {
+    // ✅ UI undo: clears rewrite, keeps backend logic untouched
+    setAnalysis((prev) => {
+      if (!prev) return prev;
+      const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
+      if (!prevPlan.length) return prev;
+
+      const nextPlan = [...prevPlan];
+      const cur = nextPlan[index];
+      if (!cur) return prev;
+
+      nextPlan[index] = {
+        ...cur,
+        rewrittenBullet: "",
+        needsMoreInfo: false,
+        // keep suggestedKeywords / notes internally if you want; user won't see them anyway
+      };
+
+      return { ...prev, rewritePlan: nextPlan };
+    });
+
+    // Also unselect so there’s no “applied” confusion.
+    setSelectedBulletIdx((prev) => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+  }
+
   async function handleRewriteSelected() {
     if (!analysis) return;
 
@@ -2465,7 +2446,7 @@ function handleUndoRewrite(index: number) {
   const activeResumeHtml = useMemo(() => {
     if (showPreviewEditor) return (previewHtmlDraft || effectiveResumeHtml || "").trim();
     return (previewHtmlOverride || effectiveResumeHtml || "").trim();
-  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml]);
+  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml, previewHtmlOverride]);
 
   async function handleCopyOutput() {
     const html = activeResumeHtml;
@@ -2565,12 +2546,13 @@ function handleUndoRewrite(index: number) {
           </a>
 
           <a
-          href="https://git-a-job.com/feedback"
-          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-        >
-          Feedback
-        </a>
-
+            href="https://git-a-job.com/feedback"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+          >
+            Feedback
+          </a>
 
           <ThemeToggle />
         </div>
@@ -2594,23 +2576,21 @@ function handleUndoRewrite(index: number) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          {/* ... inputs unchanged ... */}
-          {/* (Keeping your UI exactly as-is above; no keyword UI changes needed here) */}
-          {/* NOTE: To keep the file length manageable, I’m not trimming any logic that affects runtime. */}
-          {/* Your original inputs section remains unchanged in behavior. */}
-
-          {/* --- START: original Inputs section content (unchanged) --- */}
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
               <span className="hidden sm:inline">Theme ready</span>
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">next-themes</span>
+              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
+                next-themes
+              </span>
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume file (optional)</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume file (optional)
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2624,16 +2604,24 @@ function handleUndoRewrite(index: number) {
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
                   <Chip text={file.name} />
-                  <button type="button" onClick={clearFile} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={clearFile}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
                     Clear
                   </button>
-                  {uploadingResume ? <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span> : null}
+                  {uploadingResume ? (
+                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
+                  ) : null}
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume text (paste if not uploading)</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume text (paste if not uploading)
+              </div>
               <textarea
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
@@ -2771,12 +2759,22 @@ function handleUndoRewrite(index: number) {
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input type="checkbox" checked={showDebugJson} onChange={(e) => setShowDebugJson(e.target.checked)} className="h-4 w-4" />
+                  <input
+                    type="checkbox"
+                    checked={showDebugJson}
+                    onChange={(e) => setShowDebugJson(e.target.checked)}
+                    className="h-4 w-4"
+                  />
                   Show debug
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input type="checkbox" checked={logNetworkDebug} onChange={(e) => setLogNetworkDebug(e.target.checked)} className="h-4 w-4" />
+                  <input
+                    type="checkbox"
+                    checked={logNetworkDebug}
+                    onChange={(e) => setLogNetworkDebug(e.target.checked)}
+                    className="h-4 w-4"
+                  />
                   Console logs
                 </label>
               </div>
@@ -2800,14 +2798,15 @@ function handleUndoRewrite(index: number) {
               ) : null}
             </div>
           </div>
-          {/* --- END: original Inputs section content (unchanged) --- */}
         </section>
 
         {/* Preview */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-white/60">{effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}</div>
+            <div className="text-xs text-black/60 dark:text-white/60">
+              {effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -2820,7 +2819,9 @@ function handleUndoRewrite(index: number) {
               Copy
             </button>
 
-            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">.pdf</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+              .pdf
+            </div>
 
             <button
               type="button"
@@ -2877,7 +2878,9 @@ function handleUndoRewrite(index: number) {
           {showPreviewEditor ? (
             <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Edit resume HTML (live preview)</div>
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
+                  Edit resume HTML (live preview)
+                </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2888,7 +2891,11 @@ function handleUndoRewrite(index: number) {
                     Reset
                   </button>
 
-                  <button type="button" onClick={() => setShowPreviewEditor(false)} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewEditor(false)}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
                     Close
                   </button>
                 </div>
@@ -2902,7 +2909,9 @@ function handleUndoRewrite(index: number) {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
 
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">Tip: While this editor is open, Download/Print/Preview uses the edited HTML.</div>
+              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+                Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
+              </div>
             </div>
           ) : null}
         </section>
@@ -2980,14 +2989,6 @@ function handleUndoRewrite(index: number) {
                         ))}
                       </select>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i)}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-                      >
-                        {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite"}
-                      </button>
                       {rewritten ? (
                         <button
                           type="button"
@@ -2998,11 +2999,16 @@ function handleUndoRewrite(index: number) {
                         </button>
                       ) : null}
 
+                      <button
+                        type="button"
+                        onClick={() => handleRewriteBullet(i)}
+                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                        className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                      >
+                        {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite"}
+                      </button>
                     </div>
                   </div>
-
-                  {/* ✅ REMOVED: keyword chip display from user perspective
-                      (backend logic still runs; we’re just not rendering the kw list here) */}
 
                   <div className="mt-2 grid gap-2">
                     <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Original</div>
@@ -3017,9 +3023,7 @@ function handleUndoRewrite(index: number) {
                       </>
                     ) : null}
 
-                    {Array.isArray(item?.notes) && item.notes.length ? (
-                      <div className="mt-2 text-xs text-black/60 dark:text-white/60">Notes: {item.notes.join(" ")}</div>
-                    ) : null}
+                    {/* ✅ Notes intentionally hidden from user UI (kept in data) */}
                   </div>
                 </div>
               );
