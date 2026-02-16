@@ -2398,26 +2398,42 @@ export default function ResumeMvp() {
   return (
             <main className="mx-auto max-w-6xl px-4 py-6">
               {/* Top bar */}
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                {/* LEFT: nav buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link href="/resume" className={navBtn}>
-          Resume Compiler
-        </Link>
+             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
 
+  {/* LEFT: nav buttons */}
+  <div className="flex flex-wrap items-center gap-2">
+    <Link href="/resume" className={navBtn}>
+      Resume Compiler
+    </Link>
 
-                  <Link href="/cover-letter" className={navBtn}>
-          Cover Letter Generator
-        </Link>
+    <Link href="/cover-letter" className={navBtn}>
+      Cover Letter Generator
+    </Link>
+  </div>
 
-        </div>
+  {/* RIGHT: donate + feedback + theme */}
+  <div className="flex flex-wrap items-center gap-2">
 
-        {/* MIDDLE: feedback pill */}
-        <FeedbackWidget variant="header" surface="resume" delayDays={3} enabled />
+    <a
+      href="https://buymeacoffee.com/YOUR_LINK"
+      target="_blank"
+      className="rounded-xl border border-black/10 bg-yellow-400 px-3 py-2 text-sm font-extrabold text-black hover:opacity-90 dark:border-white/10"
+    >
+      Donate
+    </a>
 
-        {/* RIGHT: theme toggle */}
-        <ThemeToggle />
-      </div>
+    <a
+      href="mailto:your@email.com"
+      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+    >
+      Feedback
+    </a>
+
+    <ThemeToggle />
+
+  </div>
+</div>
+
 
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
