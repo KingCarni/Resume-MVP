@@ -1,3 +1,4 @@
+// src/components/ResumeMvp/index.tsx
 "use client";
 
 import Link from "next/link";
@@ -162,42 +163,6 @@ function keywordsToArray(k: any): string[] {
   return [];
 }
 
-function HtmlDocPreview({
-  html,
-  footer,
-  title = "Document Preview (HTML)",
-  iframeTitle = "doc-preview",
-  heightClass = "h-[820px]",
-}: {
-  html: string;
-  footer?: React.ReactNode;
-  title?: string;
-  iframeTitle?: string;
-  heightClass?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-white/85">
-          {title}
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
-        <iframe
-          title={iframeTitle}
-          className={`${heightClass} w-full`}
-          sandbox="allow-same-origin"
-          srcDoc={html || "<!doctype html><html><head><meta charset='utf-8' /></head><body></body></html>"}
-        />
-      </div>
-
-      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
-    </div>
-  );
-}
-
-
 function csvToArray(s: string): string[] {
   return (s || "")
     .split(",")
@@ -344,8 +309,7 @@ function normalizeResumeTextForParsing(input: string) {
       const company = left.replace(/\s{2,}/g, " ").replace(/[•|]+$/g, "").trim();
       const title = right.replace(/^[•|]+/g, "").trim();
 
-      const titleLooksReal =
-        title.length >= 3 && !/^(vancouver|remote|hybrid)\b/i.test(title);
+      const titleLooksReal = title.length >= 3 && !/^(vancouver|remote|hybrid)\b/i.test(title);
 
       if (titleLooksReal) {
         out.push(`${company} — ${title} (${range})`);
@@ -397,7 +361,6 @@ function Callout({
     </div>
   );
 }
-
 
 /** ---------- Resume Template HTML ---------- */
 
@@ -711,7 +674,6 @@ html, body{
 }
 `.trim();
 }
-
 
 function templateStyles(template: ResumeTemplateId) {
   // ---------- EXISTING THEMES ----------
@@ -1590,7 +1552,6 @@ function buildResumeHtml(args: {
 </html>`;
 }
 
-
 function openPreviewWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
   if (!w) return;
@@ -1665,7 +1626,6 @@ export default function ResumeMvp() {
   const [resumeBlobUrl, setResumeBlobUrl] = useState<string>("");
   const [uploadingResume, setUploadingResume] = useState(false);
 
-
   const [onlyExperienceBullets, setOnlyExperienceBullets] = useState(true);
 
   const [sourceCompany, setSourceCompany] = useState("");
@@ -1725,78 +1685,25 @@ export default function ResumeMvp() {
     setPreviewHtmlOverride("");
   }
 
-   async function handleCopyOutput() {
-    if (!effectiveResumeHtml) return;
-    const txt = htmlToPlainText(effectiveResumeHtml);
+  async function ensureResumeUploadedToBlob(f: File) {
+    if (resumeBlobUrl) return resumeBlobUrl;
+
+    setUploadingResume(true);
     try {
-      await navigator.clipboard.writeText(txt);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = txt;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
+      const safeName = f.name.replace(/\s+/g, "-");
+      const pathname = `resume/${Date.now()}-${safeName}`;
+
+      const blob = (await upload(pathname, f, {
+        access: "public", // or "private" if you prefer, but then your API must fetch with auth
+        handleUploadUrl: "/api/blob/upload",
+      })) as PutBlobResult;
+
+      setResumeBlobUrl(blob.url);
+      return blob.url;
+    } finally {
+      setUploadingResume(false);
     }
   }
-    async function ensureResumeUploadedToBlob(file: File) {
-      if (resumeBlobUrl) return resumeBlobUrl;
-
-      setUploadingResume(true);
-      try {
-        const safeName = file.name.replace(/\s+/g, "-");
-        const pathname = `resume/${Date.now()}-${safeName}`;
-
-        const blob = (await upload(pathname, file, {
-          access: "public", // or "public" if you prefer
-          handleUploadUrl: "/api/blob/upload",
-        })) as PutBlobResult;
-
-        setResumeBlobUrl(blob.url);
-        return blob.url;
-      } finally {
-        setUploadingResume(false);
-      }
-    }
-
-
-  async function handleDownloadPdf() {
-  if (!effectiveResumeHtml) return;
-
-  setError(null);
-
-  try {
-    const res = await fetch("/api/resume-pdf", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        html: effectiveResumeHtml,
-        filename: "resume.pdf",
-      }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(text || `PDF render failed (${res.status})`);
-    }
-
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "resume.pdf";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-  } catch (e: any) {
-    setError(e?.message || "PDF download failed");
-  }
-}
-
-
 
   function clearFile() {
     setFile(null);
@@ -1869,33 +1776,29 @@ export default function ResumeMvp() {
         : "";
 
       if (file) {
-  const url = await ensureResumeUploadedToBlob(file);
+        const url = await ensureResumeUploadedToBlob(file);
 
-  res = await fetch("/api/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      resumeBlobUrl: url,
-      jobText,
-      // keep your existing option:
-      onlyExperienceBullets,
-      // optional override text if you also pasted:
-      resumeText: resumeTextForApi || "",
-    }),
-  });
-} else {
-  // keep your existing JSON branch
-  res = await fetch("/api/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      resumeText: resumeTextForApi || resumeText,
-      jobText,
-      onlyExperienceBullets,
-    }),
-  });
-}
-
+        res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeBlobUrl: url,
+            jobText,
+            onlyExperienceBullets,
+            resumeText: resumeTextForApi || "",
+          }),
+        });
+      } else {
+        res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeText: resumeTextForApi || resumeText,
+            jobText,
+            onlyExperienceBullets,
+          }),
+        });
+      }
 
       const payload = await parseApiResponse(res);
 
@@ -1979,45 +1882,48 @@ export default function ResumeMvp() {
   }
 
   async function postRewriteWithFallback(body: any) {
-  const safeBody = buildRewriteBulletPayload(body);
+    const safeBody = buildRewriteBulletPayload(body);
 
-  // ✅ measure size before sending (platform rejects huge bodies before route runs)
-  const json = JSON.stringify(safeBody);
-  const bytes = new TextEncoder().encode(json).length;
+    // ✅ measure size before sending (platform rejects huge bodies before route runs)
+    const json = JSON.stringify(safeBody);
+    const bytes = new TextEncoder().encode(json).length;
 
-  // Always log at least once while debugging
-  console.log("[rewrite] request bytes:", bytes);
-  if (logNetworkDebug) {
-    console.log("[rewrite] jobText chars:", String(safeBody.jobText ?? "").length);
-    console.log("[rewrite] keywords count:", Array.isArray(safeBody.suggestedKeywords) ? safeBody.suggestedKeywords.length : 0);
+    // Always log at least once while debugging
+    console.log("[rewrite] request bytes:", bytes);
+    if (logNetworkDebug) {
+      console.log("[rewrite] jobText chars:", String(safeBody.jobText ?? "").length);
+      console.log(
+        "[rewrite] keywords count:",
+        Array.isArray(safeBody.suggestedKeywords) ? safeBody.suggestedKeywords.length : 0
+      );
+    }
+
+    // ✅ hard stop before Vercel throws FUNCTION_PAYLOAD_TOO_LARGE
+    // (150k is conservative; you can raise later if needed)
+    if (bytes > 150_000) {
+      const jt = String(safeBody.jobText ?? "");
+      const err =
+        `Request too large (${bytes.toLocaleString()} bytes). ` +
+        `jobText is ${jt.length.toLocaleString()} chars. ` +
+        `Trim the job posting (or extract requirements only) before rewriting.`;
+      throw new Error(err);
+    }
+
+    const res = await fetch("/api/rewrite-bullet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    });
+
+    const payload = await parseApiResponse(res);
+
+    if (logNetworkDebug) {
+      console.log("[rewrite] status:", res.status);
+      console.log("[rewrite] payload:", payload);
+    }
+
+    return { res, payload, url: "/api/rewrite-bullet" };
   }
-
-  // ✅ hard stop before Vercel throws FUNCTION_PAYLOAD_TOO_LARGE
-  // (150k is conservative; you can raise later if needed)
-  if (bytes > 150_000) {
-    const jt = String(safeBody.jobText ?? "");
-    const err =
-      `Request too large (${bytes.toLocaleString()} bytes). ` +
-      `jobText is ${jt.length.toLocaleString()} chars. ` +
-      `Trim the job posting (or extract requirements only) before rewriting.`;
-    throw new Error(err);
-  }
-
-  const res = await fetch("/api/rewrite-bullet", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: json,
-  });
-
-  const payload = await parseApiResponse(res);
-
-  if (logNetworkDebug) {
-    console.log("[rewrite] status:", res.status);
-    console.log("[rewrite] payload:", payload);
-  }
-
-  return { res, payload, url: "/api/rewrite-bullet" };
-}
 
   async function handleRewriteBullet(index: number) {
     if (!analysis) return;
@@ -2031,9 +1937,7 @@ export default function ResumeMvp() {
     const suggestedKeywords = normalizeSuggestedKeywordsForBullet(originalBullet, suggestedKeywordsRaw);
 
     if (!originalBullet) {
-      setError(
-        "Missing original bullet for rewrite. Re-run Analyze or confirm bullets are being extracted."
-      );
+      setError("Missing original bullet for rewrite. Re-run Analyze or confirm bullets extracted.");
       return;
     }
 
@@ -2084,9 +1988,7 @@ export default function ResumeMvp() {
           ...nextPlan[index],
           rewrittenBullet: rewrittenTraining,
           needsMoreInfo: false,
-          notes: [
-            "Training/education bullet detected; kept rewrite faithful (no invented testing duties).",
-          ],
+          notes: ["Training/education bullet detected; kept rewrite faithful (no invented duties)."],
           keywordHits: [],
           blockedKeywords: [],
           suggestedKeywords,
@@ -2104,9 +2006,8 @@ export default function ResumeMvp() {
     try {
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
-      // ✅ Keep payload small: cap job text hard (adjust if you want)
+      // ✅ Keep payload small: cap job text hard
       const jobTextCapped = String(jobText ?? "").slice(0, 6000);
-
 
       const norm = (s: any) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -2187,9 +2088,7 @@ export default function ResumeMvp() {
         if (txt) otherTexts.push(txt);
       }
 
-      const usedOpeners = Array.from(
-        new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean))
-      );
+      const usedOpeners = Array.from(new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean)));
 
       const phraseCounts = new Map<string, number>();
       for (const t of otherTexts) {
@@ -2208,7 +2107,6 @@ export default function ResumeMvp() {
         originalBullet,
         suggestedKeywords,
         jobText: jobTextCapped,
-
 
         constraints: [
           "Do not add responsibilities not present in the original bullet.",
@@ -2347,9 +2245,7 @@ export default function ResumeMvp() {
   const metaGames = Array.isArray(analysis?.metaBlocks?.gamesShipped)
     ? analysis!.metaBlocks!.gamesShipped!
     : [];
-  const metaMetrics = Array.isArray(analysis?.metaBlocks?.metrics)
-    ? analysis!.metaBlocks!.metrics!
-    : [];
+  const metaMetrics = Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : [];
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -2412,34 +2308,76 @@ export default function ResumeMvp() {
     return (previewHtmlOverride || resumeHtml || "").trim();
   }, [previewHtmlOverride, resumeHtml]);
 
-  function openEditPreview() {
-    if (!resumeHtml) return;
-    const seed = (previewHtmlOverride || resumeHtml || "").trim();
-    setPreviewHtmlDraft(seed);
-    setShowPreviewEditor(true);
+  // ✅ active HTML to use for Copy/Download/Print/Preview
+  const activeResumeHtml = useMemo(() => {
+    if (showPreviewEditor) return (previewHtmlDraft || effectiveResumeHtml || "").trim();
+    return (previewHtmlOverride || effectiveResumeHtml || "").trim();
+  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml]);
+
+  async function handleCopyOutput() {
+    const html = activeResumeHtml;
+    if (!html) return;
+
+    const txt = htmlToPlainText(html);
+    try {
+      await navigator.clipboard.writeText(txt);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = txt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
   }
 
-  function applyPreviewEdits() {
-    setPreviewHtmlOverride(previewHtmlDraft);
-  }
+  async function handleDownloadPdf() {
+    const html = activeResumeHtml;
+    if (!html) return;
 
-  function resetPreviewEdits() {
-    setPreviewHtmlOverride("");
-    setPreviewHtmlDraft((resumeHtml || "").trim());
-  }
+    setError(null);
 
-  function closePreviewEditor() {
-    setShowPreviewEditor(false);
-  }
+    try {
+      const res = await fetch("/api/resume-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          html, // ✅ use activeResumeHtml
+          filename: "resume.pdf",
+        }),
+      });
 
-  function handleViewPreview() {
-    if (!effectiveResumeHtml) return;
-    openPreviewWindow(effectiveResumeHtml);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `PDF render failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "resume.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || "PDF download failed");
+    }
   }
 
   function handlePrintPdf() {
-    if (!effectiveResumeHtml) return;
-    openPrintWindow(effectiveResumeHtml);
+    const html = activeResumeHtml;
+    if (!html) return;
+    openPrintWindow(html);
+  }
+
+  function handleViewPreview() {
+    const html = activeResumeHtml;
+    if (!html) return;
+    openPreviewWindow(html);
   }
 
   const debugInjected = useMemo(() => {
@@ -2452,37 +2390,36 @@ export default function ResumeMvp() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-    {/* Top bar */}
-<div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-  {/* LEFT: nav buttons */}
-  <div className="flex flex-wrap items-center gap-2">
-    <Link
-      href="/resume"
-      className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-    >
-      Resume Compiler
-    </Link>
+      {/* Top bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {/* LEFT: nav buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/resume"
+            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            Resume Compiler
+          </Link>
 
-    <Link
-      href="/cover-letter"
-      className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-    >
-      Cover Letter Generator
-    </Link>
-  </div>
+          <Link
+            href="/cover-letter"
+            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            Cover Letter Generator
+          </Link>
+        </div>
 
-  {/* MIDDLE: feedback pill */}
-  <FeedbackWidget variant="header" surface="resume" delayDays={3} enabled />
+        {/* MIDDLE: feedback pill */}
+        <FeedbackWidget variant="header" surface="resume" delayDays={3} enabled />
 
-  {/* RIGHT: theme toggle */}
-  <ThemeToggle />
-</div>
+        {/* RIGHT: theme toggle */}
+        <ThemeToggle />
+      </div>
 
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Analyze → auto-detect jobs → auto-assign bullets → rewrite selected → generate a clean
-          template.
+          Analyze → auto-detect jobs → auto-assign bullets → rewrite selected → generate a clean template.
         </p>
       </div>
 
@@ -2548,8 +2485,7 @@ export default function ResumeMvp() {
               />
               {resumeText.trim() ? (
                 <div className="text-xs text-black/60 dark:text-white/60">
-                  Tip: Pasted text is auto-normalized on Analyze to help recognize headers like
-                  “Company … Dates … Title”.
+                  Tip: Pasted text is auto-normalized on Analyze to help recognize headers like “Company … Dates … Title”.
                 </div>
               ) : null}
             </label>
@@ -2770,76 +2706,123 @@ export default function ResumeMvp() {
         </section>
 
         {/* Preview */}
-        {/* Preview */}
-<HtmlDocPreview
-  html={effectiveResumeHtml}
-  title="Document Preview (HTML)"
-  iframeTitle="resume-preview"
-  heightClass="h-[820px]"
-  footer={
-    <>
-      <div className="text-xs text-black/60 dark:text-white/60 mr-auto">
-        {effectiveResumeHtml ? "Ready" : "Waiting for rewrite"}
-      </div>
+        <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-extrabold">Preview</h2>
+            <div className="text-xs text-black/60 dark:text-white/60">
+              {effectiveResumeHtml ? "Ready" : "Waiting for rewrite"}
+            </div>
+          </div>
 
-      <button
-        type="button"
-        onClick={handleCopyOutput}
-        disabled={!effectiveResumeHtml}
-        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-      >
-        Copy
-      </button>
+          {/* Buttons row */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleCopyOutput}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Copy
+            </button>
 
-      <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-        .pdf
-      </div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+              .pdf
+            </div>
 
-      <button
-        type="button"
-        onClick={handleDownloadPdf}
-        disabled={!effectiveResumeHtml}
-        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-      >
-        Download
-      </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Download
+            </button>
 
-      <button
-        type="button"
-        onClick={handlePrintPdf}
-        disabled={!effectiveResumeHtml}
-        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-      >
-        Print
-      </button>
+            <button
+              type="button"
+              onClick={handlePrintPdf}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Print
+            </button>
 
-      {false && <ImpactVote feature="resume" template={resumeTemplate} />}
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewHtmlDraft(activeResumeHtml || "");
+                setShowPreviewEditor(true);
+              }}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Edit Live Preview
+            </button>
 
-      {/* If you want true 1:1, I recommend removing this button entirely.
-          If you insist, keep it behind a flag like this. */}
-      {false && (
-        <button
-          type="button"
-          onClick={openEditPreview}
-          disabled={!effectiveResumeHtml}
-          className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          Edit Live Preview
-        </button>
-      )}
+            <button
+              type="button"
+              onClick={handleViewPreview}
+              disabled={!effectiveResumeHtml}
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              Preview
+            </button>
+          </div>
 
-      <button
-        type="button"
-        onClick={handleViewPreview}
-        disabled={!effectiveResumeHtml}
-        className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-      >
-        Preview
-      </button>
-    </>
-  }
-/>
+          {/* Iframe preview (live when editor open) */}
+          <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+            <iframe
+              title="resume-preview"
+              className="h-[820px] w-full border-0"
+              sandbox="allow-same-origin"
+              srcDoc={
+                (showPreviewEditor ? previewHtmlDraft : effectiveResumeHtml) ||
+                "<!doctype html><html><head><meta charset='utf-8' /></head><body></body></html>"
+              }
+            />
+          </div>
 
+          {/* Editor BELOW preview */}
+          {showPreviewEditor ? (
+            <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
+                  Edit resume HTML (live preview)
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewHtmlDraft(effectiveResumeHtml || "")}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  >
+                    Reset
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewEditor(false)}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                value={previewHtmlDraft}
+                onChange={(e) => setPreviewHtmlDraft(e.target.value)}
+                rows={12}
+                spellCheck={false}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+              />
+
+              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+                Tip: the preview above updates as you type. Download/Print/Preview will use the edited HTML while this editor is open.
+              </div>
+            </div>
+          ) : null}
+        </section>
       </div>
     </main>
   );

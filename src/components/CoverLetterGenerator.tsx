@@ -1179,7 +1179,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
           title="cover-letter-preview"
           className="h-[820px] w-full"
           sandbox="allow-same-origin"
-          srcDoc={html || "<!doctype html><html><body></body></html>"}
+          srcDoc={activeResumeHtml || "<!doctype html><html><body></body></html>"}
         />
       </div>
 
