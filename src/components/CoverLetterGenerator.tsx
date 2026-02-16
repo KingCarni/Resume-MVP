@@ -1440,9 +1440,10 @@ export default function CoverLetterGenerator() {
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   const navBtn =
-    "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-    "border-black/10 bg-black/5 text-black hover:bg-black/10 " +
-    "dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
+  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
+  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
+
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
