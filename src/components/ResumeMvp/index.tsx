@@ -32,10 +32,6 @@ type RewritePlanItem = {
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
 };
-const navBtn =
-  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
-  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
 type ResumeTemplateId =
   | "modern"
@@ -123,6 +119,11 @@ type AnalyzeResponse = {
 
 /** ---------------- Helpers ---------------- */
 
+const navBtn =
+  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
+  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
+
 async function parseApiResponse(res: Response) {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return await res.json();
@@ -199,7 +200,7 @@ function findInjectedTerms(text: string, terms: string[]) {
   return Array.from(new Set(hits));
 }
 
-/** ---------------- NEW: keyword + rewrite guardrail helpers ---------------- */
+/** ---------------- keyword + rewrite guardrail helpers ---------------- */
 
 function normalizeSuggestedKeywordsForBullet(originalBullet: string, suggested: string[]) {
   const text = normalizeForMatch(originalBullet);
@@ -430,7 +431,6 @@ html, body{
 }
 `.trim();
 }
-
 
 /**
  * IMPORTANT: Theme parity (Resume ⇄ Cover Letter)
@@ -702,8 +702,6 @@ ${templateStyles(template)}
 }
 `.trim();
 }
-
-
 
 /**
  * ✅ INCLUDED: full templateStyles() with theme parity fixes
@@ -1119,7 +1117,7 @@ ${printLockCss()}
     });
   }
 
-  // --- The “18” additional themes ---
+  // --- Additional themes ---
   if (template === "monochrome") {
     return mkThemeCss({
       font: "sans",
@@ -1296,6 +1294,7 @@ ${printLockCss()}
     });
   }
 
+  // ✅ FIX: Aura + Royal get non-white page/backgrounds so they don’t look “blank”
   if (template === "aura") {
     return mkThemeCss({
       font: "sans",
@@ -1304,10 +1303,10 @@ ${printLockCss()}
       line: "rgba(11,18,32,.14)",
       accent: "#10b981",
       accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#ecfdf5", // subtle mint
+      pageBg: "#ecfdf5", // keep parity in PDF too
       headerBg: "linear-gradient(135deg, rgba(16,185,129,.14), rgba(34,197,94,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
       borderStyle: "solid",
@@ -1322,10 +1321,10 @@ ${printLockCss()}
       line: "rgba(15,23,42,.14)",
       accent: "#a78bfa",
       accent2: "#7c3aed",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#f5f3ff",
+      pageBg: "#f5f3ff",
       headerBg: "linear-gradient(135deg, rgba(167,139,250,.16), rgba(124,58,237,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
     });
@@ -1339,10 +1338,10 @@ ${printLockCss()}
       line: "rgba(17,24,39,.14)",
       accent: "#fb7185",
       accent2: "#f59e0b",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#fff7ed",
+      pageBg: "#fff7ed",
       headerBg: "linear-gradient(135deg, rgba(251,113,133,.14), rgba(245,158,11,.12))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
     });
@@ -1356,10 +1355,10 @@ ${printLockCss()}
       line: "rgba(11,18,32,.14)",
       accent: "#16a34a",
       accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#f0fdf4",
+      pageBg: "#f0fdf4",
       headerBg: "linear-gradient(135deg, rgba(22,163,74,.14), rgba(34,197,94,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
     });
@@ -1373,10 +1372,10 @@ ${printLockCss()}
       line: "rgba(11,18,32,.14)",
       accent: "#0ea5e9",
       accent2: "#2563eb",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#eff6ff",
+      pageBg: "#eff6ff",
       headerBg: "linear-gradient(135deg, rgba(14,165,233,.14), rgba(37,99,235,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
     });
@@ -1407,10 +1406,10 @@ ${printLockCss()}
       line: "rgba(11,18,32,.14)",
       accent: "#2563eb",
       accent2: "#7c3aed",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#eff6ff", // subtle blue
+      pageBg: "#eff6ff",
       headerBg: "linear-gradient(135deg, rgba(37,99,235,.14), rgba(124,58,237,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 18px 50px rgba(2,6,23,.08)",
     });
@@ -1424,10 +1423,10 @@ ${printLockCss()}
       line: "rgba(17,24,39,.16)",
       accent: "#f59e0b",
       accent2: "#fbbf24",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
+      bodyBg: "#fff7ed",
+      pageBg: "#fff7ed",
       headerBg: "linear-gradient(135deg, rgba(245,158,11,.12), rgba(251,191,36,.10))",
-      cardBg: "rgba(255,255,255,.92)",
+      cardBg: "rgba(255,255,255,.88)",
       radius: 20,
       shadow: "0 22px 60px rgba(2,6,23,.10)",
       borderStyle: "solid",
@@ -2156,7 +2155,8 @@ export default function ResumeMvp() {
 
         const phrases: string[] = [];
         for (let i = 0; i < tokens.length - 1; i++) phrases.push(`${tokens[i]} ${tokens[i + 1]}`);
-        for (let i = 0; i < tokens.length - 2; i++) phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+        for (let i = 0; i < tokens.length - 2; i++)
+          phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
         return phrases;
       };
 
@@ -2347,7 +2347,9 @@ export default function ResumeMvp() {
   const metaGames = sanitizeMetaLines(
     Array.isArray(analysis?.metaBlocks?.gamesShipped) ? analysis!.metaBlocks!.gamesShipped! : []
   );
-  const metaMetrics = sanitizeMetaLines(Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []);
+  const metaMetrics = sanitizeMetaLines(
+    Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []
+  );
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -2473,66 +2475,61 @@ export default function ResumeMvp() {
   }
 
   const debugInjected = useMemo(() => {
-    const hits = effectivePlan.map((p) => String(p?.rewrittenBullet ?? "")).flatMap((t) => findInjectedTerms(t, guardrailTerms));
+    const hits = effectivePlan
+      .map((p) => String(p?.rewrittenBullet ?? ""))
+      .flatMap((t) => findInjectedTerms(t, guardrailTerms));
     return Array.from(new Set(hits));
   }, [effectivePlan, guardrailTerms]);
 
-  const navBtn =
-    "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-    "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
-    "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
-
   return (
-   <main className="mx-auto max-w-6xl px-4 py-6">
-  {/* Top bar */}
-  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <div className="flex flex-wrap items-center gap-2">
-      <Link href="/resume" className={navBtn}>
-        Resume Compiler
-      </Link>
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* Top bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/resume" className={navBtn}>
+            Resume Compiler
+          </Link>
 
-      <Link href="/cover-letter" className={navBtn}>
-        Cover Letter Generator
-      </Link>
-    </div>
+          <Link href="/cover-letter" className={navBtn}>
+            Cover Letter Generator
+          </Link>
+        </div>
 
-    <div className="flex flex-wrap items-center gap-2">
-      <a
-        href="https://buymeacoffee.com/YOUR_LINK"
-        target="_blank"
-        rel="noreferrer"
-        className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
-      >
-        Donate
-      </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="https://buymeacoffee.com/YOUR_LINK"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
+          >
+            Donate
+          </a>
 
-      <a
-        href="mailto:your@email.com"
-        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-      >
-        Feedback
-      </a>
+          <a
+            href="mailto:your@email.com"
+            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+          >
+            Feedback
+          </a>
 
-      <ThemeToggle />
-    </div>
-  </div>
+          <ThemeToggle />
+        </div>
+      </div>
 
-  <div className="mb-4">
-    <h1 className="text-2xl font-extrabold tracking-tight">
-      Git-a-Job: Resume Compiler
-    </h1>
-    <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-      Analyze → assign bullets → rewrite selected → compile into your chosen template.
-    </p>
-  </div>
+      <div className="mb-4">
+        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
+        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
+          Analyze → assign bullets → rewrite selected → compile into your chosen template.
+        </p>
+      </div>
 
-  {error ? (
-    <div className="mb-4">
-      <Callout title="Error" tone="danger">
-        <div className="whitespace-pre-wrap text-sm">{error}</div>
-      </Callout>
-    </div>
-  ) : null}
+      {error ? (
+        <div className="mb-4">
+          <Callout title="Error" tone="danger">
+            <div className="whitespace-pre-wrap text-sm">{error}</div>
+          </Callout>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
@@ -2541,13 +2538,17 @@ export default function ResumeMvp() {
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
               <span className="hidden sm:inline">Theme ready</span>
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">next-themes</span>
+              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
+                next-themes
+              </span>
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume file (optional)</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume file (optional)
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2561,16 +2562,24 @@ export default function ResumeMvp() {
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
                   <Chip text={file.name} />
-                  <button type="button" onClick={clearFile} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={clearFile}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
                     Clear
                   </button>
-                  {uploadingResume ? <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span> : null}
+                  {uploadingResume ? (
+                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
+                  ) : null}
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume text (paste if not uploading)</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume text (paste if not uploading)
+              </div>
               <textarea
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
@@ -2579,13 +2588,16 @@ export default function ResumeMvp() {
               />
               {resumeText.trim() ? (
                 <div className="text-xs text-black/60 dark:text-white/60">
-                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on Analyze.
+                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain
+                  text on Analyze.
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Job posting text
+              </div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -2597,7 +2609,9 @@ export default function ResumeMvp() {
 
             {/* Template */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Template</div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
+                Template
+              </div>
 
               <select
                 value={resumeTemplate}
@@ -2614,7 +2628,9 @@ export default function ResumeMvp() {
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Header details</div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">
+                Header details
+              </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
@@ -2684,7 +2700,9 @@ export default function ResumeMvp() {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">Only experience bullets</span>
+                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                  Only experience bullets
+                </span>
               </label>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2708,12 +2726,22 @@ export default function ResumeMvp() {
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input type="checkbox" checked={showDebugJson} onChange={(e) => setShowDebugJson(e.target.checked)} className="h-4 w-4" />
+                  <input
+                    type="checkbox"
+                    checked={showDebugJson}
+                    onChange={(e) => setShowDebugJson(e.target.checked)}
+                    className="h-4 w-4"
+                  />
                   Show debug
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input type="checkbox" checked={logNetworkDebug} onChange={(e) => setLogNetworkDebug(e.target.checked)} className="h-4 w-4" />
+                  <input
+                    type="checkbox"
+                    checked={logNetworkDebug}
+                    onChange={(e) => setLogNetworkDebug(e.target.checked)}
+                    className="h-4 w-4"
+                  />
                   Console logs
                 </label>
               </div>
@@ -2743,7 +2771,9 @@ export default function ResumeMvp() {
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-white/60">{effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}</div>
+            <div className="text-xs text-black/60 dark:text-white/60">
+              {effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -2756,7 +2786,9 @@ export default function ResumeMvp() {
               Copy
             </button>
 
-            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">.pdf</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+              .pdf
+            </div>
 
             <button
               type="button"
@@ -2813,7 +2845,9 @@ export default function ResumeMvp() {
           {showPreviewEditor ? (
             <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Edit resume HTML (live preview)</div>
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
+                  Edit resume HTML (live preview)
+                </div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2824,7 +2858,11 @@ export default function ResumeMvp() {
                     Reset
                   </button>
 
-                  <button type="button" onClick={() => setShowPreviewEditor(false)} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreviewEditor(false)}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
                     Close
                   </button>
                 </div>
@@ -2838,7 +2876,9 @@ export default function ResumeMvp() {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
 
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">Tip: While this editor is open, Download/Print/Preview uses the edited HTML.</div>
+              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+                Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
+              </div>
             </div>
           ) : null}
         </section>
@@ -2950,7 +2990,9 @@ export default function ResumeMvp() {
                     ) : null}
 
                     {Array.isArray(item?.notes) && item.notes.length ? (
-                      <div className="mt-2 text-xs text-black/60 dark:text-white/60">Notes: {item.notes.join(" ")}</div>
+                      <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+                        Notes: {item.notes.join(" ")}
+                      </div>
                     ) : null}
                   </div>
                 </div>
