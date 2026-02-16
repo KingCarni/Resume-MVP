@@ -32,6 +32,26 @@ type RewritePlanItem = {
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
 };
+function templateStylesResume(template: ResumeTemplateId) {
+  return `
+${templateStyles(template)}
+
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
+@media print {
+  body{
+    background: var(--bodybg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page{
+    background: var(--pagebg) !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+  .top:after{ display:none !important; }
+}
+`.trim();
+}
 
 type ResumeTemplateId =
   | "modern"
