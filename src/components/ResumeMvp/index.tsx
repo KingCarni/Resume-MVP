@@ -476,7 +476,7 @@ function mkThemeCss(t: ThemeArgs) {
   --accent:${t.accent};
   --accent2:${accent2};
 
-  /* ✅ cover-letter parity variable names */
+  /* ✅ cover-letter parity variable names (lowercase) */
   --bodybg:${t.bodyBg};
   --pagebg:${t.pageBg};
   --headerbg:${t.headerBg};
@@ -665,8 +665,10 @@ ${headerContactChipsCss()}
 }
 
 /**
- * ✅ Resume-specific print parity wrapper (keeps theme backgrounds)
- * NOTE: uses lowercase vars for 1:1 parity with cover letter generator.
+ * ✅ Resume-specific wrapper
+ * Fixes the actual mismatch bug:
+ * - DO NOT reference --bodyBg/--pageBg (camelCase) — they don't exist.
+ * - Use lowercase vars to match CoverLetterGenerator: --bodybg / --pagebg
  */
 function templateStylesResume(template: ResumeTemplateId) {
   return `
@@ -675,20 +677,20 @@ ${templateStyles(template)}
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
   body{
-    background: var(--bodyBg) !important;
+    background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    padding: 0 !important;
   }
   .page{
-    background: var(--pageBg, var(--bodyBg)) !important;
+    background: var(--pagebg) !important;
     box-shadow: none !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
   }
   .top:after{ display:none !important; }
 }
 `.trim();
 }
-
 
 /**
  * ✅ INCLUDED: full templateStyles() with theme parity fixes
@@ -716,21 +718,29 @@ function templateStyles(template: ResumeTemplateId) {
   --borderstyle: solid;
 }
 
+*{ box-sizing:border-box; }
+
 body{
   font-family: Calibri, Arial, Helvetica, sans-serif;
   color: var(--ink);
   margin: 0;
+  padding: 18px;
   background: var(--bodybg);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  line-height: 1.35;
 }
+
 .page{
-  max-width: 850px;
-  margin: 18px auto;
+  width: 8.5in;
+  min-height: 11in;
+  margin: 0 auto;
   border: 1px solid var(--line);
   padding: 18px 22px;
   background: var(--pagebg);
+  border-radius: var(--radius);
 }
+
 .top{
   display: flex;
   justify-content: space-between;
@@ -739,17 +749,20 @@ body{
   padding-bottom: 10px;
   background: var(--headerbg);
 }
+
 .name{
   font-size: 28px;
   font-weight: 900;
   margin: 0;
 }
+
 .title{
   margin-top: 6px;
   font-size: 13px;
   color: var(--muted);
   font-weight: 700;
 }
+
 .contact{
   font-size: 12px;
   color: var(--muted);
@@ -757,6 +770,7 @@ body{
   display: grid;
   gap: 4px;
 }
+
 .h{
   margin: 14px 0 6px;
   font-size: 13px;
@@ -765,40 +779,49 @@ body{
   text-transform: uppercase;
   letter-spacing: .06em;
 }
+
 .summary{
   color: var(--muted);
   line-height: 1.45;
   font-size: 13px;
 }
+
 .job{
   margin-top: 10px;
   border-top: 1px solid var(--line);
   padding-top: 10px;
 }
+
 .jobhead{
   display: flex;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
 }
+
 .jobtitle{ font-weight: 900; }
+
 .jobmeta{
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
+
 ul{ margin: 6px 0 0 18px; padding: 0; }
 li{ margin: 6px 0; line-height: 1.35; }
+
 .meta{
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
+
 .box{
   border: 1px solid var(--line);
   padding: 10px;
   background: var(--cardbg);
 }
+
 .boxtitle{
   font-weight: 900;
   font-size: 12px;
@@ -806,7 +829,9 @@ li{ margin: 6px 0; line-height: 1.35; }
   text-transform: uppercase;
   letter-spacing: .06em;
 }
+
 .small{ font-size: 12px; color: var(--muted); }
+
 ${headerContactChipsCss()}
 ${printLockCss()}
 `.trim();
@@ -1884,9 +1909,7 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        throw new Error(
-          typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed"
-        );
+        throw new Error(typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed");
       }
 
       if (typeof payload === "string") {
@@ -2120,8 +2143,7 @@ export default function ResumeMvp() {
 
         const phrases: string[] = [];
         for (let i = 0; i < tokens.length - 1; i++) phrases.push(`${tokens[i]} ${tokens[i + 1]}`);
-        for (let i = 0; i < tokens.length - 2; i++)
-          phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+        for (let i = 0; i < tokens.length - 2; i++) phrases.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
         return phrases;
       };
 
@@ -2312,9 +2334,7 @@ export default function ResumeMvp() {
   const metaGames = sanitizeMetaLines(
     Array.isArray(analysis?.metaBlocks?.gamesShipped) ? analysis!.metaBlocks!.gamesShipped! : []
   );
-  const metaMetrics = sanitizeMetaLines(
-    Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []
-  );
+  const metaMetrics = sanitizeMetaLines(Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []);
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -2362,17 +2382,7 @@ export default function ResumeMvp() {
       metaMetrics,
       includeMeta: includeMetaInResumeDoc,
     });
-  }, [
-    analysis,
-    effectivePlan.length,
-    resumeTemplate,
-    profile,
-    sections,
-    bulletsBySection,
-    metaGames,
-    metaMetrics,
-    includeMetaInResumeDoc,
-  ]);
+  }, [analysis, effectivePlan.length, resumeTemplate, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMetaInResumeDoc]);
 
   const effectiveResumeHtml = useMemo(() => {
     return (previewHtmlOverride || resumeHtml || "").trim();
@@ -2450,9 +2460,7 @@ export default function ResumeMvp() {
   }
 
   const debugInjected = useMemo(() => {
-    const hits = effectivePlan
-      .map((p) => String(p?.rewrittenBullet ?? ""))
-      .flatMap((t) => findInjectedTerms(t, guardrailTerms));
+    const hits = effectivePlan.map((p) => String(p?.rewrittenBullet ?? "")).flatMap((t) => findInjectedTerms(t, guardrailTerms));
     return Array.from(new Set(hits));
   }, [effectivePlan, guardrailTerms]);
 
@@ -2518,17 +2526,13 @@ export default function ResumeMvp() {
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
               <span className="hidden sm:inline">Theme ready</span>
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
-                next-themes
-              </span>
+              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">next-themes</span>
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Resume file (optional)
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume file (optional)</div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2542,24 +2546,16 @@ export default function ResumeMvp() {
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
                   <Chip text={file.name} />
-                  <button
-                    type="button"
-                    onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
+                  <button type="button" onClick={clearFile} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
                     Clear
                   </button>
-                  {uploadingResume ? (
-                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
-                  ) : null}
+                  {uploadingResume ? <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span> : null}
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Resume text (paste if not uploading)
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Resume text (paste if not uploading)</div>
               <textarea
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
@@ -2568,8 +2564,7 @@ export default function ResumeMvp() {
               />
               {resumeText.trim() ? (
                 <div className="text-xs text-black/60 dark:text-white/60">
-                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on
-                  Analyze.
+                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on Analyze.
                 </div>
               ) : null}
             </label>
@@ -2698,22 +2693,12 @@ export default function ResumeMvp() {
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input
-                    type="checkbox"
-                    checked={showDebugJson}
-                    onChange={(e) => setShowDebugJson(e.target.checked)}
-                    className="h-4 w-4"
-                  />
+                  <input type="checkbox" checked={showDebugJson} onChange={(e) => setShowDebugJson(e.target.checked)} className="h-4 w-4" />
                   Show debug
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
-                  <input
-                    type="checkbox"
-                    checked={logNetworkDebug}
-                    onChange={(e) => setLogNetworkDebug(e.target.checked)}
-                    className="h-4 w-4"
-                  />
+                  <input type="checkbox" checked={logNetworkDebug} onChange={(e) => setLogNetworkDebug(e.target.checked)} className="h-4 w-4" />
                   Console logs
                 </label>
               </div>
@@ -2743,9 +2728,7 @@ export default function ResumeMvp() {
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-white/60">
-              {effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}
-            </div>
+            <div className="text-xs text-black/60 dark:text-white/60">{effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}</div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -2758,9 +2741,7 @@ export default function ResumeMvp() {
               Copy
             </button>
 
-            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-              .pdf
-            </div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">.pdf</div>
 
             <button
               type="button"
@@ -2817,9 +2798,7 @@ export default function ResumeMvp() {
           {showPreviewEditor ? (
             <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
-                  Edit resume HTML (live preview)
-                </div>
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Edit resume HTML (live preview)</div>
 
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2830,11 +2809,7 @@ export default function ResumeMvp() {
                     Reset
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowPreviewEditor(false)}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
+                  <button type="button" onClick={() => setShowPreviewEditor(false)} className="text-sm font-extrabold underline opacity-80 hover:opacity-100">
                     Close
                   </button>
                 </div>
@@ -2848,9 +2823,7 @@ export default function ResumeMvp() {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
 
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
-              </div>
+              <div className="mt-2 text-xs text-black/60 dark:text-white/60">Tip: While this editor is open, Download/Print/Preview uses the edited HTML.</div>
             </div>
           ) : null}
         </section>
@@ -2903,18 +2876,10 @@ export default function ResumeMvp() {
               const selected = selectedBulletIdx.has(i);
 
               return (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
-                >
+                <div key={i} className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleSelected(i)}
-                        className="h-4 w-4"
-                      />
+                      <input type="checkbox" checked={selected} onChange={() => toggleSelected(i)} className="h-4 w-4" />
                       <span className="text-sm font-extrabold">Bullet {i + 1}</span>
                       {rewritten ? <Chip text="Has rewrite" /> : <Chip text="Original" muted />}
                     </label>
@@ -2970,9 +2935,7 @@ export default function ResumeMvp() {
                     ) : null}
 
                     {Array.isArray(item?.notes) && item.notes.length ? (
-                      <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                        Notes: {item.notes.join(" ")}
-                      </div>
+                      <div className="mt-2 text-xs text-black/60 dark:text-white/60">Notes: {item.notes.join(" ")}</div>
                     ) : null}
                   </div>
                 </div>
