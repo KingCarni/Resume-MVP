@@ -675,22 +675,31 @@ function templateStylesResume(template: ResumeTemplateId) {
 ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white)
-   IMPORTANT: variables are lowercase: --bodybg, --pagebg */
+   IMPORTANT: mkThemeCss uses lowercase vars: --bodybg / --pagebg
+*/
 @media print {
-  body{
-    background: var(--bodybg) !important;
+  html, body{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+
+  body{
+    background: var(--bodybg) !important;
+    padding: 0 !important; /* prevents double-inset differences */
+  }
+
   .page{
     background: var(--pagebg, var(--bodybg)) !important;
     box-shadow: none !important;
     margin: 0 auto !important;
+    border-radius: 0 !important; /* browsers often clip radius differently in print */
   }
+
   .top:after{ display:none !important; }
 }
 `.trim();
 }
+
 
 
 /**
