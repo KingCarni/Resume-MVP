@@ -1262,8 +1262,6 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
- const [downloadFormat, setDownloadFormat] = useState<"pdf">("pdf");
-
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1709,26 +1707,23 @@ export default function CoverLetterGenerator() {
 
                 <div className="flex items-center gap-2">
                   <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-                  .pdf
-                </div>
-
+                    .pdf
+                  </div>
 
                   <button
                     type="button"
                     disabled={!coverLetterDraft}
                     onClick={async () => {
-                    if (!coverLetterDraft) return;
-
-                    try {
-                      await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-                    } catch (e: any) {
-                      setError(e?.message || "Download failed");
-                    }
-                  }}
-
+                      if (!coverLetterDraft) return;
+                      try {
+                        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                      } catch (e: any) {
+                        setError(e?.message || "Download failed");
+                      }
+                    }}
                     className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
                   >
-                    Download
+                    Download PDF
                   </button>
                 </div>
 

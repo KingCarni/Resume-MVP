@@ -146,16 +146,19 @@ export default function KeywordNudgeRewritePanel({
     setResult(null);
 
     try {
-      const payload = buildRewriteBulletPayload({
+            const payload = buildRewriteBulletPayload({
         originalBullet,
         jobText,
-        suggestedKeywords: usable, // sanitized list only (payload builder caps it further)
+        suggestedKeywords: usable,
         role,
         tone,
-        sourceCompany: "", // optional — you can wire this in later
+        sourceCompany: "",
         targetCompany,
         targetProducts: targetProductsList,
       });
+
+const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+console.log("[rewrite-bullet] bytes (KeywordNudgeRewritePanel):", bytes);
 
       const res = await fetch("/api/rewrite-bullet", {
         method: "POST",

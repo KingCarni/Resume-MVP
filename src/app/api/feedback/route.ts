@@ -1,130 +1,70 @@
-// src/app/api/feedback/route.ts
 import { NextResponse } from "next/server";
-import { Client } from "pg";
+import { Resend } from "resend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type FeedbackType = "interview" | "job";
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-function getDbUrl() {
-  return (
-    process.env.DATABASE_URL ||
-    process.env.DATABASE_POSTGRES_URL ||
-    process.env.DATABASE_URL_UNPOOLED ||
-    process.env.DATABASE_POSTGRES_URL_NON_POOLING ||
-    ""
-  );
-}
-
-function json(
-  data: any,
-  init?: { status?: number; headers?: Record<string, string> }
-) {
-  // Same-origin Vercel usage typically doesn't need CORS headers,
-  // but OPTIONS + permissive headers prevents weird preflight/tool issues.
-  return NextResponse.json(data, {
-    status: init?.status ?? 200,
-    headers: {
-      "Cache-Control": "no-store",
-      ...(init?.headers ?? {}),
-    },
+function json(payload: any, status = 200) {
+  return NextResponse.json(payload, {
+    status,
+    headers: { "Cache-Control": "no-store, max-age=0" },
   });
 }
 
-function parseType(body: any): FeedbackType | null {
-  const raw = String(body?.type ?? "").trim().toLowerCase();
-  if (raw === "interview") return "interview";
-  if (raw === "job") return "job";
-  return null;
-}
-
-async function withClient<T>(dbUrl: string, fn: (client: Client) => Promise<T>) {
-  const client = new Client({
-    connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  try {
-    await client.connect();
-    return await fn(client);
-  } finally {
-    await client.end().catch(() => {});
-  }
-}
-
-export async function OPTIONS() {
-  // Helps if the browser/tool does a preflight request
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export async function POST(req: Request) {
-  const dbUrl = getDbUrl();
-  if (!dbUrl) {
-    return json({ ok: false, error: "Missing DATABASE_URL" }, { status: 500 });
-  }
-
-  let body: any = null;
   try {
-    body = await req.json();
-  } catch {
-    body = null;
-  }
+    const to = "gitajob.com@gmail.com";
+    const from = process.env.FEEDBACK_FROM_EMAIL; // e.g. "Git-a-Job Feedback <feedback@mail.gitajob.com>"
+    if (!process.env.RESEND_API_KEY) return json({ ok: false, error: "Missing RESEND_API_KEY" }, 500);
+    if (!from) return json({ ok: false, error: "Missing FEEDBACK_FROM_EMAIL" }, 500);
 
-  const type = parseType(body);
-  if (!type) {
-    return json(
-      { ok: false, error: "Invalid type. Use { type: 'interview' } or { type: 'job' }" },
-      { status: 400 }
-    );
-  }
+    const body = (await req.json()) as Partial<{
+      email: string;
+      message: string;
+      pageUrl?: string;
+      userAgent?: string;
+      userId?: string;
+    }>;
 
-  try {
-    await withClient(dbUrl, async (client) => {
-      await client.query("insert into app_feedback (type) values ($1)", [type]);
+    const email = String(body.email ?? "").trim();
+    const message = String(body.message ?? "").trim();
+    const pageUrl = String(body.pageUrl ?? "").trim();
+    const userAgent = String(body.userAgent ?? "").trim();
+    const userId = String(body.userId ?? "").trim();
+
+    if (!isValidEmail(email)) return json({ ok: false, error: "Please enter a valid email." }, 400);
+    if (message.length < 5) return json({ ok: false, error: "Message is too short." }, 400);
+
+    const subject = `Git-a-Job Feedback${userId ? ` (user: ${userId})` : ""}`;
+
+    const text =
+`From: ${email}
+UserId: ${userId || "N/A"}
+Page: ${pageUrl || "N/A"}
+User-Agent: ${userAgent || "N/A"}
+
+Message:
+${message}
+`;
+
+    const { error } = await resend.emails.send({
+      from,
+      to,
+      subject,
+      text,
+      replyTo: email, // key part: lets you reply directly to the user
     });
 
-    return json({ ok: true, inserted: type });
+    if (error) return json({ ok: false, error: error.message }, 500);
+
+    return json({ ok: true });
   } catch (e: any) {
-    return json({ ok: false, error: e?.message ?? "DB error" }, { status: 500 });
-  }
-}
-
-export async function GET() {
-  const dbUrl = getDbUrl();
-  if (!dbUrl) {
-    return json({ ok: false, error: "Missing DATABASE_URL" }, { status: 500 });
-  }
-
-  try {
-    const rows = await withClient(dbUrl, async (client) => {
-      const r = await client.query(
-        `select type, count(*)::int as count
-         from app_feedback
-         group by type`
-      );
-      return r.rows ?? [];
-    });
-
-    const counts: Record<FeedbackType, number> = { interview: 0, job: 0 };
-
-    for (const row of rows) {
-      const t = String(row.type) as FeedbackType;
-      const c = Number(row.count || 0);
-      if (t === "interview" || t === "job") counts[t] = c;
-    }
-
-    const total = counts.interview + counts.job;
-
-    return json({ ok: true, counts, total });
-  } catch (e: any) {
-    return json({ ok: false, error: e?.message ?? "DB error" }, { status: 500 });
+    return json({ ok: false, error: e?.message || "Server error" }, 500);
   }
 }
