@@ -1554,17 +1554,6 @@ function buildResumeHtml(args: {
 </html>`;
 }
 
-function downloadHtml(filename: string, html: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".html") ? filename : `${filename}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 function openPreviewWindow(html: string) {
   const w = window.open("", "_blank", "noopener,noreferrer");
@@ -1595,58 +1584,6 @@ function htmlToPlainText(html: string) {
       .replace(/\s{2,}/g, " ")
       .trim();
   }
-}
-
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function downloadAsTxt(filenameBase: string, html: string) {
-  const txt = htmlToPlainText(html);
-  const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
-  downloadBlob(`${filenameBase}.txt`, blob);
-}
-
-function downloadAsWordHtml(filename: string, html: string, mime: string) {
-  const docHtml = `<!doctype html><html><head><meta charset="utf-8" /></head><body>${html}</body></html>`;
-  const blob = new Blob([docHtml], { type: `${mime};charset=utf-8` });
-  downloadBlob(filename, blob);
-}
-
-function downloadAsDoc(filenameBase: string, html: string) {
-  downloadAsWordHtml(`${filenameBase}.doc`, html, "application/msword");
-}
-
-function downloadAsDocx(filenameBase: string, html: string) {
-  downloadAsWordHtml(
-    `${filenameBase}.docx`,
-    html,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-  );
-}
-
-function downloadAsMhtml(filenameBase: string, html: string) {
-  const boundary = "----=_NextPart_" + Math.random().toString(16).slice(2);
-  const mhtml =
-    `From: <Saved by Resume MVP>\r\n` +
-    `Subject: Resume\r\n` +
-    `MIME-Version: 1.0\r\n` +
-    `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"\r\n\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: text/html; charset="utf-8"\r\n` +
-    `Content-Transfer-Encoding: 7bit\r\n\r\n` +
-    `${html}\r\n\r\n` +
-    `--${boundary}--\r\n`;
-
-  const blob = new Blob([mhtml], { type: "multipart/related;charset=utf-8" });
-  downloadBlob(`${filenameBase}.mhtml`, blob);
 }
 
 /** ---------------- Component ---------------- */
@@ -1752,10 +1689,7 @@ export default function ResumeMvp() {
     setPreviewHtmlOverride("");
   }
 
-  type DownloadFormat = ".pdf";
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(".pdf");
-
-  async function handleCopyOutput() {
+   async function handleCopyOutput() {
     if (!effectiveResumeHtml) return;
     const txt = htmlToPlainText(effectiveResumeHtml);
     try {
@@ -1790,29 +1724,43 @@ export default function ResumeMvp() {
     }
 
 
-  async function handleDownloadByFormat() {
-    if (!effectiveResumeHtml) return;
+  async function handleDownloadPdf() {
+  if (!effectiveResumeHtml) return;
 
-    const base = "resume";
-    const html = effectiveResumeHtml;
+  setError(null);
 
-    if (downloadFormat === ".pdf") {
-      const res = await fetch("/api/resume-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html, filename: base }),
-      });
+  try {
+    const res = await fetch("/api/resume-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        html: effectiveResumeHtml,
+        filename: "resume.pdf",
+      }),
+    });
 
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || "PDF export failed");
-      }
-
-      const blob = await res.blob();
-      downloadBlob(`${base}.pdf`, blob);
-      return;
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `PDF render failed (${res.status})`);
     }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "resume.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  } catch (e: any) {
+    setError(e?.message || "PDF download failed");
   }
+}
+
+
 
   function clearFile() {
     setFile(null);
@@ -2804,18 +2752,13 @@ export default function ResumeMvp() {
               Copy
             </button>
 
-            <select
-              <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-  .pdf
-</div>
+            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+              .pdf
+            </div>
 
-            >
-              <option value=".pdf">.pdf</option>
-            </select>
-
-            <button
+                      <button
               type="button"
-              onClick={handleDownloadByFormat}
+              onClick={handleDownloadPdf}
               disabled={!effectiveResumeHtml}
               className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
