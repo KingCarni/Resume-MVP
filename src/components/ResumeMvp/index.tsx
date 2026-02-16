@@ -475,7 +475,8 @@ body{
   min-height: 11in;
   margin: 0 auto;
   padding: 18px 22px;
-  background: rgba(255,255,255,0.0);
+background: var(--bodyBg);
+border-radius: var(--radius);
 }
 
 .top{
