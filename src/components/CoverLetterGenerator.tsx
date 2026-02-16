@@ -1179,7 +1179,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
           title="cover-letter-preview"
           className="h-[820px] w-full"
           sandbox="allow-same-origin"
-          srcDoc={activeResumeHtml || "<!doctype html><html><body></body></html>"}
+          srcDoc={html || "<!doctype html><html><body></body></html>"}
         />
       </div>
 
@@ -1706,26 +1706,26 @@ export default function CoverLetterGenerator() {
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-                    .pdf
-                  </div>
+  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+    .pdf
+  </div>
 
-                  <button
-                    type="button"
-                    disabled={!coverLetterDraft}
-                    onClick={async () => {
-                      if (!coverLetterDraft) return;
-                      try {
-                        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
-                      } catch (e: any) {
-                        setError(e?.message || "Download failed");
-                      }
-                    }}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                  >
-                    Download PDF
-                  </button>
-                </div>
+  <button
+    type="button"
+    disabled={!coverLetterDraft}
+    onClick={async () => {
+      if (!coverLetterDraft) return;
+      try {
+        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+      } catch (e: any) {
+        setError(e?.message || "Download failed");
+      }
+    }}
+    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+  >
+    Download PDF
+  </button>
+</div>
 
                <button
                 type="button"
