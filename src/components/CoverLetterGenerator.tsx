@@ -1424,31 +1424,33 @@ export default function CoverLetterGenerator() {
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15">
-          <Link
-            href="/resume"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+  <main className="mx-auto max-w-6xl px-4 py-6">
+    {/* Top bar */}
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
 
-          >
-            Resume Compiler
-          </Link>
-          <Link
-            href="/cover-letter"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
-           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+      {/* LEFT: nav buttons */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href="/resume"
+          className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
+                     dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          Resume Compiler
+        </Link>
 
-          >
-            Cover Letter Generator
-          </Link>
-        </div>
-
-        <ThemeToggle />
+        <Link
+          href="/cover-letter"
+          className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
+                     dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          Cover Letter Generator
+        </Link>
       </div>
+
+      {/* RIGHT: theme toggle */}
+      <ThemeToggle />
+    </div>
+
 
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
