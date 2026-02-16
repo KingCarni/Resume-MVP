@@ -675,19 +675,20 @@ ${templateStyles(template)}
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
   body{
-    background: var(--bodybg) !important;
+    background: var(--bodyBg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .page{
-    background: var(--pagebg) !important;
+    background: var(--pageBg, var(--bodyBg)) !important;
     box-shadow: none !important;
-    margin: 0 auto !important;
+    margin: 0 !important;
   }
   .top:after{ display:none !important; }
 }
 `.trim();
 }
+
 
 /**
  * ✅ INCLUDED: full templateStyles() with theme parity fixes
