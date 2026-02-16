@@ -32,6 +32,10 @@ type RewritePlanItem = {
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
 };
+const navBtn =
+  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
+  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
 type ResumeTemplateId =
   | "modern"
@@ -2479,54 +2483,56 @@ export default function ResumeMvp() {
     "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/resume" className={navBtn}>
-            Resume Compiler
-          </Link>
+   <main className="mx-auto max-w-6xl px-4 py-6">
+  {/* Top bar */}
+  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center gap-2">
+      <Link href="/resume" className={navBtn}>
+        Resume Compiler
+      </Link>
 
-          <Link href="/cover-letter" className={navBtn}>
-            Cover Letter Generator
-          </Link>
-        </div>
+      <Link href="/cover-letter" className={navBtn}>
+        Cover Letter Generator
+      </Link>
+    </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <a
-            href="https://buymeacoffee.com/YOUR_LINK"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
-          >
-            Donate
-          </a>
+    <div className="flex flex-wrap items-center gap-2">
+      <a
+        href="https://buymeacoffee.com/YOUR_LINK"
+        target="_blank"
+        rel="noreferrer"
+        className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
+      >
+        Donate
+      </a>
 
-          <a
-            href="mailto:your@email.com"
-            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-          >
-            Feedback
-          </a>
+      <a
+        href="mailto:your@email.com"
+        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+      >
+        Feedback
+      </a>
 
-          <ThemeToggle />
-        </div>
-      </div>
+      <ThemeToggle />
+    </div>
+  </div>
 
-      <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
-        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Analyze → assign bullets → rewrite selected → compile into your chosen template.
-        </p>
-      </div>
+  <div className="mb-4">
+    <h1 className="text-2xl font-extrabold tracking-tight">
+      Git-a-Job: Resume Compiler
+    </h1>
+    <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
+      Analyze → assign bullets → rewrite selected → compile into your chosen template.
+    </p>
+  </div>
 
-      {error ? (
-        <div className="mb-4">
-          <Callout title="Error" tone="danger">
-            <div className="whitespace-pre-wrap text-sm">{error}</div>
-          </Callout>
-        </div>
-      ) : null}
+  {error ? (
+    <div className="mb-4">
+      <Callout title="Error" tone="danger">
+        <div className="whitespace-pre-wrap text-sm">{error}</div>
+      </Callout>
+    </div>
+  ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
