@@ -2396,14 +2396,18 @@ export default function ResumeMvp() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/resume"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+           className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
+           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+
           >
             Resume Compiler
           </Link>
 
           <Link
             href="/cover-letter"
-            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            className="rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm font-extrabold text-black/90 hover:bg-black/10
+           dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+
           >
             Cover Letter Generator
           </Link>
