@@ -2417,7 +2417,9 @@ export default function ResumeMvp() {
     <a
       href="https://buymeacoffee.com/YOUR_LINK"
       target="_blank"
-      className="rounded-xl border border-black/10 bg-yellow-400 px-3 py-2 text-sm font-extrabold text-black hover:opacity-90 dark:border-white/10"
+      className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
+bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+
     >
       Donate
     </a>

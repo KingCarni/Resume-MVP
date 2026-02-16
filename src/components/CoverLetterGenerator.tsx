@@ -1445,10 +1445,11 @@ export default function CoverLetterGenerator() {
   "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
 
-  return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        return (
+          <main className="mx-auto max-w-6xl px-4 py-6">
+            {/* Top bar */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+
         {/* LEFT: nav buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/resume" className={navBtn}>
@@ -1458,6 +1459,30 @@ export default function CoverLetterGenerator() {
           <Link href="/cover-letter" className={navBtn}>
             Cover Letter Generator
           </Link>
+        </div>
+
+        {/* RIGHT: donate + feedback + theme */}
+        <div className="flex flex-wrap items-center gap-2">
+
+          <a
+            href="https://buymeacoffee.com/YOUR_LINK"
+            target="_blank"
+            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
+bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+
+          >
+            Donate
+          </a>
+
+          <a
+            href="mailto:your@email.com"
+            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+          >
+            Feedback
+          </a>
+
+          <ThemeToggle />
+
         </div>
 
         {/* RIGHT: theme toggle */}
