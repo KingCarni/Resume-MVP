@@ -4,26 +4,23 @@ import * as React from "react";
 import { useTheme } from "next-themes";
 
 export default function ThemeToggle() {
-  const { theme, setTheme, systemTheme } = useTheme();
+  const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => setMounted(true), []);
 
-  if (!mounted) {
-    // Prevent hydration mismatch by rendering nothing until mounted
-    return null;
-  }
+  // Avoid hydration mismatch: don't render until we know theme client-side
+  if (!mounted) return null;
 
-  const resolved = theme === "system" ? systemTheme : theme;
-  const isDark = resolved === "dark";
+  const isDark = resolvedTheme === "dark";
 
   return (
     <button
       type="button"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition hover:opacity-90
-                 bg-white text-black border-black/10
-                 dark:bg-zinc-900 dark:text-white dark:border-white/10"
+      className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition hover:opacity-90
+                 border-black/10 bg-white text-black
+                 dark:border-white/10 dark:bg-white/10 dark:text-white"
       aria-label="Toggle theme"
       title="Toggle theme"
     >
