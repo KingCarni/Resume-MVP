@@ -6,6 +6,10 @@ import { extractResumeBullets } from "@/lib/extractResumeBullets";
 import { suggestKeywordsForBullets } from "@/lib/bullet_suggestions";
 import { buildRewritePlan } from "@/lib/rewrite_plan";
 import { computeVerbStrength } from "@/lib/verb_strength";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { chargeCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -99,21 +103,14 @@ function startsWith(buf: Buffer, bytes: number[]) {
 }
 
 function sniffBufferType(buf: Buffer): SniffedType {
-  // PDF: %PDF-
   if (buf.length >= 5 && buf.slice(0, 5).toString("ascii") === "%PDF-") return "pdf";
-
-  // ZIP/DOCX: PK..
   if (buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b) return "docx";
-
-  // DOC (OLE2): D0 CF 11 E0 A1 B1 1A E1
   if (startsWith(buf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return "doc";
 
-  // Heuristic text: mostly printable in first chunk
   const head = buf.slice(0, Math.min(buf.length, 4096));
   if (head.length) {
     let printable = 0;
     for (const b of head) {
-      // allow tab/newline/carriage return + common ASCII printable range
       if (b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e)) printable++;
     }
     const ratio = printable / head.length;
@@ -152,33 +149,20 @@ function extractLiText(html: string): string[] {
   return Array.from(new Set(bullets));
 }
 
-/**
- * Extract DOCX in a bullet-aware way:
- * - Convert to HTML (keeps lists)
- * - Pull <li> items as bullets
- * - Also provide a plain-text version that includes "- " lines so downstream parsers work
- */
-async function extractDocxTextAndBulletsFromBuffer(buffer: Buffer): Promise<{
-  text: string;
-  bullets: string[];
-  html: string;
-}> {
-  // Guard: ensure it's actually ZIP/DOCX
+async function extractDocxTextAndBulletsFromBuffer(
+  buffer: Buffer
+): Promise<{ text: string; bullets: string[]; html: string }> {
   const sniffed = sniffBufferType(buffer);
   if (sniffed !== "docx") {
     if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
-    throw new Error(
-      `File is not a valid .docx (zip). Detected: ${sniffed}. Please upload a real DOCX or PDF.`
-    );
+    throw new Error(`File is not a valid .docx (zip). Detected: ${sniffed}. Please upload a real DOCX or PDF.`);
   }
 
   const { value: html } = await mammoth.convertToHtml({ buffer });
   const bullets = extractLiText(html);
 
   const text = stripTagsToText(html);
-
-  const textWithBullets =
-    bullets.length > 0 ? `${text}\n\n${bullets.map((b) => `- ${b}`).join("\n")}` : text;
+  const textWithBullets = bullets.length > 0 ? `${text}\n\n${bullets.map((b) => `- ${b}`).join("\n")}` : text;
 
   return { text: textWithBullets, bullets, html };
 }
@@ -209,24 +193,16 @@ function extractExperienceSection(fullText: string) {
     const endMatch = afterStart.match(endHeadingRegex);
     const endIdx = endMatch?.index;
 
-    const experienceText =
-      typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
+    const experienceText = typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
-    return {
-      experienceText: normalizeResumeText(experienceText),
-      foundSection: true,
-      mode: `heading:${bestNeedle}`,
-    };
+    return { experienceText: normalizeResumeText(experienceText), foundSection: true, mode: `heading:${bestNeedle}` };
   }
 
   const lines = text.split("\n");
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
   const dash = "[–—-]";
-  const dateRangeRegex = new RegExp(
-    `\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`,
-    "i"
-  );
+  const dateRangeRegex = new RegExp(`\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`, "i");
 
   let startLine = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -238,22 +214,15 @@ function extractExperienceSection(fullText: string) {
     }
   }
 
-  if (startLine === -1) {
-    return { experienceText: text, foundSection: false, mode: "none" };
-  }
+  if (startLine === -1) return { experienceText: text, foundSection: false, mode: "none" };
 
   const afterStart = lines.slice(startLine).join("\n");
   const endMatch = afterStart.match(endHeadingRegex);
   const endIdx = endMatch?.index;
 
-  const experienceText =
-    typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
+  const experienceText = typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
-  return {
-    experienceText: normalizeResumeText(experienceText),
-    foundSection: true,
-    mode: "heuristic",
-  };
+  return { experienceText: normalizeResumeText(experienceText), foundSection: true, mode: "heuristic" };
 }
 
 /** Option B: capture metadata blocks (not bullets) */
@@ -281,8 +250,7 @@ function extractMetaBlocks(fullText: string) {
     }
 
     if (l.length <= 110 && metricLikeRegex.test(l)) {
-      if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l))
-        continue;
+      if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l)) continue;
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
 
       metrics.push(l);
@@ -319,16 +287,8 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   return text;
 }
 
-/**
- * Return BOTH resumeText and any bullets we can confidently extract at file-read time.
- * ✅ Uses magic-byte sniffing so DOC won't crash mammoth/jszip.
- */
-async function extractResumeFromFile(file: File): Promise<{
-  text: string;
-  bulletsFromFile?: string[];
-}> {
+async function extractResumeFromFile(file: File): Promise<{ text: string; bulletsFromFile?: string[] }> {
   const buffer = Buffer.from(await file.arrayBuffer());
-
   const sniffed = sniffBufferType(buffer);
 
   if (sniffed === "pdf") {
@@ -341,15 +301,10 @@ async function extractResumeFromFile(file: File): Promise<{
     return { text, bulletsFromFile: bullets };
   }
 
-  if (sniffed === "doc") {
-    throw new Error(friendlyUnsupportedDocMsg());
-  }
+  if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
 
-  if (sniffed === "txt") {
-    return { text: buffer.toString("utf8"), bulletsFromFile: undefined };
-  }
+  if (sniffed === "txt") return { text: buffer.toString("utf8"), bulletsFromFile: undefined };
 
-  // last-resort: filename fallback (but keep it safe)
   const name = (file.name || "").toLowerCase();
   if (name.endsWith(".doc")) throw new Error(friendlyUnsupportedDocMsg("(It looks like a legacy Word .doc file.)"));
 
@@ -370,8 +325,7 @@ function inferExtFromUrl(url: string) {
 function inferTypeFromContentType(ct: string) {
   const c = (ct || "").toLowerCase();
   if (c.includes("application/pdf")) return "pdf";
-  if (c.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
-    return "docx";
+  if (c.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) return "docx";
   if (c.includes("application/msword")) return "doc";
   if (c.includes("text/plain")) return "txt";
   return "";
@@ -384,8 +338,7 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
       const token = process.env.BLOB_READ_WRITE_TOKEN;
       if (token) headers["Authorization"] = `Bearer ${token}`;
     }
-    const res = await fetch(url, { headers, cache: "no-store" });
-    return res;
+    return fetch(url, { headers, cache: "no-store" });
   };
 
   let res = await tryFetch(false);
@@ -396,9 +349,7 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `Failed to fetch resumeBlobUrl. Status ${res.status}. ${text ? `Body: ${text}` : ""}`
-    );
+    throw new Error(`Failed to fetch resumeBlobUrl. Status ${res.status}. ${text ? `Body: ${text}` : ""}`);
   }
 
   const contentType = res.headers.get("content-type") || "";
@@ -419,13 +370,11 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
   if (buffer.byteLength > MAX_FILE_BYTES) {
     throw new Error(
       `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(
-        buffer.byteLength /
-        (1024 * 1024)
+        buffer.byteLength / (1024 * 1024)
       ).toFixed(2)}MB.`
     );
   }
 
-  // ✅ Prefer magic-byte sniffing over headers/extension (those lie all the time)
   const sniffed = sniffBufferType(buffer);
   const typeFromCt = inferTypeFromContentType(contentType);
   const typeFromUrl = inferExtFromUrl(resumeBlobUrl);
@@ -444,19 +393,12 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
 
   if (detectedType === "doc") {
     throw new Error(
-      friendlyUnsupportedDocMsg(
-        `(Detected content-type "${contentType || "unknown"}", url "${resumeBlobUrl}")`
-      )
+      friendlyUnsupportedDocMsg(`(Detected content-type "${contentType || "unknown"}", url "${resumeBlobUrl}")`)
     );
   }
 
   if (detectedType === "txt") {
-    return {
-      text: buffer.toString("utf8"),
-      bulletsFromFile: undefined,
-      sizeBytes: buffer.byteLength,
-      detectedType,
-    };
+    return { text: buffer.toString("utf8"), bulletsFromFile: undefined, sizeBytes: buffer.byteLength, detectedType };
   }
 
   throw new Error(
@@ -472,14 +414,7 @@ function parseOnlyExperienceFlagFromFormData(v: FormDataEntryValue | null) {
   return undefined;
 }
 
-/**
- * ✅ Convert extracted string bullets (+ optional jobId mapping) into ResumeBullet[]
- */
-function normalizeBulletsForSuggestions(args: {
-  bullets: string[];
-  bulletJobIds?: string[];
-  fallbackJobId?: string;
-}) {
+function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?: string[]; fallbackJobId?: string }) {
   const { bullets, bulletJobIds, fallbackJobId } = args;
 
   return (bullets || [])
@@ -489,11 +424,7 @@ function normalizeBulletsForSuggestions(args: {
 
       const jobId = bulletJobIds?.[i] || fallbackJobId || "job_default";
 
-      const b: ResumeBullet = {
-        id: `b${i + 1}`,
-        text,
-        jobId,
-      };
+      const b: ResumeBullet = { id: `b${i + 1}`, text, jobId };
       return b;
     })
     .filter((x): x is ResumeBullet => Boolean(x));
@@ -505,14 +436,36 @@ export async function POST(req: Request) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
+    // ✅ Require login + charge credits (Analyze = 3)
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    if (!email) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({ where: { email } });
+    if (!dbUser) {
+      return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
+    }
+
+    const COST_ANALYZE = 3;
+
+    const charged = await chargeCredits({
+      userId: dbUser.id,
+      cost: COST_ANALYZE,
+      reason: "analyze",
+      meta: { cost: COST_ANALYZE },
+    });
+
+    if (!charged.ok) {
+      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+    }
+
     let resumeText = "";
     let jobText = "";
     let onlyExperienceBullets: boolean = true;
 
-    // file-level bullets (DOCX <li> extraction)
     let bulletsFromFile: string[] = [];
-
-    // optional debug about blob fetch
     let blobDebug: any = null;
 
     if (contentType.includes("multipart/form-data")) {
@@ -531,10 +484,7 @@ export async function POST(req: Request) {
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
           return NextResponse.json(
-            {
-              ok: false,
-              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
-            },
+            { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
             { status: 400 }
           );
         }
@@ -551,7 +501,6 @@ export async function POST(req: Request) {
       const body = await req.json();
 
       const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
-
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
 
       if (typeof body.onlyExperienceBullets === "boolean") {
@@ -583,28 +532,18 @@ export async function POST(req: Request) {
       }
     } else {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Unsupported content type. Send JSON or multipart/form-data (file upload).",
-        },
+        { ok: false, error: "Unsupported content type. Send JSON or multipart/form-data (file upload)." },
         { status: 415 }
       );
     }
 
     if (!resumeText || !jobText) {
-      return NextResponse.json(
-        { ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" }, { status: 400 });
     }
 
     if (resumeText.length < 300) {
       return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text.",
-        },
+        { ok: false, error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text." },
         { status: 400 }
       );
     }
@@ -626,9 +565,7 @@ export async function POST(req: Request) {
         title: String(j?.title || "Role"),
         dates: String(j?.dates || "Dates"),
         location: j?.location ? String(j.location) : "",
-        bullets: Array.isArray(j?.bullets)
-          ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean)
-          : [],
+        bullets: Array.isArray(j?.bullets) ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean) : [],
       }));
 
     const flattenFromJobs = (jobsIn: any[]) => {
@@ -648,9 +585,8 @@ export async function POST(req: Request) {
     const tryExtract = (text: string) => {
       try {
         const maybe: any = extractResumeBullets(text);
-        if (Array.isArray(maybe)) {
-          return { bullets: maybe as string[], jobs: [] as any[] };
-        }
+        if (Array.isArray(maybe)) return { bullets: maybe as string[], jobs: [] as any[] };
+
         return {
           bullets: Array.isArray(maybe?.bullets) ? (maybe.bullets as string[]) : [],
           jobs: Array.isArray(maybe?.jobs) ? maybe.jobs : [],
@@ -660,13 +596,7 @@ export async function POST(req: Request) {
       }
     };
 
-    /**
-     * ✅ Smart DOCX <li> fallback:
-     * - always strip contact/reference bullets
-     * - if onlyExperienceBullets is true, only keep <li> bullets that appear inside the experience slice
-     */
     const seededFileBulletsRaw = filterBadBullets(bulletsFromFile || []);
-
     let seededFileBullets = seededFileBulletsRaw;
 
     if (onlyExperienceBullets) {
@@ -685,7 +615,6 @@ export async function POST(req: Request) {
     bullets = filterBadBullets(flat1.outBullets);
     bulletJobIds = flat1.outJobIds;
 
-    // Keep mapping aligned if we filtered
     if (bullets.length !== flat1.outBullets.length) {
       const keep = new Set(bullets.map((b) => normalizeForContains(b)));
       const newIds: string[] = [];
@@ -721,9 +650,7 @@ export async function POST(req: Request) {
           bulletJobIds = flat2.outJobIds;
         }
       } else {
-        const raw = (strict2.bullets || [])
-          .map((b) => String(b || "").trim())
-          .filter(Boolean);
+        const raw = (strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean);
 
         const filtered = filterBadBullets(raw);
         bullets = filtered;
@@ -771,11 +698,7 @@ export async function POST(req: Request) {
         fallbackJobId: experienceJobs[0]?.id || "job_default",
       });
 
-      const suggestionResult: any = suggestKeywordsForBullets(
-        bulletObjs,
-        jobText,
-        analysis.missingKeywords
-      );
+      const suggestionResult: any = suggestKeywordsForBullets(bulletObjs, jobText, analysis.missingKeywords);
 
       bulletSuggestions = suggestionResult?.bulletSuggestions ?? [];
       weakBullets = suggestionResult?.weakBullets ?? [];
@@ -801,12 +724,8 @@ export async function POST(req: Request) {
       }));
     }
 
-    // Attach jobId + verb strength (before) onto each plan item.
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
-      const original =
-        typeof item?.originalBullet === "string"
-          ? item.originalBullet
-          : String(item?.originalBullet ?? "");
+      const original = typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
 
       const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
@@ -820,6 +739,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+
+      // ✅ so UI can refresh credit counter after Analyze
+      balance: charged.balance,
+
       ...analysis,
 
       experienceJobs,
@@ -860,9 +783,6 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("analyze route error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Failed to analyze input" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || "Failed to analyze input" }, { status: 500 });
   }
 }

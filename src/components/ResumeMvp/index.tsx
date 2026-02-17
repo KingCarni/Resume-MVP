@@ -2,11 +2,12 @@
 "use client";
 
 import Link from "next/link";
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 import { upload } from "@vercel/blob/client";
 import type { PutBlobResult } from "@vercel/blob";
+import { useSession } from "next-auth/react";
 
 /** ---------------- Types ---------------- */
 
@@ -377,6 +378,29 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+<button
+  onClick={async () => {
+    const res = await fetch("/api/stripe/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: "test-user-123", // temporary hardcoded for now
+        pack: "starter",
+      }),
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      alert(data.error);
+      return;
+    }
+
+    window.location.href = data.url;
+  }}
+  className="rounded-xl bg-black text-white px-4 py-2"
+>
+  Buy 25 Credits ($5)
+</button>
 
 function headerContactChipsCss() {
   return `
@@ -1685,7 +1709,6 @@ function openPrintWindow(html: string) {
   }, 250);
 }
 
-
 function htmlToPlainText(html: string) {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
@@ -1754,6 +1777,37 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
 ];
 
 export default function ResumeMvp() {
+  const { status } = useSession();
+
+  // ✅ Credits UI state
+  const [creditsBalance, setCreditsBalance] = useState<number | null>(null);
+  const [creditsLoading, setCreditsLoading] = useState(false);
+
+  const refreshCredits = useCallback(async () => {
+    if (status !== "authenticated") {
+      setCreditsBalance(null);
+      return;
+    }
+    setCreditsLoading(true);
+    try {
+      const res = await fetch("/api/credits", { method: "GET", cache: "no-store" });
+      const payload = await parseApiResponse(res);
+      if (!res.ok || typeof payload === "string") {
+        setCreditsBalance(null);
+        return;
+      }
+      if (payload?.ok) setCreditsBalance(Number(payload.balance ?? 0));
+      else setCreditsBalance(null);
+    } finally {
+      setCreditsLoading(false);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (status === "authenticated") refreshCredits();
+    if (status === "unauthenticated") setCreditsBalance(null);
+  }, [status, refreshCredits]);
+
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -1950,7 +2004,12 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        throw new Error(typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed");
+        const err = typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed";
+        if ((payload as any)?.error === "OUT_OF_CREDITS") {
+          const bal = (payload as any)?.balance;
+          throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
+        }
+        throw new Error(err);
       }
 
       if (typeof payload === "string") {
@@ -1995,8 +2054,12 @@ export default function ResumeMvp() {
       } else {
         setAssignments({});
       }
+
+      // ✅ keep credits UI in sync
+      refreshCredits();
     } catch (e: any) {
       setError(e?.message || "Analyze failed");
+      refreshCredits(); // refresh anyway in case server decremented before error
     } finally {
       setLoadingAnalyze(false);
     }
@@ -2112,6 +2175,7 @@ export default function ResumeMvp() {
         return { ...prev, rewritePlan: nextPlan };
       });
 
+      refreshCredits();
       return;
     }
 
@@ -2252,7 +2316,12 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        throw new Error(typeof payload === "string" ? payload : payload?.error || "Rewrite failed");
+        const errMsg = typeof payload === "string" ? payload : payload?.error || "Rewrite failed";
+        if (payload?.error === "OUT_OF_CREDITS") {
+          const bal = payload?.balance;
+          throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
+        }
+        throw new Error(errMsg);
       }
 
       if (typeof payload === "string") {
@@ -2315,8 +2384,11 @@ export default function ResumeMvp() {
 
         return { ...prev, rewritePlan: nextPlan };
       });
+
+      refreshCredits();
     } catch (e: any) {
       setError(e?.message || "Rewrite failed");
+      refreshCredits();
     } finally {
       setLoadingRewriteIndex(null);
     }
@@ -2379,6 +2451,7 @@ export default function ResumeMvp() {
       }
     } finally {
       setLoadingBatchRewrite(false);
+      refreshCredits();
     }
   }
 
@@ -2404,7 +2477,9 @@ export default function ResumeMvp() {
   const metaGames = sanitizeMetaLines(
     Array.isArray(analysis?.metaBlocks?.gamesShipped) ? analysis!.metaBlocks!.gamesShipped! : []
   );
-  const metaMetrics = sanitizeMetaLines(Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []);
+  const metaMetrics = sanitizeMetaLines(
+    Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []
+  );
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -2551,6 +2626,29 @@ export default function ResumeMvp() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* ✅ Credits counter */}
+          <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-white/10 dark:text-white">
+            {status !== "authenticated" ? (
+              <span className="opacity-70">Credits: —</span>
+            ) : creditsLoading ? (
+              <span className="opacity-70">Credits: …</span>
+            ) : (
+              <span className={creditsBalance !== null && creditsBalance <= 0 ? "text-red-600 dark:text-red-300" : ""}>
+                Credits: {creditsBalance ?? 0}
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshCredits}
+            disabled={status !== "authenticated" || creditsLoading}
+            title="Refresh credits"
+            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            ↻
+          </button>
+
           <a
             href="https://git-a-job.com/donate"
             target="_blank"
@@ -2978,10 +3076,18 @@ export default function ResumeMvp() {
               const selected = selectedBulletIdx.has(i);
 
               return (
-                <div key={i} className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20">
+                <div
+                  key={i}
+                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={selected} onChange={() => toggleSelected(i)} className="h-4 w-4" />
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleSelected(i)}
+                        className="h-4 w-4"
+                      />
                       <span className="text-sm font-extrabold">Bullet {i + 1}</span>
                       {rewritten ? <Chip text="Has rewrite" /> : <Chip text="Original" muted />}
                     </label>

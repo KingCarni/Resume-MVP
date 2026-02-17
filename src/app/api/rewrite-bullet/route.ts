@@ -3,8 +3,13 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { computeVerbStrength } from "@/lib/verb_strength";
 import { sanitizeKeywords } from "@/lib/keywordSanitizer";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { chargeCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type ReqBody = {
   jobText: string;
@@ -73,7 +78,8 @@ function extractOpenerVerb(bullet: string) {
   for (const w of words.slice(0, 6)) {
     const clean = w.replace(/[^\w-]/g, "").toLowerCase();
     if (!clean) continue;
-    if (["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean)) continue;
+    if (["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean))
+      continue;
     return clean;
   }
   return "";
@@ -182,23 +188,12 @@ function buildUserPrompt(args: {
     .filter(Boolean);
 
   const extraConstraints = safeArray(constraints);
-
   const avoidNorm = safeArray(avoidPhrases).map((s) => normalizeForMatch(s)).filter(Boolean);
-
   const usedOpenersNorm = safeArray(usedOpeners).map((s) => normalizeForMatch(s)).filter(Boolean);
   const usedPhrasesNorm = safeArray(usedPhrases).map((s) => normalizeForMatch(s)).filter(Boolean);
 
-  const combinedAvoidOpeners = uniq([
-    ...DEFAULT_OVERUSED_OPENERS,
-    ...usedOpenersNorm,
-    ...avoidNorm,
-  ]).filter(Boolean);
-
-  const combinedAvoidPhrases = uniq([
-    ...DEFAULT_OVERUSED_PHRASES,
-    ...usedPhrasesNorm,
-    ...avoidNorm,
-  ]).filter(Boolean);
+  const combinedAvoidOpeners = uniq([...DEFAULT_OVERUSED_OPENERS, ...usedOpenersNorm, ...avoidNorm]).filter(Boolean);
+  const combinedAvoidPhrases = uniq([...DEFAULT_OVERUSED_PHRASES, ...usedPhrasesNorm, ...avoidNorm]).filter(Boolean);
 
   const originalOpener = extractOpenerVerb(originalBullet);
 
@@ -307,17 +302,25 @@ function containsAnyPhrase(text: string, phrases: string[]) {
 }
 
 function scoreDelta(beforeScore: number, afterScore: number) {
-  // integer delta for clean UI
   return Math.round(afterScore - beforeScore);
 }
 
 export async function POST(req: Request) {
   try {
+    // ✅ Require login
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+    const dbUser = await prisma.user.findUnique({ where: { email } });
+    if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
     }
 
+    // ✅ Parse + validate BEFORE charging
     const body = (await req.json()) as Partial<ReqBody>;
 
     const jobText = normalize(body.jobText);
@@ -352,6 +355,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "jobText too long. Keep under ~6k chars." }, { status: 400 });
     }
 
+    // ✅ Charge credits for rewrite (1 per rewrite)
+    const COST_REWRITE = 1;
+    const charged = await chargeCredits({
+      userId: dbUser.id,
+      cost: COST_REWRITE,
+      reason: "rewrite_bullet",
+      eventType: "rewrite_bullet",
+      meta: {
+        cost: COST_REWRITE,
+        // optional helpful debugging context:
+        originalLen: originalBullet.length,
+      },
+    });
+
+    if (!charged.ok) {
+      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+    }
+
     const { usableKeywords, blockedKeywords } = sanitizeKeywords({
       rawKeywords: rawSuggestedKeywords,
       targetCompany: targetCompany || undefined,
@@ -366,11 +387,10 @@ export async function POST(req: Request) {
 
     const client = new OpenAI({ apiKey });
 
-    // --- Step 4 data: before/after + delta (truthful improvement only) ---
+    // --- Step data: before/after + delta (truthful improvement only) ---
     const verbStrengthBefore = computeVerbStrength(originalBullet);
     const beforeScore = verbStrengthBefore.score;
 
-    // Hard avoid lists for enforcement
     const hardAvoidOpeners = uniq([
       ...DEFAULT_OVERUSED_OPENERS,
       ...usedOpeners.map(normalizeForMatch),
@@ -406,14 +426,12 @@ export async function POST(req: Request) {
     const after1 = computeVerbStrength(attempt1);
     const afterScore1 = after1.score;
 
-    // Enforce opener + phrase bans (only when preferVerbVariety ON)
     const opener1 = normalizeForMatch(extractOpenerVerb(attempt1));
     const openerViolates = preferVerbVariety && opener1 && hardAvoidOpeners.includes(opener1);
 
     const phraseViolates =
       preferVerbVariety && hardAvoidPhrases.length ? containsAnyPhrase(attempt1, hardAvoidPhrases) : false;
 
-    // Detect if model smuggled job-only keywords anyway
     const riskyFound1 = findKeywordHits(attempt1, riskyKeywords);
     const riskyViolates = riskyFound1.length > 0;
 
@@ -421,7 +439,6 @@ export async function POST(req: Request) {
     let attempt2: string | null = null;
     let after2: ReturnType<typeof computeVerbStrength> | null = null;
 
-    // Retry if: score regressed, violates variety rules, or contains risky keywords
     const needsRetry = afterScore1 < beforeScore || openerViolates || phraseViolates || riskyViolates;
 
     if (needsRetry) {
@@ -473,7 +490,6 @@ export async function POST(req: Request) {
 
     const riskyFoundBest1 = riskyFound1;
     let riskyFoundBest2: string[] = [];
-
     if (attempt2) riskyFoundBest2 = findKeywordHits(attempt2, riskyKeywords);
 
     if (after2 && attempt2) {
@@ -482,8 +498,7 @@ export async function POST(req: Request) {
 
       const candidateBetter = after2.score > bestAfter.score;
 
-      const chooseCandidate =
-        (candIsSafe && !bestIsSafe) || (candIsSafe === bestIsSafe && candidateBetter);
+      const chooseCandidate = (candIsSafe && !bestIsSafe) || (candIsSafe === bestIsSafe && candidateBetter);
 
       if (chooseCandidate) {
         bestRewrite = attempt2;
@@ -502,7 +517,7 @@ export async function POST(req: Request) {
     if (bestAfter.score < beforeScore || finalOpenerViolates || finalRiskyViolates) {
       usedOriginalFallback = true;
       bestRewrite = originalBullet;
-      bestAfter = verbStrengthBefore; // reuse before
+      bestAfter = verbStrengthBefore;
     }
 
     const afterScore = bestAfter.score;
@@ -510,17 +525,13 @@ export async function POST(req: Request) {
 
     const keywordHitsArr = findKeywordHits(bestRewrite, safeKeywords);
 
-    const blockedUniverse = [
-      ...(targetCompany ? [targetCompany] : []),
-      ...targetProducts,
-      ...blockedTerms,
-    ].filter(Boolean);
-
+    const blockedUniverse = [...(targetCompany ? [targetCompany] : []), ...targetProducts, ...blockedTerms].filter(
+      Boolean
+    );
     const blockedTermsFound = findKeywordHits(bestRewrite, blockedUniverse);
 
     const needsMoreInfo =
-      originalBullet.length < 40 ||
-      /^(qa|testing|automation|bugs|regression|jira|sdlc)\b/i.test(originalBullet);
+      originalBullet.length < 40 || /^(qa|testing|automation|bugs|regression|jira|sdlc)\b/i.test(originalBullet);
 
     const notes: string[] = [];
     notes.push("Rewrote for clarity + impact while preserving truthfulness.");
@@ -530,18 +541,18 @@ export async function POST(req: Request) {
     if (usedOpeners.length) notes.push("Used global usedOpeners to reduce opener repetition.");
     if (usedPhrases.length) notes.push("Used global usedPhrases to reduce repeated phrasing.");
     if (retryUsed) notes.push("Auto-retried once (opener/phrase/risky-keyword violation or score regression).");
-    if (usedOriginalFallback) notes.push("Kept original bullet (rewrite violated safety/variance rules or reduced quality).");
+    if (usedOriginalFallback)
+      notes.push("Kept original bullet (rewrite violated safety/variance rules or reduced quality).");
     if (blockedKeywords.length) notes.push("Removed blocked keywords from suggestions (guardrail).");
     if (blockedTermsFound.length) notes.push("Detected target-only term risk (blocked terms present).");
     if (riskyKeywords.length) notes.push("Job-derived keywords not in the original bullet were treated as risky/forbidden.");
 
     const regressed = afterScore < beforeScore;
 
-    // ✅ “Show x,y,z” payload: these are UI-ready
     const display = {
       before: { score: beforeScore, label: verbStrengthBefore.label },
       after: { score: afterScore, label: bestAfter.label },
-      delta, // e.g., +12 / -4 / 0
+      delta,
       improved: delta > 0,
     };
 
@@ -550,7 +561,9 @@ export async function POST(req: Request) {
       rewrittenBullet: bestRewrite,
       needsMoreInfo,
 
-      // transparency / debugging
+      // credits
+      creditsRemaining: charged.balance,
+
       safeKeywords,
       riskyKeywords,
       riskyKeywordsFoundInRewrite: usedOriginalFallback ? [] : finalRiskyFound,
@@ -559,17 +572,16 @@ export async function POST(req: Request) {
       blockedKeywords,
       blockedTermsFound,
 
-      // verb scoring objects (full details)
       verbStrengthBefore,
       verbStrengthAfter: bestAfter,
 
-      // ✅ Step 4 added:
       scoreDelta: delta,
       display,
 
       regressed,
       retryUsed,
       usedOriginalFallback,
+      notes,
     });
   } catch (e: any) {
     console.error("rewrite-bullet route error:", e);

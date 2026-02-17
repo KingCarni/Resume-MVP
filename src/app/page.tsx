@@ -1,14 +1,18 @@
 // src/app/page.tsx
 import Link from "next/link";
+import BuyCreditsButton from "@/components/Billing/BuyCreditsButton";
 
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-black">Git-a-Job: Toolbelt</h1>
 
-      <p className="mt-2 opacity-80">
-        Choose a tool:
-      </p>
+      <p className="mt-2 opacity-80">Choose a tool:</p>
+
+      {/* TEMP: Stripe test purchase button (Client Component) */}
+      <div className="mt-4">
+        <BuyCreditsButton />
+      </div>
 
       {/* Primary Tools */}
       <div className="mt-6 flex flex-wrap gap-3">
@@ -40,8 +44,8 @@ export default function HomePage() {
       <section className="max-w-xl">
         <h2 className="text-xl font-bold">Support Development</h2>
         <p className="mt-2 text-sm opacity-80">
-          If this tool helped you land interviews or improve your resume,
-          you can support continued development.
+          If this tool helped you land interviews or improve your resume, you can support continued
+          development.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">
