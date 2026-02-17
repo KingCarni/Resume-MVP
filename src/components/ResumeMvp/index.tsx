@@ -378,29 +378,6 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-<button
-  onClick={async () => {
-    const res = await fetch("/api/stripe/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: "test-user-123", // temporary hardcoded for now
-        pack: "starter",
-      }),
-    });
-
-    const data = await res.json();
-    if (!data.ok) {
-      alert(data.error);
-      return;
-    }
-
-    window.location.href = data.url;
-  }}
-  className="rounded-xl bg-black text-white px-4 py-2"
->
-  Buy 25 Credits ($5)
-</button>
 
 function headerContactChipsCss() {
   return `

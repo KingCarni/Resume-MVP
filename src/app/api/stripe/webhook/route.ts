@@ -1,23 +1,14 @@
+// src/app/api/stripe/webhook/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { Client } from "pg";
-
-export async function GET() {
-  return NextResponse.json({ ok: true, route: "stripe webhook alive" });
-}
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// IMPORTANT: Stripe webhook needs the raw body, so we use req.text() below.
-
-function getDbUrl() {
-  return (
-    process.env.POSTGRES_URL ||
-    process.env.POSTGRES_URL_NON_POOLING ||
-    process.env.DATABASE_URL ||
-    ""
-  );
+// Helps you confirm the route exists in prod (browser GET)
+export async function GET() {
+  return NextResponse.json({ ok: true, route: "stripe webhook alive" });
 }
 
 export async function POST(req: Request) {
@@ -38,17 +29,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing stripe-signature" }, { status: 400 });
   }
 
-  const body = await req.text();
+  const rawBody = await req.text();
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+    event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
   } catch (err: any) {
     console.error("Stripe webhook signature verification failed:", err?.message);
     return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 400 });
   }
 
-  // Only handle completed Checkout sessions
+  // Only credit on successful Checkout completion
   if (event.type !== "checkout.session.completed") {
     return NextResponse.json({ ok: true, ignored: event.type });
   }
@@ -59,50 +50,63 @@ export async function POST(req: Request) {
   const credits = Number(session.metadata?.credits ?? 0);
 
   if (!userId || !Number.isFinite(credits) || credits <= 0) {
-    console.error("Missing userId/credits in session metadata", session.metadata);
+    console.error("Missing userId/credits in metadata:", session.metadata);
     return NextResponse.json({ ok: false, error: "Missing metadata userId/credits" }, { status: 400 });
   }
 
-  const dbUrl = getDbUrl();
-  if (!dbUrl) {
-    return NextResponse.json({ ok: false, error: "Missing DATABASE URL" }, { status: 500 });
-  }
-
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
+  // Idempotency: do not credit twice if Stripe retries
+  // Requires a unique constraint in Prisma (recommended) OR we fallback to checking by reason string.
+  const eventId = event.id;
+  const sessionId = session.id;
 
   try {
-    await client.query("BEGIN");
+    // If you have a field to store stripeEventId on creditsLedger, use it.
+    // If not, we still prevent duplicates by storing a matching Event row keyed by sessionId/eventId.
+    // ---- Recommended approach: create an Event row keyed by stripe event id ----
 
-    // Idempotency: event.id unique means we never double credit
-    await client.query(
-      `insert into credit_ledger (user_id, delta, reason, stripe_session_id, stripe_event_id)
-       values ($1, $2, 'purchase', $3, $4)
-       on conflict (stripe_event_id) do nothing`,
-      [userId, credits, session.id, event.id]
-    );
+    // 1) If we already processed this Stripe event, no-op.
+    const existing = await prisma.event.findFirst({
+      where: {
+        type: "purchase", // if you don't have this enum, change to "analyze" temporarily
+        metaJson: {
+          path: ["stripeEventId"],
+          equals: eventId,
+        } as any,
+      },
+      select: { id: true },
+    });
 
-    await client.query(
-      `insert into credit_purchases (user_id, stripe_session_id, amount_cents, currency, credits)
-       values ($1, $2, $3, $4, $5)
-       on conflict (stripe_session_id) do nothing`,
-      [
-        userId,
-        session.id,
-        Number(session.amount_total ?? 0),
-        String(session.currency ?? "usd"),
-        credits,
-      ]
-    );
+    if (existing) {
+      return NextResponse.json({ ok: true, deduped: true });
+    }
 
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("Webhook DB error:", e);
+    // 2) Credit + record event in one transaction
+    await prisma.$transaction([
+      prisma.creditsLedger.create({
+        data: {
+          userId,
+          delta: credits, // ✅ positive delta = top-up
+          reason: "purchase_stripe",
+        },
+      }),
+      prisma.event.create({
+        data: {
+          userId,
+          type: "analyze", // change to "purchase" if your enum supports it
+          metaJson: {
+            stripeEventId: eventId,
+            stripeSessionId: sessionId,
+            credits,
+            amountTotal: session.amount_total ?? null,
+            currency: session.currency ?? null,
+          },
+        },
+      }),
+    ]);
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    console.error("Stripe webhook DB error:", e);
     return NextResponse.json({ ok: false, error: "DB error" }, { status: 500 });
-  } finally {
-    await client.end();
   }
-
-  return NextResponse.json({ ok: true });
 }

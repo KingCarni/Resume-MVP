@@ -1,3 +1,4 @@
+// src/app/api/stripe/checkout/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
@@ -5,10 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const stripeSecret = process.env.STRIPE_SECRET_KEY;
-
-if (!stripeSecret) {
-  throw new Error("Missing STRIPE_SECRET_KEY");
-}
+if (!stripeSecret) throw new Error("Missing STRIPE_SECRET_KEY");
 
 const stripe = new Stripe(stripeSecret);
 
@@ -17,10 +15,7 @@ type ReqBody = {
   pack: "starter" | "plus" | "pro";
 };
 
-const PACKS: Record<
-  ReqBody["pack"],
-  { credits: number; amountCents: number }
-> = {
+const PACKS: Record<ReqBody["pack"], { credits: number; amountCents: number }> = {
   starter: { credits: 25, amountCents: 500 },
   plus: { credits: 75, amountCents: 1200 },
   pro: { credits: 200, amountCents: 2500 },
@@ -28,59 +23,44 @@ const PACKS: Record<
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as ReqBody;
+    const body = (await req.json()) as Partial<ReqBody>;
+    const userId = String(body.userId ?? "");
+    const pack = (body.pack ?? "starter") as ReqBody["pack"];
 
-    if (!body.userId) {
-      return NextResponse.json(
-        { ok: false, error: "Missing userId" },
-        { status: 400 }
-      );
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
+    }
+    if (!PACKS[pack]) {
+      return NextResponse.json({ ok: false, error: "Invalid pack" }, { status: 400 });
     }
 
-    const pack = body.pack ?? "starter";
-    const selected = PACKS[pack];
-
-    if (!selected) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid pack" },
-        { status: 400 }
-      );
-    }
-
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const { credits, amountCents } = PACKS[pack];
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      success_url: `${appUrl}?success=true`,
-      cancel_url: `${appUrl}?canceled=true`,
+      success_url: `${appUrl}/?stripe=success`,
+      cancel_url: `${appUrl}/?stripe=cancel`,
       line_items: [
         {
           price_data: {
             currency: "usd",
-            product_data: {
-              name: `Git-a-Job Credits (${selected.credits})`,
-            },
-            unit_amount: selected.amountCents,
+            product_data: { name: `Git-a-Job Credits (${credits})` },
+            unit_amount: amountCents,
           },
           quantity: 1,
         },
       ],
       metadata: {
-        userId: body.userId,
-        credits: String(selected.credits),
+        userId,
+        credits: String(credits),
+        pack,
       },
     });
 
-    return NextResponse.json({
-      ok: true,
-      url: session.url,
-    });
-  } catch (error: any) {
-    console.error("Stripe checkout error:", error);
-    return NextResponse.json(
-      { ok: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, url: session.url });
+  } catch (e: any) {
+    console.error("checkout error:", e);
+    return NextResponse.json({ ok: false, error: e?.message || "Checkout error" }, { status: 500 });
   }
 }
