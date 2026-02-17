@@ -66,15 +66,15 @@ export async function POST(req: Request) {
 
     // 1) If we already processed this Stripe event, no-op.
     const existing = await prisma.event.findFirst({
-      where: {
-        type: "purchase", // if you don't have this enum, change to "analyze" temporarily
-        metaJson: {
-          path: ["stripeEventId"],
-          equals: eventId,
-        } as any,
-      },
-      select: { id: true },
-    });
+  where: {
+    metaJson: {
+      path: ["stripeEventId"],
+      equals: eventId,
+    } as any,
+  },
+  select: { id: true },
+});
+
 
     if (existing) {
       return NextResponse.json({ ok: true, deduped: true });
