@@ -1655,16 +1655,11 @@ function buildResumeHtml(args: {
 }
 
 function openPreviewWindow(html: string) {
-  const w = window.open("", "_blank"); // ✅ do NOT use noopener here
+  const w = window.open("", "_blank"); // keep simple for compatibility
   if (!w) {
     alert("Popup blocked. Allow popups for this site to use Preview.");
     return;
   }
-
-  // ✅ security: detach opener after opening (works without breaking the handle)
-  try {
-    w.opener = null;
-  } catch {}
 
   w.document.open();
   w.document.write(html);
@@ -1672,24 +1667,38 @@ function openPreviewWindow(html: string) {
 }
 
 function openPrintWindow(html: string) {
-  const w = window.open("", "_blank"); // ✅ do NOT use noopener here
+  const w = window.open("", "_blank"); // no noopener so we can write
   if (!w) {
     alert("Popup blocked. Allow popups for this site to use Print.");
     return;
   }
 
-  try {
-    w.opener = null;
-  } catch {}
-
   w.document.open();
   w.document.write(html);
   w.document.close();
 
-  // Give the browser a moment to render before printing
-  w.addEventListener("load", () => w.print(), { once: true });
+  setTimeout(() => {
+    try {
+      w.focus();
+      w.print();
+    } catch {}
+  }, 250);
 }
 
+
+function htmlToPlainText(html: string) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return (doc.body?.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    return String(html || "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+}
 
 function sanitizeMetaLines(lines: string[]) {
   const bad = [
