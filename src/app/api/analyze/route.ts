@@ -9,7 +9,7 @@ import { computeVerbStrength } from "@/lib/verb_strength";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chargeCredits } from "@/lib/credits";
+import { chargeCredits, refundCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -202,7 +202,10 @@ function extractExperienceSection(fullText: string) {
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
   const dash = "[–—-]";
-  const dateRangeRegex = new RegExp(`\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`, "i");
+  const dateRangeRegex = new RegExp(
+    `\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`,
+    "i"
+  );
 
   let startLine = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -369,9 +372,9 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
 
   if (buffer.byteLength > MAX_FILE_BYTES) {
     throw new Error(
-      `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(
-        buffer.byteLength / (1024 * 1024)
-      ).toFixed(2)}MB.`
+      `File too large. Max size is ${MAX_FILE_MB}MB. Uploaded file is ${(buffer.byteLength / (1024 * 1024)).toFixed(
+        2
+      )}MB.`
     );
   }
 
@@ -433,10 +436,13 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
+  let chargedUserId = "";
+  let chargedCost = 0;
+
   try {
     const contentType = req.headers.get("content-type") || "";
 
-    // ✅ Require login + charge credits (Analyze = 3)
+    // ✅ Require login (all credit endpoints must be authenticated)
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
     if (!email) {
@@ -448,19 +454,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
     }
 
-    const COST_ANALYZE = 3;
-
-    const charged = await chargeCredits({
-      userId: dbUser.id,
-      cost: COST_ANALYZE,
-      reason: "analyze",
-      meta: { cost: COST_ANALYZE },
-    });
-
-    if (!charged.ok) {
-      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
-    }
-
     let resumeText = "";
     let jobText = "";
     let onlyExperienceBullets: boolean = true;
@@ -468,6 +461,7 @@ export async function POST(req: Request) {
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
 
+    // --- Parse inputs (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -548,6 +542,24 @@ export async function POST(req: Request) {
       );
     }
 
+    // ✅ Charge credits AFTER we know request is valid
+    const COST_ANALYZE = 3;
+    const charged = await chargeCredits({
+      userId: dbUser.id,
+      cost: COST_ANALYZE,
+      reason: "analyze",
+      eventType: "analyze",
+      meta: { cost: COST_ANALYZE },
+    });
+
+    if (!charged.ok) {
+      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+    }
+
+    chargedUserId = dbUser.id;
+    chargedCost = COST_ANALYZE;
+
+    // --- Do analysis ---
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
 
@@ -669,22 +681,60 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
-          debug: {
+      // ✅ Refund (user cannot proceed; this is a parsing failure)
+      try {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: chargedCost,
+          reason: "refund_analyze_no_bullets",
+          eventType: "analyze",
+          meta: {
+            cost: chargedCost,
             foundExperienceSection: experienceSlice.foundSection,
             experienceMode: experienceSlice.mode,
-            experienceLen: experienceSlice.experienceText.length,
             bulletsFromFileCount: (bulletsFromFile || []).length,
             seededFileBulletsCount: seededFileBullets.length,
-            blobDebug,
           },
-        },
-        { status: 400 }
-      );
+        });
+
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+            refunded: true,
+            balance: refunded.balance,
+            debug: {
+              foundExperienceSection: experienceSlice.foundSection,
+              experienceMode: experienceSlice.mode,
+              experienceLen: experienceSlice.experienceText.length,
+              bulletsFromFileCount: (bulletsFromFile || []).length,
+              seededFileBulletsCount: seededFileBullets.length,
+              blobDebug,
+            },
+          },
+          { status: 400 }
+        );
+      } catch (refundErr: any) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+            refunded: false,
+            refundError: refundErr?.message || String(refundErr),
+            debug: {
+              foundExperienceSection: experienceSlice.foundSection,
+              experienceMode: experienceSlice.mode,
+              experienceLen: experienceSlice.experienceText.length,
+              bulletsFromFileCount: (bulletsFromFile || []).length,
+              seededFileBulletsCount: seededFileBullets.length,
+              blobDebug,
+            },
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Suggestions + plan
@@ -726,7 +776,6 @@ export async function POST(req: Request) {
 
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
       const original = typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
-
       const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
       return {
@@ -739,8 +788,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-
-      // ✅ so UI can refresh credit counter after Analyze
       balance: charged.balance,
 
       ...analysis,
@@ -758,31 +805,54 @@ export async function POST(req: Request) {
         contentType,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
-
         onlyExperienceBulletsUsed: onlyExperienceBullets,
-
         experienceLen: experienceSlice.experienceText.length,
         foundExperienceSection: experienceSlice.foundSection,
         experienceMode: experienceSlice.mode,
-
         bulletsFromFileCount: (bulletsFromFile || []).length,
         seededFileBulletsCount: seededFileBullets.length,
-
         jobsDetected: experienceJobs.length,
         jobsWithBullets: experienceJobs.filter((j) => j.bullets?.length).length,
         flattenedBulletCount: bullets.length,
         rewritePlanCount: Array.isArray(rewritePlan) ? rewritePlan.length : 0,
-
         metaGamesCount: metaBlocks.gamesShipped.length,
         metaMetricsCount: metaBlocks.metrics.length,
-
         maxFileMb: MAX_FILE_MB,
-
         blobDebug,
       },
     });
   } catch (e: any) {
+    const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "Failed to analyze input" }, { status: 500 });
+
+    // ✅ Refund if we charged and then something blew up
+    if (chargedUserId && chargedCost > 0) {
+      try {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: chargedCost,
+          reason: "refund_analyze_failed",
+          eventType: "analyze",
+          meta: { cost: chargedCost, error: message },
+        });
+
+        return NextResponse.json(
+          { ok: false, error: message || "Failed to analyze input", refunded: true, balance: refunded.balance },
+          { status: 500 }
+        );
+      } catch (refundErr: any) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: message || "Failed to analyze input",
+            refunded: false,
+            refundError: refundErr?.message || String(refundErr),
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: false, error: message || "Failed to analyze input" }, { status: 500 });
   }
 }

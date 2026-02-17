@@ -22,6 +22,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing STRIPE_WEBHOOK_SECRET" }, { status: 500 });
   }
 
+  // Stripe v16+ recommends passing apiVersion, but it’s optional.
+  // If you want, uncomment and set your pinned version:
+  // const stripe = new Stripe(stripeSecretKey, { apiVersion: "2024-06-20" });
   const stripe = new Stripe(stripeSecretKey);
 
   const sig = req.headers.get("stripe-signature");
@@ -46,32 +49,47 @@ export async function POST(req: Request) {
 
   const session = event.data.object as Stripe.Checkout.Session;
 
-  // Safety: ensure payment is actually paid (when Stripe includes it)
-  // For card payments it should be "paid"
+  // Extra safety: ensure actually paid (for card payments, should be "paid")
   if (session.payment_status && session.payment_status !== "paid") {
     return NextResponse.json({ ok: true, ignored: `payment_status=${session.payment_status}` });
   }
 
-  const userId = String(session.metadata?.userId ?? "");
+  // Optional sanity: ensure environment matches what you expect.
+  // IMPORTANT: return 200 on mismatch so Stripe doesn't retry forever.
+  const expectedLivemode =
+    process.env.STRIPE_EXPECT_LIVEMODE === "true"
+      ? true
+      : process.env.STRIPE_EXPECT_LIVEMODE === "false"
+      ? false
+      : undefined;
+
+  if (typeof expectedLivemode === "boolean" && event.livemode !== expectedLivemode) {
+    console.error("Stripe livemode mismatch:", { expectedLivemode, got: event.livemode });
+    return NextResponse.json({ ok: true, ignored: "livemode_mismatch" });
+  }
+
+  const userId = String(session.metadata?.userId ?? "").trim();
   const credits = Number(session.metadata?.credits ?? 0);
+  const pack = String(session.metadata?.pack ?? "").trim();
 
   if (!userId || !Number.isFinite(credits) || credits <= 0) {
     console.error("Missing userId/credits in metadata:", session.metadata);
-    return NextResponse.json({ ok: false, error: "Missing metadata userId/credits" }, { status: 400 });
+    // Return 200 so Stripe doesn't keep retrying a bad payload forever
+    return NextResponse.json({ ok: true, ignored: "missing_metadata_userId_or_credits" });
   }
 
   const stripeEventId = event.id;
   const stripeSessionId = session.id;
 
   try {
-    // Idempotency: if we already processed this Stripe event, no-op.
-    // We dedupe by stripeEventId stored in Event.metaJson.
+    // ✅ Idempotency: if we already processed this Stripe event OR session, no-op.
     const existing = await prisma.event.findFirst({
       where: {
-        metaJson: {
-          path: ["stripeEventId"],
-          equals: stripeEventId,
-        } as any,
+        type: "purchase",
+        OR: [
+          { metaJson: { path: ["stripeEventId"], equals: stripeEventId } } as any,
+          { metaJson: { path: ["stripeSessionId"], equals: stripeSessionId } } as any,
+        ],
       },
       select: { id: true },
     });
@@ -80,25 +98,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, deduped: true });
     }
 
-    // Credit + record event in one transaction
+    // Optional: ensure user exists (prevents ledger rows for deleted users)
+    const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!dbUser) {
+      console.error("Webhook userId not found:", userId);
+      return NextResponse.json({ ok: true, ignored: "user_not_found" });
+    }
+
+    // ✅ Credit + record purchase event in one transaction
     await prisma.$transaction([
       prisma.creditsLedger.create({
         data: {
           userId,
-          delta: credits, // ✅ positive delta = top-up
+          delta: credits, // positive delta = top-up
           reason: "purchase_stripe",
         },
       }),
       prisma.event.create({
         data: {
           userId,
-          type: "analyze", // ✅ temporary until you add "purchase" to enum
+          type: "purchase",
           metaJson: {
-            stripeEventId: stripeEventId,
-            stripeSessionId: stripeSessionId,
+            stripeEventId,
+            stripeSessionId,
             credits,
+            pack: pack || null,
             amountTotal: session.amount_total ?? null,
             currency: session.currency ?? null,
+            paymentStatus: session.payment_status ?? null,
+            livemode: event.livemode,
+            customerEmail: session.customer_details?.email ?? session.customer_email ?? null,
           },
         },
       }),
@@ -107,6 +136,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("Stripe webhook DB error:", e);
+    // Return 500 so Stripe retries transient DB issues (this is one case where retries CAN help)
     return NextResponse.json({ ok: false, error: "DB error" }, { status: 500 });
   }
 }

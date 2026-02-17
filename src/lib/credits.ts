@@ -1,9 +1,11 @@
 // src/lib/credits.ts
 import { prisma } from "@/lib/prisma";
+import { EventType } from "@prisma/client";
 
 /**
  * Source of truth = CreditsLedger (sum of deltas).
- * This keeps things simple and avoids balance desync issues.
+ * NOTE: This is simple, but NOT race-proof under high concurrency.
+ * If you expect concurrency, add User.creditsBalance and update it atomically.
  */
 export async function getCreditBalance(userId: string) {
   const agg = await prisma.creditsLedger.aggregate({
@@ -16,42 +18,25 @@ export async function getCreditBalance(userId: string) {
 
 type ChargeCreditsArgs = {
   userId: string;
-  cost: number; // positive number, we will store as negative delta
+  cost: number; // positive; stored as negative delta
   reason: string;
 
-  /**
-   * Optional: tie a credit charge to an Event row for metrics.
-   * Must match your Prisma enum EventType in schema.prisma.
-   */
-  eventType?: "analyze" | "rewrite_bullet" | "rewrite_batch" | "resume_pdf" | "cover_letter" | "login";
-
-  /**
-   * Optional metadata to store in Event.metaJson
-   */
+  eventType: EventType; // ✅ require explicit event type so it never drifts
   meta?: any;
 };
 
-/**
- * Charges credits atomically:
- * - Checks balance
- * - Writes a negative ledger delta
- * - Writes an Event row (type configurable)
- */
 export async function chargeCredits(args: ChargeCreditsArgs) {
-  const { userId, cost, reason, meta } = args;
+  const { userId, reason, meta } = args;
 
-  const absCost = Math.abs(Number(cost) || 0);
+  const absCost = Math.abs(Number(args.cost) || 0);
   if (!userId) return { ok: false as const, balance: 0, error: "Missing userId" };
+
   if (!absCost) {
-    // No-op charge (treat as success)
     const balance = await getCreditBalance(userId);
     return { ok: true as const, balance };
   }
 
-  // Default eventType if caller doesn't supply one
-  const eventType: ChargeCreditsArgs["eventType"] =
-    args.eventType ??
-    (reason === "rewrite" || reason === "rewrite_bullet" ? "rewrite_bullet" : "analyze");
+  const eventType: EventType = args.eventType;
 
   const balance = await getCreditBalance(userId);
   if (balance < absCost) {
@@ -63,21 +48,70 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
       data: {
         userId,
         delta: -absCost,
-        reason: reason || eventType || "charge",
+        reason: reason || "charge",
       },
     }),
     prisma.event.create({
       data: {
         userId,
-        type: eventType ?? "analyze",
+        type: eventType,
         metaJson: {
           ...(meta ?? null),
-          cost: absCost,
-          reason: reason || eventType || "charge",
+          amount: absCost,
+          reason: reason || "charge",
+          direction: "debit",
         },
       },
     }),
   ]);
 
   return { ok: true as const, balance: balance - absCost };
+}
+
+type RefundCreditsArgs = {
+  userId: string;
+  amount: number; // positive; stored as positive delta
+  reason: string;
+
+  eventType: EventType;
+  meta?: any;
+};
+
+export async function refundCredits(args: RefundCreditsArgs) {
+  const { userId, reason, meta } = args;
+
+  const absAmt = Math.abs(Number(args.amount) || 0);
+  if (!userId) return { ok: false as const, balance: 0, error: "Missing userId" };
+
+  if (!absAmt) {
+    const balance = await getCreditBalance(userId);
+    return { ok: true as const, balance };
+  }
+
+  const eventType: EventType = args.eventType;
+
+  await prisma.$transaction([
+    prisma.creditsLedger.create({
+      data: {
+        userId,
+        delta: absAmt,
+        reason: reason || "refund",
+      },
+    }),
+    prisma.event.create({
+      data: {
+        userId,
+        type: eventType,
+        metaJson: {
+          ...(meta ?? null),
+          amount: absAmt,
+          reason: reason || "refund",
+          direction: "credit",
+        },
+      },
+    }),
+  ]);
+
+  const balance = await getCreditBalance(userId);
+  return { ok: true as const, balance };
 }

@@ -3,6 +3,11 @@ import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { chargeCredits, refundCredits } from "@/lib/credits";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -17,7 +22,6 @@ type ReqBody = {
   resumeText: string;
   jobText: string;
 
-  // optional “nice” inputs
   fullName?: string;
   email?: string;
   phone?: string;
@@ -25,14 +29,14 @@ type ReqBody = {
   locationLine?: string;
 
   targetCompany?: string;
-  hiringManager?: string; // "Hi Jamie," vs "Dear Hiring Manager,"
+  hiringManager?: string;
   roleTitle?: string;
 
-  tone?: string; // "confident, warm, concise"
+  tone?: string;
   length?: "short" | "standard" | "detailed";
-  includeBullets?: boolean; // add 3 impact bullets near the end
-  blockedTerms?: string[]; // must NOT appear
-  targetTerms?: string[]; // try to include naturally if truthful
+  includeBullets?: boolean;
+  blockedTerms?: string[];
+  targetTerms?: string[];
 };
 
 function normalizeJobText(input: unknown) {
@@ -53,14 +57,9 @@ function toStr(x: unknown) {
 }
 
 function toArr(x: unknown): string[] {
-  // Supports:
-  // - array in JSON
-  // - single comma-separated string in multipart
   if (Array.isArray(x)) return x.map((v) => String(v).trim()).filter(Boolean);
-
   const s = String(x ?? "").trim();
   if (!s) return [];
-  // allow comma-separated list from formData
   if (s.includes(",")) return s.split(",").map((v) => v.trim()).filter(Boolean);
   return [s];
 }
@@ -73,7 +72,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** --------- File extraction (match analyze route) --------- */
+/** --------- File extraction --------- */
 
 async function extractTextFromDocx(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -192,9 +191,7 @@ function buildPrompt(args: {
       : "Do NOT include bullet points.",
     blockedTerms.length ? `Never mention these blocked terms: ${blockedTerms.join(", ")}.` : "",
     targetTerms.length
-      ? `If truthful and natural, weave in these target terms (no keyword stuffing): ${targetTerms.join(
-          ", "
-        )}.`
+      ? `If truthful and natural, weave in these target terms (no keyword stuffing): ${targetTerms.join(", ")}.`
       : "",
     "Prefer specific scope/outcomes from the resume over generic adjectives.",
     "Avoid fluff like 'passionate' unless backed by a concrete example from the resume.",
@@ -221,6 +218,9 @@ Role context:
 - Tone: ${tone}
 - Length: ${lengthGuide}
 
+Greeting line (use exactly):
+${greeting}
+
 Rules:
 ${rules}
 
@@ -241,23 +241,28 @@ Now write the cover letter.
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
+  // For refunds if anything fails AFTER charging
+  let chargedUserId = "";
+  let chargedCost = 0;
+
   try {
+    // ✅ Require login
+    const session = await getServerSession(authOptions);
+    const emailFromSession = session?.user?.email;
+    if (!emailFromSession) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+    const dbUser = await prisma.user.findUnique({ where: { email: emailFromSession } });
+    if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
+
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { ok: false, error: "Missing OPENAI_API_KEY in .env.local" },
-        { status: 500 }
-      );
-    }
+    if (!apiKey) return NextResponse.json({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
 
     const client = new OpenAI({ apiKey });
-
     const contentType = req.headers.get("content-type") || "";
 
     let resumeText = "";
     let jobText = "";
 
-    // optional fields
     let fullName = "";
     let email = "";
     let phone = "";
@@ -275,27 +280,23 @@ export async function POST(req: Request) {
     let blockedTerms: string[] = [];
     let targetTerms: string[] = [];
 
+    // --- Parse inputs first (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
       const file = form.get("file");
       const resumeTextFallback = form.get("resumeText");
-      const job = form.get("jobText") ?? form.get("jobPostingText"); // keep compatibility
+      const job = form.get("jobText") ?? form.get("jobPostingText");
 
       jobText = normalizeJobText(job);
 
-      // If file present, extract; else fallback
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
           return NextResponse.json(
-            {
-              ok: false,
-              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
-            },
+            { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
             { status: 400 }
           );
         }
-
         const extracted = await extractResumeTextFromFile(file);
         resumeText = normalizeResumeText(extracted);
       } else {
@@ -318,7 +319,6 @@ export async function POST(req: Request) {
       if (lenRaw === "short" || lenRaw === "standard" || lenRaw === "detailed") length = lenRaw;
 
       includeBullets = parseBoolFromFormData(form.get("includeBullets"), true);
-
       blockedTerms = toArr(form.get("blockedTerms"));
       targetTerms = toArr(form.get("targetTerms"));
     } else if (contentType.includes("application/json")) {
@@ -339,36 +339,22 @@ export async function POST(req: Request) {
 
       tone = toStr(body.tone || tone).trim() || tone;
 
-      if (body.length === "short" || body.length === "standard" || body.length === "detailed") {
-        length = body.length;
-      }
-
+      if (body.length === "short" || body.length === "standard" || body.length === "detailed") length = body.length;
       includeBullets = body.includeBullets !== false;
 
       blockedTerms = toArr(body.blockedTerms);
       targetTerms = toArr(body.targetTerms);
     } else {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Unsupported content type. Send JSON or multipart/form-data (file upload).",
-        },
+        { ok: false, error: "Unsupported content type. Send JSON or multipart/form-data (file upload)." },
         { status: 415 }
       );
     }
 
-    // Debug lengths so you can confirm extraction is working
-    console.log("[cover-letter] resume chars:", resumeText.length);
-    console.log("[cover-letter] job chars:", jobText.length);
-
     if (!resumeText || !jobText) {
-      return NextResponse.json(
-        { ok: false, error: "Missing resumeText (or file) or jobText" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing resumeText (or file) or jobText" }, { status: 400 });
     }
 
-    // Hard guard: refuse to generate if resume text is too short
     if (resumeText.trim().length < MIN_RESUME_CHARS) {
       return NextResponse.json(
         {
@@ -379,6 +365,27 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    // ✅ Charge credits AFTER validation
+    const COST_COVER_LETTER = 5;
+    const charged = await chargeCredits({
+      userId: dbUser.id,
+      cost: COST_COVER_LETTER,
+      reason: "cover_letter",
+      eventType: "cover_letter",
+      meta: {
+        cost: COST_COVER_LETTER,
+        resumeLen: resumeText.length,
+        jobLen: jobText.length,
+      },
+    });
+
+    if (!charged.ok) {
+      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+    }
+
+    chargedUserId = dbUser.id;
+    chargedCost = COST_COVER_LETTER;
 
     const prompt = buildPrompt({
       resumeText,
@@ -399,8 +406,8 @@ export async function POST(req: Request) {
     });
 
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.4, // lower temp reduces hallucination/requirement-leak
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: 0.4,
       messages: [
         {
           role: "system",
@@ -412,18 +419,37 @@ export async function POST(req: Request) {
     });
 
     const text = completion.choices?.[0]?.message?.content?.trim() || "";
-
     if (!text) {
-      return NextResponse.json({ ok: false, error: "Model returned empty response" }, { status: 500 });
+      // ✅ refund: user got nothing
+      const refunded = await refundCredits({
+        userId: chargedUserId,
+        amount: chargedCost,
+        reason: "refund_cover_letter_empty",
+        eventType: "cover_letter",
+        meta: { cost: chargedCost },
+      });
+
+      return NextResponse.json(
+        { ok: false, error: "Model returned empty response", refunded: true, balance: refunded.balance },
+        { status: 500 }
+      );
     }
 
-    // Optional post-check: block terms (best-effort)
+    // Best-effort post-check: block terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
       if (hit) {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: chargedCost,
+          reason: "refund_cover_letter_blocked_term",
+          eventType: "cover_letter",
+          meta: { cost: chargedCost, hit },
+        });
+
         return NextResponse.json(
-          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.` },
+          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
           { status: 422 }
         );
       }
@@ -432,19 +458,44 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       coverLetter: text,
+      balance: charged.balance,
       debug: {
         contentType,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
         maxFileMb: MAX_FILE_MB,
         minResumeChars: MIN_RESUME_CHARS,
+        cost: COST_COVER_LETTER,
       },
     });
   } catch (err: any) {
+    const message = err?.message ? String(err.message) : String(err);
     console.error("cover-letter route error:", err);
-    return NextResponse.json(
-      { ok: false, error: err?.message || "Cover letter generation failed" },
-      { status: 500 }
-    );
+
+    // ✅ Refund if we already charged and something exploded afterward (OpenAI/network/etc)
+    if (chargedUserId && chargedCost > 0) {
+      try {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: chargedCost,
+          reason: "refund_cover_letter_failed",
+          eventType: "cover_letter",
+          meta: { error: message, cost: chargedCost },
+        });
+
+        return NextResponse.json(
+          { ok: false, error: message || "Cover letter generation failed", refunded: true, balance: refunded.balance },
+          { status: 500 }
+        );
+      } catch (refundErr: any) {
+        console.error("refundCredits failed:", refundErr);
+        return NextResponse.json(
+          { ok: false, error: message || "Cover letter generation failed", refunded: false, refundError: refundErr?.message || String(refundErr) },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: false, error: message || "Cover letter generation failed" }, { status: 500 });
   }
 }

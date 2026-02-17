@@ -6,7 +6,7 @@ import { sanitizeKeywords } from "@/lib/keywordSanitizer";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chargeCredits } from "@/lib/credits";
+import { chargeCredits, refundCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,8 +78,7 @@ function extractOpenerVerb(bullet: string) {
   for (const w of words.slice(0, 6)) {
     const clean = w.replace(/[^\w-]/g, "").toLowerCase();
     if (!clean) continue;
-    if (["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean))
-      continue;
+    if (["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with"].includes(clean)) continue;
     return clean;
   }
   return "";
@@ -306,6 +305,10 @@ function scoreDelta(beforeScore: number, afterScore: number) {
 }
 
 export async function POST(req: Request) {
+  // For refunds if anything fails AFTER charging
+  let chargedUserId = "";
+  let chargedCost = 0;
+
   try {
     // ✅ Require login
     const session = await getServerSession(authOptions);
@@ -346,17 +349,16 @@ export async function POST(req: Request) {
     if (!jobText || !originalBullet) {
       return NextResponse.json({ ok: false, error: "Missing jobText or originalBullet" }, { status: 400 });
     }
-
     if (originalBullet.length > 800) {
       return NextResponse.json({ ok: false, error: "originalBullet too long. Keep under 800 chars." }, { status: 400 });
     }
-
     if (jobText.length > 6000) {
       return NextResponse.json({ ok: false, error: "jobText too long. Keep under ~6k chars." }, { status: 400 });
     }
 
     // ✅ Charge credits for rewrite (1 per rewrite)
     const COST_REWRITE = 1;
+
     const charged = await chargeCredits({
       userId: dbUser.id,
       cost: COST_REWRITE,
@@ -364,7 +366,6 @@ export async function POST(req: Request) {
       eventType: "rewrite_bullet",
       meta: {
         cost: COST_REWRITE,
-        // optional helpful debugging context:
         originalLen: originalBullet.length,
       },
     });
@@ -372,6 +373,9 @@ export async function POST(req: Request) {
     if (!charged.ok) {
       return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
+
+    chargedUserId = dbUser.id;
+    chargedCost = COST_REWRITE;
 
     const { usableKeywords, blockedKeywords } = sanitizeKeywords({
       rawKeywords: rawSuggestedKeywords,
@@ -422,6 +426,10 @@ export async function POST(req: Request) {
       usedPhrases,
       retry: false,
     });
+
+    if (!attempt1 || !attempt1.trim()) {
+      throw new Error("Model returned empty response");
+    }
 
     const after1 = computeVerbStrength(attempt1);
     const afterScore1 = after1.score;
@@ -481,7 +489,9 @@ export async function POST(req: Request) {
         forceStarterVerbList: forceStarters,
       });
 
-      after2 = computeVerbStrength(attempt2);
+      if (attempt2 && attempt2.trim()) {
+        after2 = computeVerbStrength(attempt2);
+      }
     }
 
     // Pick best rewrite (prefer SAFE; then prefer higher score)
@@ -541,8 +551,7 @@ export async function POST(req: Request) {
     if (usedOpeners.length) notes.push("Used global usedOpeners to reduce opener repetition.");
     if (usedPhrases.length) notes.push("Used global usedPhrases to reduce repeated phrasing.");
     if (retryUsed) notes.push("Auto-retried once (opener/phrase/risky-keyword violation or score regression).");
-    if (usedOriginalFallback)
-      notes.push("Kept original bullet (rewrite violated safety/variance rules or reduced quality).");
+    if (usedOriginalFallback) notes.push("Kept original bullet (rewrite violated safety/variance rules or reduced quality).");
     if (blockedKeywords.length) notes.push("Removed blocked keywords from suggestions (guardrail).");
     if (blockedTermsFound.length) notes.push("Detected target-only term risk (blocked terms present).");
     if (riskyKeywords.length) notes.push("Job-derived keywords not in the original bullet were treated as risky/forbidden.");
@@ -584,7 +593,43 @@ export async function POST(req: Request) {
       notes,
     });
   } catch (e: any) {
+    const message = e?.message ? String(e.message) : String(e);
     console.error("rewrite-bullet route error:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "Rewrite failed" }, { status: 500 });
+
+    // ✅ Refund if we already charged and the failure happened afterward
+    if (chargedUserId && chargedCost > 0) {
+      try {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: chargedCost,
+          reason: "refund_rewrite_bullet_failed",
+          eventType: "rewrite_bullet",
+          meta: { error: message, cost: chargedCost },
+        });
+
+        return NextResponse.json(
+          {
+            ok: false,
+            error: message || "Rewrite failed",
+            refunded: true,
+            balance: refunded.balance,
+          },
+          { status: 500 }
+        );
+      } catch (refundErr: any) {
+        console.error("refundCredits failed:", refundErr);
+        return NextResponse.json(
+          {
+            ok: false,
+            error: message || "Rewrite failed",
+            refunded: false,
+            refundError: refundErr?.message || String(refundErr),
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: false, error: message || "Rewrite failed" }, { status: 500 });
   }
 }
