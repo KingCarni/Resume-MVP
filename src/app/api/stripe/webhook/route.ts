@@ -46,6 +46,12 @@ export async function POST(req: Request) {
 
   const session = event.data.object as Stripe.Checkout.Session;
 
+  // Safety: ensure payment is actually paid (when Stripe includes it)
+  // For card payments it should be "paid"
+  if (session.payment_status && session.payment_status !== "paid") {
+    return NextResponse.json({ ok: true, ignored: `payment_status=${session.payment_status}` });
+  }
+
   const userId = String(session.metadata?.userId ?? "");
   const credits = Number(session.metadata?.credits ?? 0);
 
@@ -54,33 +60,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing metadata userId/credits" }, { status: 400 });
   }
 
-  // Idempotency: do not credit twice if Stripe retries
-  // Requires a unique constraint in Prisma (recommended) OR we fallback to checking by reason string.
-  const eventId = event.id;
-  const sessionId = session.id;
+  const stripeEventId = event.id;
+  const stripeSessionId = session.id;
 
   try {
-    // If you have a field to store stripeEventId on creditsLedger, use it.
-    // If not, we still prevent duplicates by storing a matching Event row keyed by sessionId/eventId.
-    // ---- Recommended approach: create an Event row keyed by stripe event id ----
-
-    // 1) If we already processed this Stripe event, no-op.
+    // Idempotency: if we already processed this Stripe event, no-op.
+    // We dedupe by stripeEventId stored in Event.metaJson.
     const existing = await prisma.event.findFirst({
-  where: {
-    metaJson: {
-      path: ["stripeEventId"],
-      equals: eventId,
-    } as any,
-  },
-  select: { id: true },
-});
-
+      where: {
+        metaJson: {
+          path: ["stripeEventId"],
+          equals: stripeEventId,
+        } as any,
+      },
+      select: { id: true },
+    });
 
     if (existing) {
       return NextResponse.json({ ok: true, deduped: true });
     }
 
-    // 2) Credit + record event in one transaction
+    // Credit + record event in one transaction
     await prisma.$transaction([
       prisma.creditsLedger.create({
         data: {
@@ -92,10 +92,10 @@ export async function POST(req: Request) {
       prisma.event.create({
         data: {
           userId,
-          type: "analyze", // change to "purchase" if your enum supports it
+          type: "analyze", // ✅ temporary until you add "purchase" to enum
           metaJson: {
-            stripeEventId: eventId,
-            stripeSessionId: sessionId,
+            stripeEventId: stripeEventId,
+            stripeSessionId: stripeSessionId,
             credits,
             amountTotal: session.amount_total ?? null,
             currency: session.currency ?? null,
