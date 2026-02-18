@@ -40,8 +40,26 @@ export const authOptions: NextAuthOptions = {
     // Grant signup bonus (safe + idempotent)
     async signIn({ user }) {
       try {
-        const userId = String(user?.id ?? "").trim();
-        if (!userId) return true;
+        const email = String(user?.email ?? "")
+          .trim()
+          .toLowerCase();
+
+        // Prefer user.id; if missing, lookup by email
+        let userId = String((user as any)?.id ?? "").trim();
+
+        if (!userId && email) {
+          const dbUser = await prisma.user.findUnique({
+            where: { email },
+            select: { id: true },
+          });
+          userId = dbUser?.id ?? "";
+        }
+
+        // Never block login if we can't resolve userId
+        if (!userId) {
+          console.error("[auth] signup bonus: missing userId", { email });
+          return true;
+        }
 
         const alreadyGranted = await prisma.creditsLedger.findFirst({
           where: { userId, reason: "signup_bonus" },
@@ -57,7 +75,7 @@ export const authOptions: NextAuthOptions = {
             },
           });
 
-          console.log("[auth] signup bonus granted", { userId });
+          console.log("[auth] signup bonus granted", { userId, email });
         }
       } catch (e: any) {
         console.error("[auth] signup bonus error (ignored)", {
