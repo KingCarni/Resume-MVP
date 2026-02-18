@@ -19,14 +19,33 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
+  session: { strategy: "jwt" },
+  secret: process.env.NEXTAUTH_SECRET,
+
   callbacks: {
+    // ✅ Put userId into the JWT so we can expose it on session.user.id
+    async jwt({ token, user }) {
+      if (user?.id) {
+        (token as any).uid = user.id;
+      }
+      return token;
+    },
+
+    // ✅ Expose session.user.id (fixes “logged in but redirected” bugs)
+    async session({ session, token }) {
+      const uid = (token as any).uid as string | undefined;
+      if (session.user && uid) {
+        (session.user as any).id = uid;
+      }
+      return session;
+    },
+
+    // ✅ Grant signup bonus safely, but NEVER block sign-in
     async signIn({ user }) {
-      // Never block sign-in because of a credits write
       try {
         const userId = String(user?.id ?? "").trim();
         if (!userId) return true;
 
-        // Grant once: if user already has a signup_bonus entry, do nothing
         const alreadyGranted = await prisma.creditsLedger.findFirst({
           where: { userId, reason: "signup_bonus" },
           select: { id: true },
@@ -47,17 +66,13 @@ export const authOptions: NextAuthOptions = {
           message: e?.message,
           code: e?.code,
         });
-        // IMPORTANT: allow sign-in even if bonus fails
+        // Never block login because of credits
       }
 
       return true;
     },
   },
-
-  session: { strategy: "jwt" },
-  secret: process.env.NEXTAUTH_SECRET,
 };
 
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };
