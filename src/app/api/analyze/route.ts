@@ -15,6 +15,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
+const BOOT_TAG = "analyze_route_boot_ok";
+
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
@@ -282,13 +284,21 @@ function extractMetaBlocks(fullText: string) {
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   // ✅ Node-native PDF text extraction (no DOMMatrix / canvas / rendering)
-  // Handle both ESM/CJS shapes of pdf-parse
-  const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
+  // ✅ Safe shape handling + loud errors for Vercel logs
+  try {
+    const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
 
-  const data: any = await parsePdf(buffer as any);
-  return String(data?.text ?? "");
+    if (typeof parsePdf !== "function") {
+      throw new Error(`pdf-parse export not callable (type=${typeof parsePdf})`);
+    }
+
+    const data: any = await parsePdf(buffer as any);
+    return String(data?.text ?? "");
+  } catch (err: any) {
+    const msg = err?.message ? String(err.message) : String(err);
+    throw new Error(`PDF parse failed: ${msg}`);
+  }
 }
-
 
 async function extractResumeFromFile(file: File): Promise<{ text: string; bulletsFromFile?: string[] }> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -436,6 +446,8 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
+  console.log(BOOT_TAG, { at: new Date().toISOString() });
+
   let chargedUserId = "";
   let chargedCost = 0;
 
@@ -784,7 +796,8 @@ export async function POST(req: Request) {
     }
 
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
-      const original = typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
+      const original =
+        typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
       const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
       return {
@@ -864,4 +877,19 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: false, error: message || "Failed to analyze input" }, { status: 500 });
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: false, error: "Method Not Allowed" }, { status: 405 });
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
 }
