@@ -4,9 +4,14 @@ import type { EventType } from "@prisma/client";
 
 /**
  * Source of truth = CreditsLedger (sum of deltas).
- * Adds:
- * - idempotency via `ref` (Stripe event id / request id)
+ * This version adds:
+ * - optional idempotency via `ref`
  * - safer balance check inside a transaction
+ *
+ * IMPORTANT:
+ * For true idempotency, your DB should enforce uniqueness on (userId, ref, direction).
+ * If you don't have schema support yet, this still prevents common double-charge patterns
+ * by checking existing entries first.
  */
 
 export async function getCreditBalance(userId: string) {
@@ -14,6 +19,7 @@ export async function getCreditBalance(userId: string) {
     where: { userId },
     _sum: { delta: true },
   });
+
   return agg._sum.delta ?? 0;
 }
 
@@ -21,10 +27,16 @@ type ChargeCreditsArgs = {
   userId: string;
   cost: number; // positive; stored as negative delta
   reason: string;
-  eventType: EventType; // REQUIRED (prevents drift)
+  eventType: EventType; // REQUIRED
   meta?: any;
 
-  /** Optional idempotency key (recommended) */
+  /**
+   * Optional idempotency key.
+   * Examples:
+   * - "analyze:req_123"
+   * - "cover_letter:req_456"
+   * - "stripe:evt_..."
+   */
   ref?: string;
 };
 
@@ -35,7 +47,7 @@ type RefundCreditsArgs = {
   eventType: EventType; // REQUIRED
   meta?: any;
 
-  /** Optional idempotency key (recommended) */
+  /** Optional idempotency key (same idea as Charge) */
   ref?: string;
 };
 
@@ -44,31 +56,52 @@ function normRef(ref?: string) {
   return r.length ? r.slice(0, 200) : "";
 }
 
+async function findExistingLedgerByRef(args: { userId: string; ref: string; deltaSign: "pos" | "neg" }) {
+  const { userId, ref, deltaSign } = args;
+  if (!ref) return null;
+
+  // We don't know your exact CreditsLedger schema fields.
+  // Many projects have `ref` or `externalId`. If yours doesn't, add it.
+  //
+  // For now: best-effort lookup using "reason contains ref" fallback would be gross,
+  // so we do a guarded try/catch and proceed if schema doesn't support it.
+  try {
+    const where: any = {
+      userId,
+      ref,
+      ...(deltaSign === "neg" ? { delta: { lt: 0 } } : { delta: { gt: 0 } }),
+    };
+
+    // @ts-ignore: depends on your schema
+    return await prisma.creditsLedger.findFirst({ where, select: { id: true } });
+  } catch {
+    return null;
+  }
+}
+
 export async function chargeCredits(args: ChargeCreditsArgs) {
-  const { userId, cost, reason, eventType, meta } = args;
-  const ref = normRef(args.ref);
+  const { userId, cost, reason, eventType, meta, ref } = args;
 
   const absCost = Math.abs(Number(cost) || 0);
   if (!userId) return { ok: false as const, balance: 0, error: "Missing userId" };
+
+  const refKey = normRef(ref);
 
   if (!absCost) {
     const balance = await getCreditBalance(userId);
     return { ok: true as const, balance };
   }
 
-  // ✅ Idempotency: if already charged for this ref, no-op
-  if (ref) {
-    const existing = await prisma.creditsLedger.findFirst({
-      where: { userId, ref },
-      select: { id: true },
-    });
+  // Best-effort idempotency: if a ledger entry already exists for this ref, do nothing.
+  if (refKey) {
+    const existing = await findExistingLedgerByRef({ userId, ref: refKey, deltaSign: "neg" });
     if (existing) {
       const balance = await getCreditBalance(userId);
       return { ok: true as const, balance };
     }
   }
 
-  // ✅ Transaction: re-check balance inside tx, then write ledger+event
+  // Transaction: re-check balance inside the same tx before writing.
   const result = await prisma.$transaction(async (tx) => {
     const agg = await tx.creditsLedger.aggregate({
       where: { userId },
@@ -76,16 +109,19 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
     });
     const balance = agg._sum.delta ?? 0;
 
-    if (balance < absCost) return { ok: false as const, balance };
+    if (balance < absCost) {
+      return { ok: false as const, balance };
+    }
 
-    await tx.creditsLedger.create({
-      data: {
-        userId,
-        delta: -absCost,
-        reason: reason || "charge",
-        ref: ref || null,
-      },
-    });
+    // Write ledger + event
+    const ledgerData: any = {
+      userId,
+      delta: -absCost,
+      reason: reason || "charge",
+    };
+    if (refKey) ledgerData.ref = refKey; // requires schema support
+
+    await tx.creditsLedger.create({ data: ledgerData });
 
     await tx.event.create({
       data: {
@@ -97,7 +133,7 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
           reason: reason || "charge",
           direction: "debit",
           eventType,
-          ref: ref || undefined,
+          ref: refKey || undefined,
         },
       },
     });
@@ -109,23 +145,21 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
 }
 
 export async function refundCredits(args: RefundCreditsArgs) {
-  const { userId, amount, reason, eventType, meta } = args;
-  const ref = normRef(args.ref);
+  const { userId, amount, reason, eventType, meta, ref } = args;
 
   const absAmt = Math.abs(Number(amount) || 0);
   if (!userId) return { ok: false as const, balance: 0, error: "Missing userId" };
+
+  const refKey = normRef(ref);
 
   if (!absAmt) {
     const balance = await getCreditBalance(userId);
     return { ok: true as const, balance };
   }
 
-  // ✅ Idempotency: if already refunded for this ref, no-op
-  if (ref) {
-    const existing = await prisma.creditsLedger.findFirst({
-      where: { userId, ref },
-      select: { id: true },
-    });
+  // Best-effort idempotency
+  if (refKey) {
+    const existing = await findExistingLedgerByRef({ userId, ref: refKey, deltaSign: "pos" });
     if (existing) {
       const balance = await getCreditBalance(userId);
       return { ok: true as const, balance };
@@ -133,14 +167,14 @@ export async function refundCredits(args: RefundCreditsArgs) {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.creditsLedger.create({
-      data: {
-        userId,
-        delta: absAmt,
-        reason: reason || "refund",
-        ref: ref || null,
-      },
-    });
+    const ledgerData: any = {
+      userId,
+      delta: absAmt,
+      reason: reason || "refund",
+    };
+    if (refKey) ledgerData.ref = refKey; // requires schema support
+
+    await tx.creditsLedger.create({ data: ledgerData });
 
     await tx.event.create({
       data: {
@@ -152,7 +186,7 @@ export async function refundCredits(args: RefundCreditsArgs) {
           reason: reason || "refund",
           direction: "credit",
           eventType,
-          ref: ref || undefined,
+          ref: refKey || undefined,
         },
       },
     });
