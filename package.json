@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-  "dev": "next dev",
-  "build": "prisma migrate deploy && prisma generate && next build",
-  "start": "next start",
-  "lint": "eslint",
-  "postinstall": "prisma generate"
-},
+    "dev": "next dev",
+    "build": "next build",
+    "vercel-build": "prisma migrate deploy && prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "postinstall": "prisma generate"
+  },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
     "@prisma/client": "6.19.2",
