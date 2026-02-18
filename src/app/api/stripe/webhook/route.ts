@@ -41,16 +41,19 @@ export async function POST(req: Request) {
     return jsonOk({ ok: false, error: "Invalid signature" }, { status: 400 });
   }
 
+  // Only handle successful checkout completion
   if (event.type !== "checkout.session.completed") {
     return jsonOk({ ok: true, ignored: event.type });
   }
 
   const session = event.data.object as Stripe.Checkout.Session;
 
+  // Only credit if actually paid
   if (session.payment_status && session.payment_status !== "paid") {
     return jsonOk({ ok: true, ignored: `payment_status=${session.payment_status}` });
   }
 
+  // Optional environment guard: prevent mixing test/live
   const expectedLivemode =
     process.env.STRIPE_EXPECT_LIVEMODE === "true"
       ? true
@@ -67,6 +70,7 @@ export async function POST(req: Request) {
   const credits = Number(session.metadata?.credits ?? 0);
   const pack = String(session.metadata?.pack ?? "").trim();
 
+  // Bad payload: return 200 so Stripe doesn't retry forever
   if (!userId || !Number.isFinite(credits) || credits <= 0) {
     console.error("[stripe-webhook] missing metadata userId/credits:", {
       metadata: session.metadata,
@@ -83,6 +87,7 @@ export async function POST(req: Request) {
   const customerEmail = session.customer_details?.email ?? session.customer_email ?? null;
 
   try {
+    // Ensure the user exists
     const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!dbUser) {
       console.error("[stripe-webhook] userId not found:", { userId, stripeEventId, stripeSessionId });
@@ -90,7 +95,8 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Idempotency via unique constraint @@unique([userId, ref])
+      // Idempotency via @@unique([userId, ref]) on CreditsLedger
+      // Stripe retries will hit P2002 and exit without double-crediting.
       try {
         await tx.creditsLedger.create({
           data: {
@@ -105,22 +111,24 @@ export async function POST(req: Request) {
         throw e;
       }
 
-      await tx.event.create({
-        data: {
-          userId,
-          type: "purchase",
-          metaJson: {
-            stripeEventId,
-            stripeSessionId,
-            credits,
-            pack: pack || null,
-            amountCents,
-            currency,
-            paymentStatus: session.payment_status ?? null,
-            livemode: event.livemode,
-            customerEmail,
-          },
-        },
+      // NOTE: We intentionally do NOT write tx.event.create({ type: "purchase" })
+      // because your production DB enum "EventType" doesn't include "purchase" yet.
+      // Once you add it with:
+      //   ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'purchase';
+      // you can re-enable analytics logging safely.
+
+      // (Optional) If you still want a breadcrumb without touching EventType,
+      // you can log to console here:
+      console.log("[stripe-webhook] credited", {
+        userId,
+        credits,
+        pack: pack || null,
+        stripeEventId,
+        stripeSessionId,
+        amountCents,
+        currency,
+        customerEmail,
+        livemode: event.livemode,
       });
     });
 
