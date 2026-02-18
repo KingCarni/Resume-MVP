@@ -1,5 +1,6 @@
 // src/app/api/cover-letter/route.ts
 import mammoth from "mammoth";
+import * as pdfParse from "pdf-parse";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -47,9 +48,27 @@ function normalizeResumeText(input: unknown) {
   const raw = String(input ?? "");
   return raw
     .replace(/\r\n/g, "\n")
+    .replace(/\u00A0/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function stripTagsToText(html: string) {
+  return String(html ?? "")
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|td|th)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function sanitizeResumeInput(input: unknown) {
+  const s = String(input ?? "");
+  const looksHtml = /<\/?[a-z][\s\S]*>/i.test(s);
+  const stripped = looksHtml ? stripTagsToText(s) : s;
+  return normalizeResumeText(stripped);
 }
 
 function toStr(x: unknown) {
@@ -83,28 +102,15 @@ async function extractTextFromDocx(file: File): Promise<string> {
 async function extractTextFromPdf(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = "";
+  // ✅ Handle both ESM/CJS shapes of pdf-parse
+  const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
+  const data: any = await parsePdf(buffer as any);
 
-  const loadingTask = pdfjs.getDocument({ data: buffer });
-  const pdf = await loadingTask.promise;
-
-  let text = "";
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-    const strings = (content.items || [])
-      .map((it: any) => (typeof it.str === "string" ? it.str : ""))
-      .filter(Boolean);
-
-    text += strings.join(" ") + "\n";
-  }
-
-  return text;
+  return String(data?.text ?? "");
 }
 
 async function extractResumeTextFromFile(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
+  const name = (file.name || "").toLowerCase();
   if (name.endsWith(".docx")) return extractTextFromDocx(file);
   if (name.endsWith(".pdf")) return extractTextFromPdf(file);
   if (name.endsWith(".txt")) {
@@ -297,9 +303,9 @@ export async function POST(req: Request) {
           );
         }
         const extracted = await extractResumeTextFromFile(file);
-        resumeText = normalizeResumeText(extracted);
+        resumeText = sanitizeResumeInput(extracted);
       } else {
-        resumeText = normalizeResumeText(resumeTextFallback);
+        resumeText = sanitizeResumeInput(resumeTextFallback);
       }
 
       fullName = toStr(form.get("fullName")).trim();
@@ -323,7 +329,7 @@ export async function POST(req: Request) {
     } else if (contentType.includes("application/json")) {
       const body = (await req.json().catch(() => ({}))) as Partial<ReqBody>;
 
-      resumeText = normalizeResumeText(body.resumeText);
+      resumeText = sanitizeResumeInput(body.resumeText);
       jobText = normalizeJobText(body.jobText);
 
       fullName = toStr(body.fullName).trim();

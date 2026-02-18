@@ -1,5 +1,6 @@
 // src/app/api/analyze/route.ts
 import mammoth from "mammoth";
+import * as pdfParse from "pdf-parse";
 import { NextResponse } from "next/server";
 import { analyzeKeywordFit } from "@/lib/keywords";
 import { suggestKeywordsForBullets } from "@/lib/bullet_suggestions";
@@ -39,6 +40,29 @@ function normalizeResumeText(input: unknown) {
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** ---------------- DOCX helpers (preserve list bullets) ---------------- */
+
+function stripTagsToText(html: string) {
+  return String(html ?? "")
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|td|th)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Some of your inputs (resumeText) can arrive as HTML from the client UI.
+ * This ensures we never pollute the analysis pipeline with <div> / <li> markup.
+ */
+function sanitizeResumeInput(input: unknown) {
+  const s = String(input ?? "");
+  const looksHtml = /<\/?[a-z][\s\S]*>/i.test(s);
+  const stripped = looksHtml ? stripTagsToText(s) : s;
+  return normalizeResumeText(stripped);
 }
 
 /** ---------------- Safety filters (contact / references) ---------------- */
@@ -124,18 +148,6 @@ function friendlyUnsupportedDocMsg(extra?: string) {
     "Unsupported Word format (.doc). Please convert it to .docx or export to PDF, then upload again." +
     (extra ? ` ${extra}` : "")
   );
-}
-
-/** ---------------- DOCX helpers (preserve list bullets) ---------------- */
-
-function stripTagsToText(html: string) {
-  return String(html ?? "")
-    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|td|th)>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function extractLiText(html: string): string[] {
@@ -269,25 +281,14 @@ function extractMetaBlocks(fullText: string) {
 /** ---------------- File extraction ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = "";
+  // ✅ Node-native PDF text extraction (no DOMMatrix / canvas / rendering)
+  // Handle both ESM/CJS shapes of pdf-parse
+  const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
 
-  const loadingTask = pdfjs.getDocument({ data: buffer });
-  const pdf = await loadingTask.promise;
-
-  let text = "";
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-    const strings = (content.items || [])
-      .map((it: any) => (typeof it.str === "string" ? it.str : ""))
-      .filter(Boolean);
-
-    text += strings.join(" ") + "\n";
-  }
-
-  return text;
+  const data: any = await parsePdf(buffer as any);
+  return String(data?.text ?? "");
 }
+
 
 async function extractResumeFromFile(file: File): Promise<{ text: string; bulletsFromFile?: string[] }> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -482,12 +483,13 @@ export async function POST(req: Request) {
         }
 
         const extracted = await extractResumeFromFile(file);
-        resumeText = normalizeResumeText(extracted.text);
+        resumeText = sanitizeResumeInput(extracted.text); // ✅ sanitize (in case upstream ever changes)
         bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
           ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
           : [];
       } else {
-        resumeText = normalizeResumeText(resumeTextFallback);
+        // ✅ sanitize fallback; it may contain HTML from the UI
+        resumeText = sanitizeResumeInput(resumeTextFallback);
       }
     } else if (contentType.includes("application/json")) {
       const body = await req.json();
@@ -501,7 +503,7 @@ export async function POST(req: Request) {
 
       if (resumeBlobUrl) {
         const extracted = await extractResumeFromUrl(resumeBlobUrl);
-        resumeText = normalizeResumeText(extracted.text);
+        resumeText = sanitizeResumeInput(extracted.text);
 
         bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
           ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
@@ -514,13 +516,14 @@ export async function POST(req: Request) {
           url: resumeBlobUrl,
         };
 
-        const extra = normalizeResumeText(body.resumeText);
+        // ✅ If client sends additional resumeText (sometimes HTML), sanitize before appending.
+        const extra = sanitizeResumeInput(body.resumeText);
         if (extra && extra.length >= 200 && extra !== resumeText) {
           resumeText = `${resumeText}\n\n${extra}`;
           blobDebug.appendedResumeText = true;
         }
       } else {
-        resumeText = normalizeResumeText(body.resumeText);
+        resumeText = sanitizeResumeInput(body.resumeText);
       }
     } else {
       return NextResponse.json(
