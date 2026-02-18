@@ -1,6 +1,5 @@
 // src/app/api/analyze/route.ts
 import mammoth from "mammoth";
-import * as pdfParse from "pdf-parse";
 import { NextResponse } from "next/server";
 import { analyzeKeywordFit } from "@/lib/keywords";
 import { suggestKeywordsForBullets } from "@/lib/bullet_suggestions";
@@ -16,7 +15,6 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const BOOT_TAG = "analyze_route_boot_ok";
-
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
@@ -283,13 +281,17 @@ function extractMetaBlocks(fullText: string) {
 /** ---------------- File extraction ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  // ✅ Node-native PDF text extraction (no DOMMatrix / canvas / rendering)
-  // ✅ Safe shape handling + loud errors for Vercel logs
+  // ✅ Lazy-load pdf-parse so a bad/brittle import can't crash the whole route on boot
   try {
-    const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
+    const mod: any = await import("pdf-parse");
+
+    const parsePdf =
+      (typeof mod === "function" ? mod : null) ??
+      (typeof mod?.default === "function" ? mod.default : null) ??
+      (typeof mod?.pdfParse === "function" ? mod.pdfParse : null);
 
     if (typeof parsePdf !== "function") {
-      throw new Error(`pdf-parse export not callable (type=${typeof parsePdf})`);
+      throw new Error(`pdf-parse export not callable (keys=${Object.keys(mod || {}).join(",")})`);
     }
 
     const data: any = await parsePdf(buffer as any);
@@ -446,6 +448,7 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
+  // If you see this in Vercel logs, the route module booted and POST handler is executing.
   console.log(BOOT_TAG, { at: new Date().toISOString() });
 
   let chargedUserId = "";
@@ -880,7 +883,8 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: false, error: "Method Not Allowed" }, { status: 405 });
+  // ✅ If this returns, the module booted and Next is routing to THIS file.
+  return NextResponse.json({ ok: false, route: "src/app/api/analyze/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
 export async function OPTIONS() {
