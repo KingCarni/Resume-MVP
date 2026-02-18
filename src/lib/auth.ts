@@ -1,12 +1,13 @@
 // src/lib/auth.ts
 import type { NextAuthOptions } from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "@/lib/prisma";
+
+const SIGNUP_BONUS = 25;
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  session: { strategy: "database" },
 
   providers: [
     GoogleProvider({
@@ -15,7 +16,57 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  session: { strategy: "jwt" },
+  secret: process.env.NEXTAUTH_SECRET,
 
-  debug: process.env.NODE_ENV !== "production",
+  callbacks: {
+    // Put userId into JWT
+    async jwt({ token, user }) {
+      if (user?.id) {
+        (token as any).uid = user.id;
+      }
+      return token;
+    },
+
+    // Expose userId on session.user.id
+    async session({ session, token }) {
+      const uid = (token as any).uid as string | undefined;
+      if (session.user && uid) {
+        (session.user as any).id = uid;
+      }
+      return session;
+    },
+
+    // Grant signup bonus (safe + idempotent)
+    async signIn({ user }) {
+      try {
+        const userId = String(user?.id ?? "").trim();
+        if (!userId) return true;
+
+        const alreadyGranted = await prisma.creditsLedger.findFirst({
+          where: { userId, reason: "signup_bonus" },
+          select: { id: true },
+        });
+
+        if (!alreadyGranted) {
+          await prisma.creditsLedger.create({
+            data: {
+              userId,
+              delta: SIGNUP_BONUS,
+              reason: "signup_bonus",
+            },
+          });
+
+          console.log("[auth] signup bonus granted", { userId });
+        }
+      } catch (e: any) {
+        console.error("[auth] signup bonus error (ignored)", {
+          message: e?.message,
+          code: e?.code,
+        });
+      }
+
+      return true;
+    },
+  },
 };
