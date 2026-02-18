@@ -6,9 +6,9 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Helps you confirm the route exists in prod (browser GET)
+// Quick “is this deployed?” probe
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "stripe webhook alive" });
+  return NextResponse.json({ ok: true, route: "stripe_webhook" });
 }
 
 export async function POST(req: Request) {
@@ -22,40 +22,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing STRIPE_WEBHOOK_SECRET" }, { status: 500 });
   }
 
-  // Stripe v16+ recommends passing apiVersion, but it’s optional.
-  // If you want, uncomment and set your pinned version:
-  // const stripe = new Stripe(stripeSecretKey, { apiVersion: "2024-06-20" });
-  const stripe = new Stripe(stripeSecretKey);
-
   const sig = req.headers.get("stripe-signature");
   if (!sig) {
     return NextResponse.json({ ok: false, error: "Missing stripe-signature" }, { status: 400 });
   }
 
+  // IMPORTANT: Stripe signature verification requires the raw request body
   const rawBody = await req.text();
+
+  const stripe = new Stripe(stripeSecretKey);
 
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
   } catch (err: any) {
-    console.error("Stripe webhook signature verification failed:", err?.message);
+    console.error("Stripe webhook signature verification failed:", err?.message || err);
     return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 400 });
   }
 
-  // Only credit on successful Checkout completion
+  // Only act on successful checkout completion
   if (event.type !== "checkout.session.completed") {
     return NextResponse.json({ ok: true, ignored: event.type });
   }
 
   const session = event.data.object as Stripe.Checkout.Session;
 
-  // Extra safety: ensure actually paid (for card payments, should be "paid")
+  // Extra safety: only credit when actually paid
   if (session.payment_status && session.payment_status !== "paid") {
     return NextResponse.json({ ok: true, ignored: `payment_status=${session.payment_status}` });
   }
 
-  // Optional sanity: ensure environment matches what you expect.
-  // IMPORTANT: return 200 on mismatch so Stripe doesn't retry forever.
+  // Optional sanity check: ensure you don’t mix test/live envs
+  // Set STRIPE_EXPECT_LIVEMODE="true" for live env, "false" for test env.
   const expectedLivemode =
     process.env.STRIPE_EXPECT_LIVEMODE === "true"
       ? true
@@ -63,6 +61,7 @@ export async function POST(req: Request) {
       ? false
       : undefined;
 
+  // IMPORTANT: return 200 so Stripe doesn't retry forever if you misconfigured envs
   if (typeof expectedLivemode === "boolean" && event.livemode !== expectedLivemode) {
     console.error("Stripe livemode mismatch:", { expectedLivemode, got: event.livemode });
     return NextResponse.json({ ok: true, ignored: "livemode_mismatch" });
@@ -72,9 +71,9 @@ export async function POST(req: Request) {
   const credits = Number(session.metadata?.credits ?? 0);
   const pack = String(session.metadata?.pack ?? "").trim();
 
+  // If metadata is wrong, returning 200 prevents infinite retries on a bad payload
   if (!userId || !Number.isFinite(credits) || credits <= 0) {
-    console.error("Missing userId/credits in metadata:", session.metadata);
-    // Return 200 so Stripe doesn't keep retrying a bad payload forever
+    console.error("Webhook missing metadata userId/credits:", session.metadata);
     return NextResponse.json({ ok: true, ignored: "missing_metadata_userId_or_credits" });
   }
 
@@ -82,13 +81,13 @@ export async function POST(req: Request) {
   const stripeSessionId = session.id;
 
   try {
-    // ✅ Idempotency: if we already processed this Stripe event OR session, no-op.
+    // Idempotency: if we already processed this event OR session, do nothing.
     const existing = await prisma.event.findFirst({
       where: {
         type: "purchase",
         OR: [
-          { metaJson: { path: ["stripeEventId"], equals: stripeEventId } } as any,
-          { metaJson: { path: ["stripeSessionId"], equals: stripeSessionId } } as any,
+          ({ metaJson: { path: ["stripeEventId"], equals: stripeEventId } } as any),
+          ({ metaJson: { path: ["stripeSessionId"], equals: stripeSessionId } } as any),
         ],
       },
       select: { id: true },
@@ -98,19 +97,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, deduped: true });
     }
 
-    // Optional: ensure user exists (prevents ledger rows for deleted users)
+    // Safety: ensure user exists (don’t create orphan credit rows)
     const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!dbUser) {
       console.error("Webhook userId not found:", userId);
       return NextResponse.json({ ok: true, ignored: "user_not_found" });
     }
 
-    // ✅ Credit + record purchase event in one transaction
+    // Credit + purchase event atomically
     await prisma.$transaction([
       prisma.creditsLedger.create({
         data: {
           userId,
-          delta: credits, // positive delta = top-up
+          delta: credits, // positive = top-up
           reason: "purchase_stripe",
         },
       }),
@@ -136,7 +135,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("Stripe webhook DB error:", e);
-    // Return 500 so Stripe retries transient DB issues (this is one case where retries CAN help)
+    // Return 500 so Stripe retries transient DB errors
     return NextResponse.json({ ok: false, error: "DB error" }, { status: 500 });
   }
 }

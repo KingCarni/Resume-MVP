@@ -305,7 +305,6 @@ function scoreDelta(beforeScore: number, afterScore: number) {
 }
 
 export async function POST(req: Request) {
-  // For refunds if anything fails AFTER charging
   let chargedUserId = "";
   let chargedCost = 0;
 
@@ -319,9 +318,7 @@ export async function POST(req: Request) {
     if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
 
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
 
     // ✅ Parse + validate BEFORE charging
     const body = (await req.json()) as Partial<ReqBody>;
@@ -358,16 +355,12 @@ export async function POST(req: Request) {
 
     // ✅ Charge credits for rewrite (1 per rewrite)
     const COST_REWRITE = 1;
-
     const charged = await chargeCredits({
       userId: dbUser.id,
       cost: COST_REWRITE,
       reason: "rewrite_bullet",
       eventType: "rewrite_bullet",
-      meta: {
-        cost: COST_REWRITE,
-        originalLen: originalBullet.length,
-      },
+      meta: { cost: COST_REWRITE, originalLen: originalBullet.length },
     });
 
     if (!charged.ok) {
@@ -384,14 +377,13 @@ export async function POST(req: Request) {
       extraBlocked: blockedTerms,
     });
 
-    // ✅ Only allow keywords already present in ORIGINAL bullet (prevents job→experience blending)
+    // ✅ Only allow keywords already present in ORIGINAL bullet
     const safeKeywords = findKeywordHits(originalBullet, usableKeywords);
     const safeNorm = new Set(safeKeywords.map(normalizeForMatch));
     const riskyKeywords = usableKeywords.filter((k) => !safeNorm.has(normalizeForMatch(k)));
 
     const client = new OpenAI({ apiKey });
 
-    // --- Step data: before/after + delta (truthful improvement only) ---
     const verbStrengthBefore = computeVerbStrength(originalBullet);
     const beforeScore = verbStrengthBefore.score;
 
@@ -427,9 +419,7 @@ export async function POST(req: Request) {
       retry: false,
     });
 
-    if (!attempt1 || !attempt1.trim()) {
-      throw new Error("Model returned empty response");
-    }
+    if (!attempt1 || !attempt1.trim()) throw new Error("Model returned empty response");
 
     const after1 = computeVerbStrength(attempt1);
     const afterScore1 = after1.score;
@@ -437,8 +427,7 @@ export async function POST(req: Request) {
     const opener1 = normalizeForMatch(extractOpenerVerb(attempt1));
     const openerViolates = preferVerbVariety && opener1 && hardAvoidOpeners.includes(opener1);
 
-    const phraseViolates =
-      preferVerbVariety && hardAvoidPhrases.length ? containsAnyPhrase(attempt1, hardAvoidPhrases) : false;
+    const phraseViolates = preferVerbVariety && hardAvoidPhrases.length ? containsAnyPhrase(attempt1, hardAvoidPhrases) : false;
 
     const riskyFound1 = findKeywordHits(attempt1, riskyKeywords);
     const riskyViolates = riskyFound1.length > 0;
@@ -489,27 +478,22 @@ export async function POST(req: Request) {
         forceStarterVerbList: forceStarters,
       });
 
-      if (attempt2 && attempt2.trim()) {
-        after2 = computeVerbStrength(attempt2);
-      }
+      if (attempt2 && attempt2.trim()) after2 = computeVerbStrength(attempt2);
     }
 
-    // Pick best rewrite (prefer SAFE; then prefer higher score)
+    // Pick best rewrite (prefer SAFE; then higher score)
     let bestRewrite = attempt1;
     let bestAfter = after1;
 
-    const riskyFoundBest1 = riskyFound1;
     let riskyFoundBest2: string[] = [];
     if (attempt2) riskyFoundBest2 = findKeywordHits(attempt2, riskyKeywords);
 
     if (after2 && attempt2) {
-      const bestIsSafe = riskyFoundBest1.length === 0;
+      const bestIsSafe = riskyFound1.length === 0;
       const candIsSafe = riskyFoundBest2.length === 0;
-
       const candidateBetter = after2.score > bestAfter.score;
 
       const chooseCandidate = (candIsSafe && !bestIsSafe) || (candIsSafe === bestIsSafe && candidateBetter);
-
       if (chooseCandidate) {
         bestRewrite = attempt2;
         bestAfter = after2;
@@ -535,9 +519,10 @@ export async function POST(req: Request) {
 
     const keywordHitsArr = findKeywordHits(bestRewrite, safeKeywords);
 
-    const blockedUniverse = [...(targetCompany ? [targetCompany] : []), ...targetProducts, ...blockedTerms].filter(
-      Boolean
-    );
+    const blockedUniverse = [...(targetCompany ? [targetCompany] : []), ...targetProducts, ...blockedTerms]
+      .map((s) => String(s || "").trim())
+      .filter(Boolean);
+
     const blockedTermsFound = findKeywordHits(bestRewrite, blockedUniverse);
 
     const needsMoreInfo =
@@ -572,6 +557,7 @@ export async function POST(req: Request) {
 
       // credits
       creditsRemaining: charged.balance,
+      balance: charged.balance,
 
       safeKeywords,
       riskyKeywords,
@@ -596,7 +582,6 @@ export async function POST(req: Request) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("rewrite-bullet route error:", e);
 
-    // ✅ Refund if we already charged and the failure happened afterward
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
@@ -608,12 +593,7 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json(
-          {
-            ok: false,
-            error: message || "Rewrite failed",
-            refunded: true,
-            balance: refunded.balance,
-          },
+          { ok: false, error: message || "Rewrite failed", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {

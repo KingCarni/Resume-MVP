@@ -2,7 +2,6 @@
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 import { analyzeKeywordFit } from "@/lib/keywords";
-import { extractResumeBullets } from "@/lib/extractResumeBullets";
 import { suggestKeywordsForBullets } from "@/lib/bullet_suggestions";
 import { buildRewritePlan } from "@/lib/rewrite_plan";
 import { computeVerbStrength } from "@/lib/verb_strength";
@@ -442,17 +441,13 @@ export async function POST(req: Request) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
-    // ✅ Require login (all credit endpoints must be authenticated)
+    // ✅ Require login
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
-    if (!email) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
+    if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const dbUser = await prisma.user.findUnique({ where: { email } });
-    if (!dbUser) {
-      return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
-    }
+    if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
 
     let resumeText = "";
     let jobText = "";
@@ -478,7 +473,10 @@ export async function POST(req: Request) {
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
           return NextResponse.json(
-            { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
+            {
+              ok: false,
+              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
+            },
             { status: 400 }
           );
         }
@@ -532,7 +530,10 @@ export async function POST(req: Request) {
     }
 
     if (!resumeText || !jobText) {
-      return NextResponse.json({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" },
+        { status: 400 }
+      );
     }
 
     if (resumeText.length < 300) {
@@ -542,7 +543,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Charge credits AFTER we know request is valid
+    // ✅ Charge credits AFTER validation
     const COST_ANALYZE = 3;
     const charged = await chargeCredits({
       userId: dbUser.id,
@@ -596,6 +597,9 @@ export async function POST(req: Request) {
 
     const tryExtract = (text: string) => {
       try {
+        const mod = require("@/lib/extractResumeBullets");
+        const extractResumeBullets = mod.extractResumeBullets as (t: string) => any;
+
         const maybe: any = extractResumeBullets(text);
         if (Array.isArray(maybe)) return { bullets: maybe as string[], jobs: [] as any[] };
 
@@ -623,6 +627,7 @@ export async function POST(req: Request) {
     // 1) strict on experience slice
     const strict1 = tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
+
     const flat1 = flattenFromJobs(experienceJobs);
     bullets = filterBadBullets(flat1.outBullets);
     bulletJobIds = flat1.outJobIds;
@@ -681,7 +686,7 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
-      // ✅ Refund (user cannot proceed; this is a parsing failure)
+      // ✅ Refund (user cannot proceed; parsing failure)
       try {
         const refunded = await refundCredits({
           userId: chargedUserId,
@@ -694,6 +699,7 @@ export async function POST(req: Request) {
             experienceMode: experienceSlice.mode,
             bulletsFromFileCount: (bulletsFromFile || []).length,
             seededFileBulletsCount: seededFileBullets.length,
+            blobDebug,
           },
         });
 

@@ -13,9 +13,7 @@ export default async function HomePage() {
 
       {!session ? (
         <div className="mt-6 max-w-xl">
-          <p className="mt-2 opacity-80">
-            Sign in to unlock the tools and track your credits.
-          </p>
+          <p className="mt-2 opacity-80">Sign in to unlock the tools and track your credits.</p>
 
           <Link
             href="/api/auth/signin"
@@ -37,18 +35,24 @@ export default async function HomePage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
               href="/resume"
-              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90
-                         border-black/10 dark:border-white/10"
+              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
             >
               Resume Compiler
             </Link>
 
             <Link
               href="/cover-letter"
-              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90
-                         border-black/10 dark:border-white/10"
+              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
             >
               Cover Letter Generator
+            </Link>
+
+            {/* Optional: remove if you don't have this route */}
+            <Link
+              href="/account"
+              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
+            >
+              Account
             </Link>
           </div>
 
@@ -63,8 +67,7 @@ export default async function HomePage() {
           <section className="max-w-xl">
             <h2 className="text-xl font-bold">Support Development</h2>
             <p className="mt-2 text-sm opacity-80">
-              If this tool helped you land interviews or improve your resume, you can support continued
-              development.
+              If this tool helped you land interviews or improve your resume, you can support continued development.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -72,8 +75,7 @@ export default async function HomePage() {
                 <Link
                   key={amt}
                   href={`/donate?amount=${amt}`}
-                  className="rounded-xl border px-4 py-2 text-sm font-semibold transition hover:opacity-90
-                             border-black/10 dark:border-white/10"
+                  className="rounded-xl border px-4 py-2 text-sm font-semibold transition hover:opacity-90 border-black/10 dark:border-white/10"
                 >
                   Donate ${amt} CAD
                 </Link>

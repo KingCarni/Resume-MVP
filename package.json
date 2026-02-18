@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
-    "@prisma/client": "^6.19.2",
+    "@prisma/client": "6.19.2",
     "@prisma/adapter-pg": "6.19.2",
     "@sendgrid/mail": "^8.1.6",
     "@sparticuz/chromium": "^143.0.4",

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-// If resume text is smaller than this, we refuse to generate (prevents job-posting-as-experience)
+// If resume text is smaller than this, we refuse to generate
 const MIN_RESUME_CHARS = 300;
 
 type ReqBody = {
@@ -114,7 +114,7 @@ async function extractResumeTextFromFile(file: File): Promise<string> {
   throw new Error("Unsupported file type. Please upload a PDF, DOCX, or TXT.");
 }
 
-/** --------- Prompt builder (boxed, strict) --------- */
+/** --------- Prompt builder --------- */
 
 function buildPrompt(args: {
   resumeText: string;
@@ -241,7 +241,6 @@ Now write the cover letter.
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
-  // For refunds if anything fails AFTER charging
   let chargedUserId = "";
   let chargedCost = 0;
 
@@ -322,7 +321,7 @@ export async function POST(req: Request) {
       blockedTerms = toArr(form.get("blockedTerms"));
       targetTerms = toArr(form.get("targetTerms"));
     } else if (contentType.includes("application/json")) {
-      const body = (await req.json()) as Partial<ReqBody>;
+      const body = (await req.json().catch(() => ({}))) as Partial<ReqBody>;
 
       resumeText = normalizeResumeText(body.resumeText);
       jobText = normalizeJobText(body.jobText);
@@ -420,7 +419,6 @@ export async function POST(req: Request) {
 
     const text = completion.choices?.[0]?.message?.content?.trim() || "";
     if (!text) {
-      // ✅ refund: user got nothing
       const refunded = await refundCredits({
         userId: chargedUserId,
         amount: chargedCost,
@@ -435,7 +433,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Best-effort post-check: block terms (refund on failure)
+    // Best-effort post-check: blocked terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
@@ -472,7 +470,6 @@ export async function POST(req: Request) {
     const message = err?.message ? String(err.message) : String(err);
     console.error("cover-letter route error:", err);
 
-    // ✅ Refund if we already charged and something exploded afterward (OpenAI/network/etc)
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
@@ -490,7 +487,12 @@ export async function POST(req: Request) {
       } catch (refundErr: any) {
         console.error("refundCredits failed:", refundErr);
         return NextResponse.json(
-          { ok: false, error: message || "Cover letter generation failed", refunded: false, refundError: refundErr?.message || String(refundErr) },
+          {
+            ok: false,
+            error: message || "Cover letter generation failed",
+            refunded: false,
+            refundError: refundErr?.message || String(refundErr),
+          },
           { status: 500 }
         );
       }
