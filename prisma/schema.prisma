@@ -9,29 +9,25 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 /**
  * ---------------- NextAuth Models ---------------- *
  */
 
 model User {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?  @unique
   emailVerified DateTime?
   image         String?
 
-  accounts Account[]
-  sessions Session[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // App data
+  accounts      Account[]
+  sessions      Session[]
   creditsLedger CreditsLedger[]
   documents     Document[]
   events        Event[]
-
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  userCredits UserCredits?
 }
 
 model Account {
@@ -71,7 +67,7 @@ model VerificationToken {
 }
 
 /**
- * ---------------- Credits / History / Metrics ---------------- *
+ * ---------------- Credits / Documents / Events ---------------- *
  */
 
 model CreditsLedger {
@@ -79,16 +75,15 @@ model CreditsLedger {
   userId    String
   delta     Int
   reason    String
-  ref       String?  // ✅ idempotency key (stripe event id, request id, etc.)
+  ref       String?  // idempotency key (stripe event id, request id, etc.)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([userId, ref])
-  @@unique([userId, ref]) // ✅ prevents double-write for same ref per user
+  @@unique([userId, ref])
 }
-
 
 enum DocumentType {
   resume
@@ -116,16 +111,16 @@ enum EventType {
   rewrite_bullet
   rewrite_batch
   resume_pdf
-  cover_letter
   purchase
+  cover_letter
 }
 
 model Event {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   type      EventType
   metaJson  Json?
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -133,10 +128,38 @@ model Event {
   @@index([type, createdAt])
 }
 
-model UserCredits {
-  userId    String   @id
-  balance   Int      @default(0)
-  updatedAt DateTime @updatedAt
+/**
+ * ---------------- Legacy snake_case tables ---------------- *
+ * Keep these if they already exist in your DB; your webhook can use either system.
+ * If you are not using them anymore, we can remove them later.
+ */
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+model credit_ledger {
+  id                BigInt   @id @default(autoincrement())
+  user_id           String
+  delta             Int
+  reason            String
+  stripe_session_id String?
+  stripe_event_id   String?  @unique(map: "credit_ledger_stripe_event_id_uniq")
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id])
+}
+
+model credit_purchases {
+  id                BigInt   @id @default(autoincrement())
+  user_id           String
+  stripe_session_id String   @unique
+  amount_cents      Int
+  currency          String
+  credits           Int
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id])
+}
+
+model stripe_events {
+  id         String   @id
+  type       String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
 }
