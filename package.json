@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
-    "@prisma/adapter-pg": "^7.4.0",
-    "@prisma/client": "^7.4.0",
+    "@prisma/client": "^6.19.2",
     "@sendgrid/mail": "^8.1.6",
     "@sparticuz/chromium": "^143.0.4",
     "@vercel/blob": "^2.2.0",
@@ -26,7 +25,6 @@
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.4.624",
     "pg": "^8.18.0",
-    "prisma": "^7.4.0",
     "puppeteer": "^24.37.2",
     "puppeteer-core": "^24.37.3",
     "react": "19.2.3",
@@ -41,6 +39,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "prisma": "^6.19.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -79,12 +79,16 @@ model CreditsLedger {
   userId    String
   delta     Int
   reason    String
+  ref       String?  // ✅ idempotency key (stripe event id, request id, etc.)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([userId, ref])
+  @@unique([userId, ref]) // ✅ prevents double-write for same ref per user
 }
+
 
 enum DocumentType {
   resume
