@@ -16,7 +16,6 @@ const BOOT_TAG = "cover_letter_route_boot_ok";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-// If resume text is smaller than this, we refuse to generate
 const MIN_RESUME_CHARS = 300;
 
 type ReqBody = {
@@ -101,7 +100,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** ---------------- Magic-byte sniffing ---------------- */
+/** ---------------- Magic-byte sniffing (avoid “zip?” errors) ---------------- */
 
 type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
 
@@ -139,52 +138,16 @@ function friendlyUnsupportedDocMsg(extra?: string) {
   );
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, workerless, Node-safe) ---------------- */
-
-async function ensurePdfJsPolyfills() {
-  if (!(globalThis as any).DOMMatrix) {
-    try {
-      const dm: any = await import("dommatrix");
-      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!(globalThis as any).Path2D) {
-    (globalThis as any).Path2D = class Path2DStub {};
-  }
-  if (!(globalThis as any).ImageData) {
-    (globalThis as any).ImageData = class ImageDataStub {
-      data: Uint8ClampedArray;
-      width: number;
-      height: number;
-      constructor(data: any, width: number, height?: number) {
-        this.data = data instanceof Uint8ClampedArray ? data : new Uint8ClampedArray(data || []);
-        this.width = Number(width || 0);
-        this.height = Number(height ?? 0);
-      }
-    };
-  }
-}
+/** ---------------- PDF extraction (pdfjs-dist, NO WORKER) ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfJsPolyfills();
-
-    if (!(globalThis as any).DOMMatrix) {
-      throw new Error("DOMMatrix is not defined (polyfill failed).");
-    }
-
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js");
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-
-      // Critical in Next/Vercel: avoid workers entirely
-      disableWorker: true,
-
+      disableWorker: true, // ✅ critical
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -221,13 +184,6 @@ async function extractResumeTextFromFile(file: File): Promise<string> {
   if (sniffed === "docx") return extractTextFromDocxBuffer(buffer);
   if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
   if (sniffed === "txt") return buffer.toString("utf-8");
-
-  // fallback: extension hints (only as a last resort)
-  const name = (file.name || "").toLowerCase();
-  if (name.endsWith(".pdf")) return extractTextFromPdfBuffer(buffer);
-  if (name.endsWith(".docx")) return extractTextFromDocxBuffer(buffer);
-  if (name.endsWith(".txt")) return buffer.toString("utf-8");
-  if (name.endsWith(".doc")) throw new Error(friendlyUnsupportedDocMsg("(It looks like a legacy Word .doc file.)"));
 
   throw new Error("Unsupported file type. Please upload a PDF, DOCX, or TXT.");
 }
@@ -330,11 +286,6 @@ OUTPUT FORMAT (exact):
 7) Blank line
 8) Sign-off: "Sincerely," then name (if available, else omit name line)
 
-Header block to use (if non-empty):
-<<<
-${headerLines}
->>>
-
 Role context:
 - Company: ${targetCompany || "(not provided)"}
 - Role title: ${roleTitle || "(not provided)"}
@@ -370,7 +321,6 @@ export async function POST(req: Request) {
   let chargedCost = 0;
 
   try {
-    // ✅ Require login
     const session = await getServerSession(authOptions);
     const emailFromSession = session?.user?.email;
     if (!emailFromSession) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -561,7 +511,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Best-effort post-check: blocked terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
@@ -575,7 +524,12 @@ export async function POST(req: Request) {
         });
 
         return okJson(
-          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
+          {
+            ok: false,
+            error: `Blocked term detected in output: "${hit}". Try again.`,
+            refunded: true,
+            balance: refunded.balance,
+          },
           { status: 422 }
         );
       }
@@ -631,7 +585,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 

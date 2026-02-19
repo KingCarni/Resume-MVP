@@ -281,27 +281,32 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdf-parse v2 class API) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, NO WORKER) ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    const mod: any = await import("pdf-parse");
-    const PDFParse = mod?.PDFParse;
-    if (typeof PDFParse !== "function") {
-      throw new Error(`pdf-parse PDFParse export missing (keys=${Object.keys(mod || {}).join(",")})`);
+    // CJS legacy build is the most stable on Vercel/Next server
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js");
+
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      verbosity: 0,
+      disableWorker: true, // ✅ critical (prevents worker import issues)
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+
+    const pdf = await loadingTask.promise;
+
+    let out = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
+      out += strings.join(" ") + "\n";
     }
 
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText();
-      return String(result?.text ?? "");
-    } finally {
-      try {
-        await parser.destroy();
-      } catch {
-        // ignore
-      }
-    }
+    return out;
   } catch (err: any) {
     const msg = err?.message ? String(err.message) : String(err);
     throw new Error(`PDF parse failed: ${msg}`);
@@ -365,7 +370,6 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
   };
 
   let res = await tryFetch(false);
-
   if (!res.ok && (res.status === 401 || res.status === 403)) {
     res = await tryFetch(true);
   }
@@ -705,7 +709,6 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
-      // ✅ Refund (user cannot proceed; parsing failure)
       try {
         const refunded = await refundCredits({
           userId: chargedUserId,
@@ -748,14 +751,6 @@ export async function POST(req: Request) {
               "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: false,
             refundError: refundErr?.message || String(refundErr),
-            debug: {
-              foundExperienceSection: experienceSlice.foundSection,
-              experienceMode: experienceSlice.mode,
-              experienceLen: experienceSlice.experienceText.length,
-              bulletsFromFileCount: (bulletsFromFile || []).length,
-              seededFileBulletsCount: seededFileBullets.length,
-              blobDebug,
-            },
           },
           { status: 400 }
         );
@@ -849,7 +844,6 @@ export async function POST(req: Request) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
 
-    // ✅ Refund if we charged and then something blew up
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
