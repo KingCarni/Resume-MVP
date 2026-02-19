@@ -145,19 +145,22 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
 function templateStylesResume(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  body{
+  html, body{
     background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .page{
     background: var(--pagebg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     box-shadow: none !important;
     margin: 0 !important;
   }
@@ -641,7 +644,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       bodyBg: "#f8fafc",
       pageBg: "#f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 45px rgba(2,6,23,.08)",
@@ -846,8 +850,7 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e8defa",
       accent: "#7c3aed",
       accent2: "#a78bfa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
       pageBg: "#fbf8ff",
       headerBg: "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
       cardBg: "#ffffff",
@@ -922,8 +925,7 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#f1e2c7",
       accent: "#d97706",
       accent2: "#f59e0b",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
       pageBg: "#fffbf2",
       headerBg: "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
       cardBg: "#ffffff",
@@ -990,9 +992,7 @@ function templateStyles(template: ResumeTemplateId) {
 function templateStylesCover(template: ResumeTemplateId) {
   const isTerminal = template === "terminal";
 
-  const letterCardBg = isTerminal
-    ? "var(--cardbg, #061a10)"
-    : "var(--pagebg, #fff)";
+  const letterCardBg = isTerminal ? "var(--cardbg, #061a10)" : "var(--pagebg, #fff)";
 
   return `
 ${templateStyles(template)}
@@ -1022,19 +1022,23 @@ ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  body{
+  html, body{
     background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .page{
     background: var(--pagebg) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     box-shadow: none !important;
     margin: 0 !important;
   }
   .top:after{ display:none !important; }
   .letter-card{
     background: ${letterCardBg} !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 `.trim();
@@ -1058,14 +1062,7 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const {
-    template,
-    profile,
-    bodyText,
-    includeSignature,
-    signatureClosing,
-    signatureName,
-  } = args;
+  const { template, profile, bodyText, includeSignature, signatureClosing, signatureName } = args;
 
   const contactBits = [
     profile.email?.trim() ? safe(profile.email) : "",
@@ -1073,8 +1070,7 @@ function buildCoverLetterHtml(args: {
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
   ].filter(Boolean);
 
-  const useChips =
-    template !== "terminal" && template !== "ats" && template !== "compact";
+  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
 
   const topContact = useChips
     ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
@@ -1171,13 +1167,7 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({
-  html,
-  footer,
-}: {
-  html: string;
-  footer?: React.ReactNode;
-}) {
+function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1195,54 +1185,20 @@ function HtmlDocPreview({
         />
       </div>
 
-      {footer ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div>
-      ) : null}
+      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
     </div>
   );
 }
-
 
 /** ---------------- Tone recommendation ---------------- */
 
 function recommendToneHeuristic(jobText: string) {
   const t = String(jobText || "").toLowerCase();
 
-  const startupSignals = [
-    "startup",
-    "0-1",
-    "zero-to-one",
-    "fast-paced",
-    "scrappy",
-    "wear multiple hats",
-  ];
-  const enterpriseSignals = [
-    "enterprise",
-    "stakeholders",
-    "cross-functional",
-    "governance",
-    "compliance",
-    "risk",
-  ];
-  const leadershipSignals = [
-    "lead",
-    "manager",
-    "mentored",
-    "managed",
-    "owned",
-    "strategy",
-    "roadmap",
-  ];
-  const technicalSignals = [
-    "api",
-    "automation",
-    "ci/cd",
-    "pipeline",
-    "performance",
-    "observability",
-    "kpi",
-    "metrics",
-  ];
+  const startupSignals = ["startup", "0-1", "zero-to-one", "fast-paced", "scrappy", "wear multiple hats"];
+  const enterpriseSignals = ["enterprise", "stakeholders", "cross-functional", "governance", "compliance", "risk"];
+  const leadershipSignals = ["lead", "manager", "mentored", "managed", "owned", "strategy", "roadmap"];
+  const technicalSignals = ["api", "automation", "ci/cd", "pipeline", "performance", "observability", "kpi", "metrics"];
 
   const score = (arr: string[]) => arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
 
@@ -1461,16 +1417,14 @@ export default function CoverLetterGenerator() {
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   const navBtn =
-  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
-  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
+    "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
+    "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
+    "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
-
-        return (
-          <main className="mx-auto max-w-6xl px-4 py-6">
-            {/* Top bar */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* Top bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* LEFT: nav buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/resume" className={navBtn}>
@@ -1484,38 +1438,31 @@ export default function CoverLetterGenerator() {
 
         {/* RIGHT: donate + feedback + theme */}
         <div className="flex flex-wrap items-center gap-2">
-
           <a
             href="https://git-a-job.com/donate"
             target="_blank"
-            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
-bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
-
+            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
           >
             Donate
           </a>
 
           <a
-          href="https://git-a-job.com/feedback"
-          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-        >
-          Feedback
-        </a>
-
+            href="https://git-a-job.com/feedback"
+            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+          >
+            Feedback
+          </a>
 
           <ThemeToggle />
-
         </div>
       </div>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">
-          Git-a-Job: Cover Letter Generator
-        </h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
-          Preview renders as a real HTML document (resume-template style). You can edit the letter
-          below and the preview updates live.
+          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview
+          renders as a real HTML document (resume-template style). You can edit the letter below and
+          the preview updates live.
         </p>
       </div>
 
@@ -1640,9 +1587,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 />
                 <input
                   value={profile.locationLine}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, locationLine: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
@@ -1660,9 +1605,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 />
                 <input
                   value={profile.linkedin}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, linkedin: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
                 />

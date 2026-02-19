@@ -123,6 +123,16 @@ type AnalyzeResponse = {
   bulletJobIds?: string[];
 };
 
+/** ---------------- Credits cost labels ---------------- */
+/**
+ * NOTE: These are UI labels only.
+ * Keep them aligned with server charging (api routes / lib/credits).
+ */
+const CREDIT_COSTS = {
+  analyze: 3, // matches /api/analyze COST_ANALYZE
+  rewriteBullet: 1, // set to whatever /api/rewrite-bullet charges
+} as const;
+
 /** ---------------- Helpers ---------------- */
 
 async function parseApiResponse(res: Response) {
@@ -2504,7 +2514,17 @@ export default function ResumeMvp() {
       metaMetrics,
       includeMeta: includeMetaInResumeDoc,
     });
-  }, [analysis, effectivePlan.length, resumeTemplate, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMetaInResumeDoc]);
+  }, [
+    analysis,
+    effectivePlan.length,
+    resumeTemplate,
+    profile,
+    sections,
+    bulletsBySection,
+    metaGames,
+    metaMetrics,
+    includeMetaInResumeDoc,
+  ]);
 
   const effectiveResumeHtml = useMemo(() => {
     return (previewHtmlOverride || resumeHtml || "").trim();
@@ -2678,43 +2698,40 @@ export default function ResumeMvp() {
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-          <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-            Resume file (optional)
-          </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+                Resume file (optional)
+              </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.doc,.docx,.txt"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              resetDerivedState();
-            }}
-            className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
-          />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  resetDerivedState();
+                }}
+                className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
+              />
 
-          {/* ✅ ADD THIS LINE */}
-          <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-            Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
-          </div>
+              {/* ✅ ADD THIS LINE */}
+              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
+              </div>
 
-          {file ? (
-            <div className="mt-1 flex items-center gap-2">
-              <Chip text={file.name} />
-              <button
-                type="button"
-                onClick={clearFile}
-                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-              >
-                Clear
-              </button>
-              {uploadingResume ? (
-                <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
+              {file ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <Chip text={file.name} />
+                  <button
+                    type="button"
+                    onClick={clearFile}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
+                    Clear
+                  </button>
+                  {uploadingResume ? <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span> : null}
+                </div>
               ) : null}
-            </div>
-          ) : null}
-        </label>
-
+            </label>
 
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
@@ -2843,8 +2860,13 @@ export default function ResumeMvp() {
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
                 >
-                  {loadingAnalyze ? "Analyzing…" : "Analyze"}
+                  {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
                 </button>
+
+                {/* ✅ small costs hint right near the action buttons */}
+                <div className="ml-1 text-xs text-black/60 dark:text-white/60">
+                  Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
+                </div>
 
                 <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
@@ -3044,7 +3066,9 @@ export default function ResumeMvp() {
                 disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
                 className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
               >
-                {loadingBatchRewrite ? "Rewriting…" : `Rewrite Selected (${selectedCount})`}
+                {loadingBatchRewrite
+                  ? "Rewriting…"
+                  : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
               </button>
 
               <div className="text-xs text-black/60 dark:text-white/60">
@@ -3111,7 +3135,7 @@ export default function ResumeMvp() {
                         disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
                         className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
                       >
-                        {loadingRewriteIndex === i ? "Rewriting…" : "Rewrite"}
+                        {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
                       </button>
                     </div>
                   </div>
