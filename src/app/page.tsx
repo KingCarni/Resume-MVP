@@ -4,6 +4,12 @@ import BuyCreditsButton from "@/components/Billing/BuyCreditsButton";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+const gradientBtn =
+  "rounded-xl bg-gradient-to-r from-emerald-500 to-blue-600 px-4 py-2 font-black text-white transition-all duration-200 hover:from-emerald-600 hover:to-blue-700 hover:scale-[1.02] shadow-md hover:shadow-lg";
+
+const gradientDonate =
+  "rounded-xl bg-gradient-to-r from-emerald-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:from-emerald-600 hover:to-blue-700 hover:scale-[1.02] shadow-md hover:shadow-lg";
+
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
 
@@ -13,7 +19,9 @@ export default async function HomePage() {
 
       {!session ? (
         <div className="mt-6 max-w-xl">
-          <p className="mt-2 opacity-80">Sign in to unlock the tools and track your credits.</p>
+          <p className="mt-2 opacity-80">
+            Sign in to unlock the tools and track your credits.
+          </p>
 
           <Link
             href="/api/auth/signin"
@@ -28,31 +36,22 @@ export default async function HomePage() {
 
           {/* Primary Tools */}
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href="/resume"
-              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
-            >
+            <Link href="/resume" className={gradientBtn}>
               Resume Compiler
             </Link>
 
-            <Link
-              href="/cover-letter"
-              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
-            >
+            <Link href="/cover-letter" className={gradientBtn}>
               Cover Letter Generator
             </Link>
 
-            {/* Optional: remove if you don't have this route */}
-            <Link
-              href="/account"
-              className="rounded-xl border px-4 py-2 font-black transition hover:opacity-90 border-black/10 dark:border-white/10"
-            >
+            <Link href="/account" className={gradientBtn}>
               Account
             </Link>
           </div>
 
           <div className="mt-6 text-sm opacity-70">
-            Tip: Bookmark <strong>/resume</strong> or <strong>/cover-letter</strong>.
+            Tip: Bookmark <strong>/resume</strong> or{" "}
+            <strong>/cover-letter</strong>.
           </div>
 
           {/* Divider */}
@@ -62,7 +61,8 @@ export default async function HomePage() {
           <section className="max-w-xl">
             <h2 className="text-xl font-bold">Support Development</h2>
             <p className="mt-2 text-sm opacity-80">
-              If this tool helped you land interviews or improve your resume, you can support continued development.
+              If this tool helped you land interviews or improve your resume,
+              you can support continued development.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -70,7 +70,7 @@ export default async function HomePage() {
                 <Link
                   key={amt}
                   href={`/donate?amount=${amt}`}
-                  className="rounded-xl border px-4 py-2 text-sm font-semibold transition hover:opacity-90 border-black/10 dark:border-white/10"
+                  className={gradientDonate}
                 >
                   Donate ${amt} CAD
                 </Link>
@@ -78,7 +78,7 @@ export default async function HomePage() {
             </div>
           </section>
 
-          {/* Buy credits (moved below Support Development) */}
+          {/* Buy credits */}
           <div className="mt-10 max-w-xl">
             <BuyCreditsButton />
           </div>
