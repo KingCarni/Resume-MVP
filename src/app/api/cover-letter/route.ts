@@ -16,6 +16,7 @@ const BOOT_TAG = "cover_letter_route_boot_ok";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
+// If resume text is smaller than this, we refuse to generate
 const MIN_RESUME_CHARS = 300;
 
 type ReqBody = {
@@ -100,7 +101,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** ---------------- Magic-byte sniffing (avoid “zip?” errors) ---------------- */
+/** ---------------- Magic-byte sniffing (prevents “zip file?” mistakes) ---------------- */
 
 type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
 
@@ -138,16 +139,16 @@ function friendlyUnsupportedDocMsg(extra?: string) {
   );
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist legacy, NO WORKER) ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js");
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true, // ✅ critical
+      disableWorker: true, // ✅ absolute must on Vercel/Next
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -169,12 +170,14 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   }
 }
 
-/** ---------------- File extraction ---------------- */
+/** ---------------- DOCX extraction ---------------- */
 
 async function extractTextFromDocxBuffer(buffer: Buffer): Promise<string> {
   const parsed = await mammoth.extractRawText({ buffer });
   return parsed?.value ?? "";
 }
+
+/** ---------------- File extraction ---------------- */
 
 async function extractResumeTextFromFile(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -321,6 +324,7 @@ export async function POST(req: Request) {
   let chargedCost = 0;
 
   try {
+    // ✅ Require login
     const session = await getServerSession(authOptions);
     const emailFromSession = session?.user?.email;
     if (!emailFromSession) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -511,6 +515,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Best-effort post-check: blocked terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
@@ -585,6 +590,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 

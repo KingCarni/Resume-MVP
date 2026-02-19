@@ -281,17 +281,17 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist legacy, NO WORKER) ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    // CJS legacy build is the most stable on Vercel/Next server
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js");
+    // Legacy CJS build is most reliable under Next/Vercel bundling.
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true, // ✅ critical (prevents worker import issues)
+      disableWorker: true, // ✅ absolute must on Vercel/Next
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -370,6 +370,7 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
   };
 
   let res = await tryFetch(false);
+
   if (!res.ok && (res.status === 401 || res.status === 403)) {
     res = await tryFetch(true);
   }
@@ -709,6 +710,7 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
+      // ✅ Refund (user cannot proceed; parsing failure)
       try {
         const refunded = await refundCredits({
           userId: chargedUserId,
@@ -751,6 +753,14 @@ export async function POST(req: Request) {
               "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: false,
             refundError: refundErr?.message || String(refundErr),
+            debug: {
+              foundExperienceSection: experienceSlice.foundSection,
+              experienceMode: experienceSlice.mode,
+              experienceLen: experienceSlice.experienceText.length,
+              bulletsFromFileCount: (bulletsFromFile || []).length,
+              seededFileBulletsCount: seededFileBullets.length,
+              blobDebug,
+            },
           },
           { status: 400 }
         );
@@ -844,6 +854,7 @@ export async function POST(req: Request) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
 
+    // ✅ Refund if we charged and then something blew up
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
