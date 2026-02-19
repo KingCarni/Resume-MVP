@@ -49,6 +49,65 @@ type ResumeProfile = {
 
 type ApiResp = { ok: true; coverLetter: string } | { ok: false; error?: string };
 
+/** ---------------- Credit costs ---------------- */
+
+const CREDIT_COST_GENERATE = 5;
+const CREDIT_COST_PDF = 5;
+
+/**
+ * Best-effort credit charge helper.
+ * Tries a couple common endpoints (in case your route name differs).
+ *
+ * Expected JSON response shapes supported:
+ * - { ok: true }
+ * - { ok: false, error: "..." }
+ * - { ok: true, remaining: number } (ignored here)
+ */
+async function chargeCreditsClient(args: { amount: number; reason: string }) {
+  const payload = { amount: args.amount, reason: args.reason };
+
+  const tryEndpoints = ["/api/charge-credits", "/api/credits/charge"];
+
+  let lastErr = "";
+
+  for (const url of tryEndpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        lastErr = `${url} -> ${res.status} ${t}`.trim();
+        continue;
+      }
+
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("application/json")) {
+        const t = await res.text().catch(() => "");
+        lastErr = `${url} -> non-JSON response: ${t.slice(0, 200)}`.trim();
+        continue;
+      }
+
+      const data = (await res.json().catch(() => null)) as any;
+      if (data?.ok === true) return;
+
+      lastErr = `${url} -> ${data?.error || "Unknown credit charge error"}`.trim();
+    } catch (e: any) {
+      lastErr = `${url} -> ${e?.message || "Network error"}`.trim();
+    }
+  }
+
+  // If your backend already charges elsewhere (e.g. /api/cover-letter),
+  // this will surface quickly so you can align the endpoint name.
+  throw new Error(
+    lastErr ||
+      "Could not charge credits (no compatible credit-charge endpoint found)."
+  );
+}
+
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
 
 const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
@@ -111,6 +170,14 @@ function Callout({
   );
 }
 
+function CreditPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-lg border border-black/10 bg-white px-2 py-1 text-[11px] font-extrabold text-black/70 dark:border-white/10 dark:bg-white/10 dark:text-white/70">
+      {children}
+    </span>
+  );
+}
+
 async function downloadPdfFromHtml(filename: string, html: string) {
   const res = await fetch("/api/render-pdf", {
     method: "POST",
@@ -145,22 +212,19 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
-
 function templateStylesResume(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  html, body{
+  body{
     background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .page{
     background: var(--pagebg) !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
     box-shadow: none !important;
     margin: 0 !important;
   }
@@ -663,7 +727,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f6f7fb",
       pageBg: "#f6f7fb",
-      headerBg: "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(2,6,23,.12)",
@@ -681,7 +746,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 480px at 20% 10%, rgba(17,24,39,.06), rgba(255,255,255,0)), #fffdf7",
       pageBg: "#fffdf7",
-      headerBg: "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 12,
@@ -700,7 +766,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(1000px 520px at 10% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f8fafc",
       pageBg: "#f8fafc",
-      headerBg: "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "dashed",
       radius: 18,
@@ -719,7 +786,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#111827",
       bodyBg: "#f3f6fb",
       pageBg: "#f3f6fb",
-      headerBg: "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
+      headerBg:
+        "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 16px 45px rgba(11,19,36,.10)",
@@ -737,7 +805,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
       pageBg: "#f7f7f7",
-      headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 0,
@@ -755,7 +824,8 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       bodyBg: "#ffffff",
       pageBg: "#fbfbfc",
-      headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 24,
@@ -775,7 +845,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "linear-gradient(90deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px), linear-gradient(180deg, rgba(6,182,212,.05) 1px, rgba(255,255,255,0) 1px), #f7fbff",
       pageBg: "#f7fbff",
-      headerBg: "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
+      headerBg:
+        "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
       cardBg: "rgba(255,255,255,.92)",
       borderStyle: "dashed",
       radius: 18,
@@ -796,7 +867,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(245,158,11,.10), rgba(255,255,255,0)), #fff7ed",
       pageBg: "#fff7ed",
-      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
+      headerBg:
+        "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
       cardBg: "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
       radius: 18,
       shadow: "0 16px 45px rgba(43,27,18,.10)",
@@ -815,7 +887,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fbfaff",
       pageBg: "#fbfaff",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
       cardBg: "#ffffff",
       radius: 20,
       shadow: "0 18px 55px rgba(31,41,55,.08)",
@@ -834,7 +907,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f7fbff",
       pageBg: "#effdf6",
-      headerBg: "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.10)",
@@ -850,9 +924,11 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e8defa",
       accent: "#7c3aed",
       accent2: "#a78bfa",
-      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
       pageBg: "#fbf8ff",
-      headerBg: "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 48px rgba(31,27,46,.10)",
@@ -871,7 +947,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 25% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f7",
       pageBg: "#fff6f7",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 18px 55px rgba(43,18,32,.10)",
@@ -890,7 +967,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(22,163,74,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(14,165,233,.08), rgba(255,255,255,0)), #f3fbf7",
       pageBg: "#f3fbf7",
-      headerBg: "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
+      headerBg:
+        "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(11,31,23,.10)",
@@ -909,7 +987,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(14,165,233,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f4fbff",
       pageBg: "#f4fbff",
-      headerBg: "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
+      headerBg:
+        "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(6,26,42,.10)",
@@ -925,9 +1004,11 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#f1e2c7",
       accent: "#d97706",
       accent2: "#f59e0b",
-      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
       pageBg: "#fffbf2",
-      headerBg: "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
+      headerBg:
+        "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 14px 40px rgba(43,32,18,.08)",
@@ -946,7 +1027,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(29,78,216,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7f9ff",
       pageBg: "#f2f0ff",
-      headerBg: "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
+      headerBg:
+        "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.12)",
@@ -965,7 +1047,8 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(245,158,11,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(180,83,9,.10), rgba(255,255,255,0)), #fffaf0",
       pageBg: "#fff6e6",
-      headerBg: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
+      headerBg:
+        "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 18,
@@ -992,7 +1075,9 @@ function templateStyles(template: ResumeTemplateId) {
 function templateStylesCover(template: ResumeTemplateId) {
   const isTerminal = template === "terminal";
 
-  const letterCardBg = isTerminal ? "var(--cardbg, #061a10)" : "var(--pagebg, #fff)";
+  const letterCardBg = isTerminal
+    ? "var(--cardbg, #061a10)"
+    : "var(--pagebg, #fff)";
 
   return `
 ${templateStyles(template)}
@@ -1022,23 +1107,19 @@ ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  html, body{
+  body{
     background: var(--bodybg) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .page{
     background: var(--pagebg) !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
     box-shadow: none !important;
     margin: 0 !important;
   }
   .top:after{ display:none !important; }
   .letter-card{
     background: ${letterCardBg} !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
 }
 `.trim();
@@ -1062,7 +1143,14 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const { template, profile, bodyText, includeSignature, signatureClosing, signatureName } = args;
+  const {
+    template,
+    profile,
+    bodyText,
+    includeSignature,
+    signatureClosing,
+    signatureName,
+  } = args;
 
   const contactBits = [
     profile.email?.trim() ? safe(profile.email) : "",
@@ -1070,7 +1158,8 @@ function buildCoverLetterHtml(args: {
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
   ].filter(Boolean);
 
-  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
+  const useChips =
+    template !== "terminal" && template !== "ats" && template !== "compact";
 
   const topContact = useChips
     ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
@@ -1167,7 +1256,13 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+function HtmlDocPreview({
+  html,
+  footer,
+}: {
+  html: string;
+  footer?: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1185,7 +1280,9 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
         />
       </div>
 
-      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
+      {footer ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div>
+      ) : null}
     </div>
   );
 }
@@ -1195,20 +1292,54 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
 function recommendToneHeuristic(jobText: string) {
   const t = String(jobText || "").toLowerCase();
 
-  const startupSignals = ["startup", "0-1", "zero-to-one", "fast-paced", "scrappy", "wear multiple hats"];
-  const enterpriseSignals = ["enterprise", "stakeholders", "cross-functional", "governance", "compliance", "risk"];
-  const leadershipSignals = ["lead", "manager", "mentored", "managed", "owned", "strategy", "roadmap"];
-  const technicalSignals = ["api", "automation", "ci/cd", "pipeline", "performance", "observability", "kpi", "metrics"];
+  const startupSignals = [
+    "startup",
+    "0-1",
+    "zero-to-one",
+    "fast-paced",
+    "scrappy",
+    "wear multiple hats",
+  ];
+  const enterpriseSignals = [
+    "enterprise",
+    "stakeholders",
+    "cross-functional",
+    "governance",
+    "compliance",
+    "risk",
+  ];
+  const leadershipSignals = [
+    "lead",
+    "manager",
+    "mentored",
+    "managed",
+    "owned",
+    "strategy",
+    "roadmap",
+  ];
+  const technicalSignals = [
+    "api",
+    "automation",
+    "ci/cd",
+    "pipeline",
+    "performance",
+    "observability",
+    "kpi",
+    "metrics",
+  ];
 
-  const score = (arr: string[]) => arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
+  const score = (arr: string[]) =>
+    arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
 
   const sStartup = score(startupSignals);
   const sEnterprise = score(enterpriseSignals);
   const sLead = score(leadershipSignals);
   const sTech = score(technicalSignals);
 
-  if (sStartup >= 2 && sTech >= 1) return "confident, scrappy, technically fluent, execution-focused";
-  if (sEnterprise >= 2 && sLead >= 1) return "professional, structured, stakeholder-friendly, risk-aware";
+  if (sStartup >= 2 && sTech >= 1)
+    return "confident, scrappy, technically fluent, execution-focused";
+  if (sEnterprise >= 2 && sLead >= 1)
+    return "professional, structured, stakeholder-friendly, risk-aware";
   if (sTech >= 2) return "confident, concise, technically precise, impact-driven";
   if (sLead >= 2) return "confident, leadership-forward, concise, outcomes-first";
   return "confident, concise, impact-driven";
@@ -1249,7 +1380,9 @@ export default function CoverLetterGenerator() {
   });
 
   const [tone, setTone] = useState("confident, concise, impact-driven");
-  const [length, setLength] = useState<"short" | "standard" | "detailed">("standard");
+  const [length, setLength] = useState<"short" | "standard" | "detailed">(
+    "standard"
+  );
   const [includeBullets, setIncludeBullets] = useState(true);
 
   const [template, setTemplate] = useState<ResumeTemplateId>("modern");
@@ -1260,6 +1393,7 @@ export default function CoverLetterGenerator() {
 
   const [loading, setLoading] = useState(false);
   const [toneLoading, setToneLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
@@ -1280,6 +1414,12 @@ export default function CoverLetterGenerator() {
     setCoverLetterDraft("");
 
     try {
+      // ✅ charge credits (Generate = 5)
+      await chargeCreditsClient({
+        amount: CREDIT_COST_GENERATE,
+        reason: "cover_letter_generate",
+      });
+
       let res: Response;
 
       // Keep requests under Vercel payload limits
@@ -1355,10 +1495,17 @@ export default function CoverLetterGenerator() {
         try {
           payload = JSON.parse(raw) as ApiResp;
         } catch {
-          throw new Error(`Cover letter route returned invalid JSON: ${raw.slice(0, 200)}`);
+          throw new Error(
+            `Cover letter route returned invalid JSON: ${raw.slice(0, 200)}`
+          );
         }
       } else {
-        throw new Error(`Cover letter route returned non-JSON (${contentType}): ${raw.slice(0, 200)}`);
+        throw new Error(
+          `Cover letter route returned non-JSON (${contentType}): ${raw.slice(
+            0,
+            200
+          )}`
+        );
       }
 
       if (!payload.ok) {
@@ -1412,9 +1559,17 @@ export default function CoverLetterGenerator() {
       signatureClosing,
       signatureName: signatureName.trim() ? signatureName : profile.fullName,
     });
-  }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
+  }, [
+    coverLetterDraft,
+    template,
+    profile,
+    includeSignature,
+    signatureClosing,
+    signatureName,
+  ]);
 
-  const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
+  const templateLabel =
+    TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   const navBtn =
     "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
@@ -1441,7 +1596,8 @@ export default function CoverLetterGenerator() {
           <a
             href="https://git-a-job.com/donate"
             target="_blank"
-            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
+bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
           >
             Donate
           </a>
@@ -1458,11 +1614,13 @@ export default function CoverLetterGenerator() {
       </div>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">
+          Git-a-Job: Cover Letter Generator
+        </h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter. Preview
-          renders as a real HTML document (resume-template style). You can edit the letter below and
-          the preview updates live.
+          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
+          Preview renders as a real HTML document (resume-template style). You can edit the letter
+          below and the preview updates live.
         </p>
       </div>
 
@@ -1477,7 +1635,13 @@ export default function CoverLetterGenerator() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <h2 className="text-base font-extrabold">Inputs</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-extrabold">Inputs</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <CreditPill>Generate: {CREDIT_COST_GENERATE} credits</CreditPill>
+              <CreditPill>PDF: {CREDIT_COST_PDF} credits</CreditPill>
+            </div>
+          </div>
 
           <div className="mt-3 grid gap-3">
             {/* File input */}
@@ -1581,31 +1745,41 @@ export default function CoverLetterGenerator() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
-                  onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, fullName: e.target.value }))
+                  }
                   placeholder="Full name"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.locationLine}
-                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, locationLine: e.target.value }))
+                  }
                   placeholder="Location"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.email}
-                  onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, email: e.target.value }))
+                  }
                   placeholder="Email"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.phone}
-                  onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, phone: e.target.value }))
+                  }
                   placeholder="Phone"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.linkedin}
-                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, linkedin: e.target.value }))
+                  }
                   placeholder="LinkedIn"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
                 />
@@ -1711,8 +1885,9 @@ export default function CoverLetterGenerator() {
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
                 className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                title={`Costs ${CREDIT_COST_GENERATE} credits`}
               >
-                {loading ? "Generating…" : "Generate Cover Letter"}
+                {loading ? "Generating…" : `Generate Cover Letter (${CREDIT_COST_GENERATE} credits)`}
               </button>
 
               <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-white/50">
@@ -1744,18 +1919,33 @@ export default function CoverLetterGenerator() {
 
                   <button
                     type="button"
-                    disabled={!coverLetterDraft}
+                    disabled={!coverLetterDraft || pdfLoading}
                     onClick={async () => {
                       if (!coverLetterDraft) return;
+                      setPdfLoading(true);
+                      setError(null);
+
                       try {
-                        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
+                        // ✅ charge credits (PDF = 5)
+                        await chargeCreditsClient({
+                          amount: CREDIT_COST_PDF,
+                          reason: "cover_letter_pdf_download",
+                        });
+
+                        await downloadPdfFromHtml(
+                          "cover-letter.pdf",
+                          coverLetterHtml || ""
+                        );
                       } catch (e: any) {
                         setError(e?.message || "Download failed");
+                      } finally {
+                        setPdfLoading(false);
                       }
                     }}
                     className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    title={`Costs ${CREDIT_COST_PDF} credits`}
                   >
-                    Download PDF
+                    {pdfLoading ? "Preparing PDF…" : `Download PDF (${CREDIT_COST_PDF} credits)`}
                   </button>
                 </div>
               </div>
