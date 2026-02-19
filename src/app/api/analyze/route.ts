@@ -123,30 +123,50 @@ function cleanLeadingBulletGarbage(s: string) {
 
 /** ---------------- FIX #3: build experienceJobs for preview (job blocks) ---------------- */
 
+// date ranges like: "Feb 2025 - Jan 2026", "Oct 2023 – Apr 2024", "May 2019 - Sept 2022"
+function looksLikeDateRangeLine(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+  if (!line) return false;
+
+  const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
+  const year = "(19|20)\\d{2}";
+  const dash = "[–—-]";
+  const re = new RegExp(`\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`, "i");
+  return re.test(line);
+}
+
+// Header variants we see from PDF extraction:
+// 1) "Software Test Engineer 3 — Microsoft / Ascendion | May 2023 - Oct 2023"
+// 2) "Software Test Engineer 3 — Microsoft / Ascendion |"  (dates on next line)
+// 3) Sometimes the '—' becomes '-' in some PDFs
 function looksLikeJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
 
-  // Your resume lines look like: "Software Test Engineer 3 — Microsoft / Ascendion | May 2023 - Oct 2023"
-  if (!line.includes("|")) return false;
   if (!(line.includes("—") || line.includes("-"))) return false;
 
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  // Must have a pipe OR end with pipe (your resume tends to)
+  if (!(line.includes("|") || line.endsWith("|"))) return false;
+
+  // Keep it constrained so we don't treat random lines as headers
+  // title — company | (optional dates)
+  const headerRegex = /^(.{2,90})\s*(—|-)\s*(.{2,140})\s*\|\s*(.{0,60})$/;
   return headerRegex.test(line);
 }
 
 function parseJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  const headerRegex = /^(.{2,90})\s*(—|-)\s*(.{2,140})\s*\|\s*(.{0,60})$/;
   const m = line.match(headerRegex);
   if (!m) return null;
-  return { title: m[1].trim(), company: m[3].trim(), dates: m[4].trim() };
+
+  const title = m[1].trim();
+  const company = m[3].trim();
+  const dates = String(m[4] ?? "").trim();
+
+  return { title, company, dates };
 }
 
-/**
- * Builds experienceJobs from experience text ONLY for preview grouping.
- * Does not change your existing bullets[] extraction logic.
- */
 function buildExperienceJobsForPreviewFromText(experienceText: string) {
   const lines = normalizeResumeText(experienceText)
     .split("\n")
@@ -156,35 +176,98 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   const jobs: any[] = [];
   let current: any | null = null;
 
+  // when header line ends with "|" and dates are on the NEXT line
+  let pendingHeader: { title: string; company: string } | null = null;
+
+  const pushCurrent = () => {
+    if (current && Array.isArray(current.bullets) && current.bullets.length) jobs.push(current);
+    current = null;
+  };
+
   for (const raw of lines) {
     const line = String(raw || "").trim();
+    if (!line) continue;
+
+    // If we previously saw a header without dates, the next date-range line completes it
+    if (pendingHeader && looksLikeDateRangeLine(line)) {
+      pushCurrent();
+      current = {
+        id: `job_${jobs.length + 1}`,
+        title: pendingHeader.title,
+        company: pendingHeader.company,
+        dates: line.trim(),
+        location: "",
+        bullets: [],
+      };
+      pendingHeader = null;
+      continue;
+    }
 
     if (looksLikeJobHeaderLine(line)) {
       const parsed = parseJobHeaderLine(line);
       if (parsed) {
-        if (current && current.bullets.length) jobs.push(current);
+        const dates = parsed.dates;
+
+        // If dates missing (header ends with "|" only), stash header and wait for next line
+        if (!dates) {
+          pendingHeader = { title: parsed.title, company: parsed.company };
+          // Don't push current yet; date line might be next
+          continue;
+        }
+
+        // Normal header with dates present
+        pushCurrent();
         current = {
           id: `job_${jobs.length + 1}`,
           title: parsed.title,
           company: parsed.company,
-          dates: parsed.dates,
+          dates,
           location: "",
           bullets: [],
         };
+        pendingHeader = null;
       }
       continue;
     }
 
+    // If we hit a non-date line after a pending header, still create the job block (dates unknown)
+    if (pendingHeader) {
+      pushCurrent();
+      current = {
+        id: `job_${jobs.length + 1}`,
+        title: pendingHeader.title,
+        company: pendingHeader.company,
+        dates: "",
+        location: "",
+        bullets: [],
+      };
+      pendingHeader = null;
+      // fallthrough to treat current line as bullet or ignore
+    }
+
     if (!current) continue;
 
-    // Only capture bullet lines for job blocks (avoid swallowing random content)
+    // Capture bullet lines
     if (/^[•\u2022\u00B7o-]\s+/.test(line)) {
       const b = cleanLeadingBulletGarbage(line);
       if (b && !looksLikeContactOrReferenceLine(b)) current.bullets.push(b);
     }
   }
 
-  if (current && current.bullets.length) jobs.push(current);
+  // flush
+  if (pendingHeader) {
+    pushCurrent();
+    current = {
+      id: `job_${jobs.length + 1}`,
+      title: pendingHeader.title,
+      company: pendingHeader.company,
+      dates: "",
+      location: "",
+      bullets: [],
+    };
+    pendingHeader = null;
+  }
+  pushCurrent();
 
   // Deduplicate bullets inside each job
   for (const j of jobs) {
@@ -198,6 +281,25 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   }
 
   return jobs;
+}
+
+function jobsLookPlaceholder(jobs: any[]) {
+  const arr = Array.isArray(jobs) ? jobs : [];
+  if (!arr.length) return true;
+
+  // If the majority are just "Company"/"Role", treat as placeholder
+  let placeholderCount = 0;
+  for (const j of arr) {
+    const company = String(j?.company ?? "").trim();
+    const title = String(j?.title ?? "").trim();
+    if (!company || !title) {
+      placeholderCount++;
+      continue;
+    }
+    if (company === "Company" && title === "Role") placeholderCount++;
+  }
+
+  return placeholderCount / arr.length >= 0.6;
 }
 
 /** ---------------- Magic-byte sniffing ---------------- */
@@ -331,7 +433,7 @@ function extractExperienceSection(fullText: string) {
 function extractMetaBlocks(fullText: string) {
   const text = normalizeResumeText(fullText);
 
-  // FIX #2: normalize line prefixes (kills "• - Delegated..." dupes)
+  // normalize line prefixes (kills "• - Delegated..." dupes)
   const lines = text
     .split("\n")
     .map((l) => cleanLeadingBulletGarbage(l))
@@ -408,7 +510,6 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
-// Helps preserve bullet structure for analyze (the reason cover-letter “works” but analyze fails to find bullets)
 function normalizePdfLine(s: string) {
   return String(s || "")
     .replace(/\u00A0/g, " ")
@@ -426,7 +527,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // Keep identical behavior to cover-letter: set a workerSrc
     if (pdfjs?.GlobalWorkerOptions) {
       pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
     }
@@ -444,9 +544,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-
-      // IMPORTANT: preserve line endings / structure.
-      // pdfjs items often come as a flat list — we reconstruct lines via hasEOL and Y-position grouping.
       const content = await page.getTextContent();
 
       const items: any[] = Array.isArray(content?.items) ? content.items : [];
@@ -457,8 +554,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
       type Line = { y: number; parts: string[] };
       const lines: Line[] = [];
-
-      // tolerance in PDF “text space” units; higher = more aggressive merging
       const Y_TOL = 2.0;
 
       let currentLine: Line | null = null;
@@ -474,7 +569,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
         const str = String(it?.str ?? "");
         const text = normalizePdfLine(str);
         if (!text) {
-          // even if empty, respect hasEOL sometimes
           if (it?.hasEOL) flushCurrent();
           continue;
         }
@@ -493,15 +587,11 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
           }
         }
 
-        // pdfjs sometimes explicitly flags end-of-line
-        if (it?.hasEOL) {
-          flushCurrent();
-        }
+        if (it?.hasEOL) flushCurrent();
       }
       flushCurrent();
 
       const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
-
       out += pageLines.join("\n") + "\n\n";
     }
 
@@ -787,7 +877,7 @@ export async function POST(req: Request) {
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
 
-    // FIX #1: provide highlights (UI expects this)
+    // ✅ FIX #1: highlights for UI
     const highlights = {
       gamesShipped: metaBlocks.gamesShipped,
       keyMetrics: metaBlocks.metrics,
@@ -972,21 +1062,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // FIX #3: If bullets exist but jobs are empty, build experienceJobs ONLY for preview grouping.
-    if ((!experienceJobs || experienceJobs.length === 0) && bullets.length) {
+    // ✅ FIX #3 (real fix): if jobs are placeholders, rebuild jobs for preview from text
+    if (bullets.length && jobsLookPlaceholder(experienceJobs)) {
       const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
       if (previewJobs.length) {
         experienceJobs = previewJobs;
-
-        // Map bulletJobIds to these jobs if they were all fallback/default
-        const hasRealIds = bulletJobIds.some((id) => id && id !== "job_default");
-        if (!hasRealIds && experienceJobs.length) {
-          const rebuilt: string[] = [];
-          for (const job of experienceJobs) {
-            for (const _b of job.bullets || []) rebuilt.push(job.id);
-          }
-          if (rebuilt.length) bulletJobIds = rebuilt.slice(0, bullets.length);
-        }
       }
     }
 
@@ -1053,7 +1133,7 @@ export async function POST(req: Request) {
       rewritePlan,
       metaBlocks,
 
-      // FIX #1: provide highlights for the UI
+      // ✅ FIX #1: highlights for UI
       highlights,
 
       debug: {
@@ -1074,13 +1154,13 @@ export async function POST(req: Request) {
         metaMetricsCount: metaBlocks.metrics.length,
         maxFileMb: MAX_FILE_MB,
         blobDebug,
+        jobsWerePlaceholder: jobsLookPlaceholder(strict1?.jobs ? normalizeJobs(strict1.jobs) : []),
       },
     });
   } catch (e: any) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
 
-    // ✅ Refund if we charged and then something blew up
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
