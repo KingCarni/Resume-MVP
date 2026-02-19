@@ -243,19 +243,10 @@ function extractExperienceSection(fullText: string) {
 }
 
 /** Option B: capture metadata blocks (not bullets) */
-function cleanLeadingBulletGarbage(s: string) {
-  // handles: "• foo", "- foo", "• - foo", "o foo"
-  return String(s || "")
-    .replace(/^[\s•\u2022\u00B7o-]+/g, "")
-    .replace(/^\-\s+/g, "")
-    .trim();
-}
-
 function extractMetaBlocks(fullText: string) {
   const text = normalizeResumeText(fullText);
   const lines = text
     .split("\n")
-    .map((l) => cleanLeadingBulletGarbage(l))
     .map((l) => l.trim())
     .filter(Boolean);
 
@@ -266,47 +257,31 @@ function extractMetaBlocks(fullText: string) {
   const gamesShipped: string[] = [];
   const metrics: string[] = [];
 
-  const seenGames = new Set<string>();
-  const seenMetrics = new Set<string>();
-
   for (const l0 of lines) {
     const l = l0.replace(/\s+/g, " ").trim();
     if (!l) continue;
 
     if (gamesShippedRegex.test(l)) {
-      const key = normalizeForContains(l);
-      if (!seenGames.has(key)) {
-        seenGames.add(key);
-        gamesShipped.push(l);
-      }
+      gamesShipped.push(l);
       continue;
     }
 
-    if (l.length <= 140 && metricLikeRegex.test(l)) {
+    if (l.length <= 110 && metricLikeRegex.test(l)) {
       if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l)) continue;
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
 
-      const key = normalizeForContains(l);
-      if (!seenMetrics.has(key)) {
-        seenMetrics.add(key);
-        metrics.push(l);
-      }
+      metrics.push(l);
       continue;
     }
   }
 
   return {
-    gamesShipped: gamesShipped.slice(0, 30),
-    metrics: metrics.slice(0, 50),
+    gamesShipped: Array.from(new Set(gamesShipped)).slice(0, 30),
+    metrics: Array.from(new Set(metrics)).slice(0, 50),
   };
 }
 
-/** ---------------- PDF extraction (leave as-is in your current working state) ----------------
- * NOTE: You said cover letter is working properly and you want to revert worker experiments.
- * So: DO NOT change your PDF strategy here unless you're actively testing it.
- *
- * If your current PDF extraction works, keep it. If not, we can swap to the same extractor cover-letter uses.
- */
+/** ---------------- PDF extraction (match cover-letter behavior, but preserve lines for bullets) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -317,7 +292,6 @@ async function ensurePdfJsPolyfills() {
       // ignore
     }
   }
-
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2DStub {};
   }
@@ -335,6 +309,14 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
+// Helps preserve bullet structure for analyze (the reason cover-letter “works” but analyze fails to find bullets)
+function normalizePdfLine(s: string) {
+  return String(s || "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
     await ensurePdfJsPolyfills();
@@ -345,16 +327,14 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // IMPORTANT: keep no-worker behavior (this was your earlier stable direction)
+    // Keep identical behavior to cover-letter: set a workerSrc
     if (pdfjs?.GlobalWorkerOptions) {
-      // MUST be a string; undefined causes workerSrc errors
-      pdfjs.GlobalWorkerOptions.workerSrc = "";
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
     }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true,
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -362,11 +342,70 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     const pdf = await loadingTask.promise;
 
     let out = "";
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
+
+      // IMPORTANT: preserve line endings / structure.
+      // pdfjs items often come as a flat list — we reconstruct lines via hasEOL and Y-position grouping.
       const content = await page.getTextContent();
-      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
-      out += strings.join(" ") + "\n";
+
+      const items: any[] = Array.isArray(content?.items) ? content.items : [];
+      if (!items.length) {
+        out += "\n";
+        continue;
+      }
+
+      type Line = { y: number; parts: string[] };
+      const lines: Line[] = [];
+
+      // tolerance in PDF “text space” units; higher = more aggressive merging
+      const Y_TOL = 2.0;
+
+      let currentLine: Line | null = null;
+
+      const flushCurrent = () => {
+        if (!currentLine) return;
+        const lineText = normalizePdfLine(currentLine.parts.join(" "));
+        if (lineText) lines.push({ y: currentLine.y, parts: [lineText] });
+        currentLine = null;
+      };
+
+      for (const it of items) {
+        const str = String(it?.str ?? "");
+        const text = normalizePdfLine(str);
+        if (!text) {
+          // even if empty, respect hasEOL sometimes
+          if (it?.hasEOL) flushCurrent();
+          continue;
+        }
+
+        const y = Array.isArray(it?.transform) ? Number(it.transform[5] ?? 0) : 0;
+
+        if (!currentLine) {
+          currentLine = { y, parts: [text] };
+        } else {
+          const sameLine = Math.abs(currentLine.y - y) <= Y_TOL;
+          if (!sameLine) {
+            flushCurrent();
+            currentLine = { y, parts: [text] };
+          } else {
+            currentLine.parts.push(text);
+          }
+        }
+
+        // pdfjs sometimes explicitly flags end-of-line
+        if (it?.hasEOL) {
+          flushCurrent();
+        }
+      }
+      flushCurrent();
+
+      // Sort top-to-bottom (PDF Y often increases upward; but relative order here is “good enough”)
+      // If you see reversed lines, flip this comparator.
+      const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
+
+      out += pageLines.join("\n") + "\n\n";
     }
 
     return out;
@@ -520,113 +559,6 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
     .filter((x): x is ResumeBullet => Boolean(x));
 }
 
-/** ---------------- Plain-text fallback job parsing (PDF-friendly) ---------------- */
-
-function looksLikeJobHeaderLine(lineRaw: string) {
-  const line = String(lineRaw || "").trim();
-  if (!line) return false;
-  // Must contain em dash / dash between title & company, and a "|" before dates
-  if (!line.includes("|")) return false;
-  if (!(line.includes("—") || line.includes("-"))) return false;
-  // Typical: "QA Lead — Prodigy Education ... | Feb 2025 - Jan 2026"
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
-  return headerRegex.test(line);
-}
-
-function parseJobHeaderLine(lineRaw: string) {
-  const line = String(lineRaw || "").trim();
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
-  const m = line.match(headerRegex);
-  if (!m) return null;
-  const title = m[1].trim();
-  const company = m[3].trim();
-  const dates = m[4].trim();
-  return { title, company, dates };
-}
-
-function isLikelySectionHeader(lineRaw: string) {
-  const l = String(lineRaw || "").trim().toLowerCase();
-  if (!l) return true;
-  if (["highlights", "experience", "experi e n ce", "key metrics", "games shipped"].includes(l)) return true;
-  // tools line is not a bullet
-  if (/^tools\s*:/i.test(l)) return true;
-  return false;
-}
-
-function looksLikeBulletishLine(lineRaw: string) {
-  const l = cleanLeadingBulletGarbage(lineRaw);
-  if (!l) return false;
-  if (isLikelySectionHeader(l)) return false;
-  if (looksLikeJobHeaderLine(l)) return false;
-  if (looksLikeContactOrReferenceLine(l)) return false;
-
-  // avoid grabbing random single-word noise
-  if (l.length < 12) return false;
-
-  // avoid swallowing "Company — Role" placeholders if any
-  if (/^company\s+—\s+role/i.test(l)) return false;
-
-  return true;
-}
-
-function fallbackExtractJobsFromPlainText(experienceText: string) {
-  const lines = normalizeResumeText(experienceText)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const jobs: any[] = [];
-  let current: any | null = null;
-
-  for (const raw of lines) {
-    const line = cleanLeadingBulletGarbage(raw);
-
-    if (looksLikeJobHeaderLine(line)) {
-      const parsed = parseJobHeaderLine(line);
-      if (parsed) {
-        if (current && Array.isArray(current.bullets) && current.bullets.length) jobs.push(current);
-        const id = `job_${jobs.length + 1}`;
-        current = {
-          id,
-          title: parsed.title,
-          company: parsed.company,
-          dates: parsed.dates,
-          location: "",
-          bullets: [] as string[],
-        };
-        continue;
-      }
-    }
-
-    if (!current) continue;
-
-    // stop conditions inside experience slice (rare but safe)
-    if (isLikelySectionHeader(line)) continue;
-
-    if (looksLikeBulletishLine(line)) {
-      current.bullets.push(line);
-    }
-  }
-
-  if (current && Array.isArray(current.bullets) && current.bullets.length) jobs.push(current);
-
-  // final cleanup + dedupe bullets within each job
-  for (const j of jobs) {
-    const seen = new Set<string>();
-    j.bullets = (j.bullets || [])
-      .map((b: string) => b.replace(/\s+/g, " ").trim())
-      .filter(Boolean)
-      .filter((b: string) => {
-        const key = normalizeForContains(b);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-  }
-
-  return jobs;
-}
-
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
@@ -758,14 +690,6 @@ export async function POST(req: Request) {
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
 
-    // ✅ Provide a stable highlights field for the UI (derived from metaBlocks)
-    const highlights = {
-      gamesShipped: metaBlocks.gamesShipped,
-      keyMetrics: metaBlocks.metrics,
-      // optional convenience array (some UIs just want a single list)
-      items: [...metaBlocks.gamesShipped, ...metaBlocks.metrics].slice(0, 12),
-    };
-
     const experienceSlice = extractExperienceSection(resumeText);
     const bulletSourceText = onlyExperienceBullets ? experienceSlice.experienceText : resumeText;
 
@@ -887,28 +811,6 @@ export async function POST(req: Request) {
       bulletJobIds = bullets.map(() => fallbackJobId);
     }
 
-    // 4) IMPORTANT NEW: if we have bullets but NO jobs, build jobs from plain text headers (PDF-friendly)
-    if ((!experienceJobs || experienceJobs.length === 0) && bullets.length) {
-      const fallbackJobs = fallbackExtractJobsFromPlainText(experienceSlice.experienceText || bulletSourceText);
-      if (fallbackJobs.length) {
-        experienceJobs = normalizeJobs(fallbackJobs);
-        const flat = flattenFromJobs(experienceJobs);
-        const filtered = filterBadBullets(flat.outBullets);
-
-        bullets = filtered;
-        bulletJobIds = flat.outJobIds.filter((_, idx) => {
-          const t = normalizeForContains(flat.outBullets[idx] || "");
-          return t && new Set(filtered.map((b) => normalizeForContains(b))).has(t);
-        });
-
-        if (bulletJobIds.length !== bullets.length) {
-          // ensure 1:1 mapping
-          const fallbackJobId = experienceJobs[0]?.id || "job_default";
-          bulletJobIds = bullets.map(() => fallbackJobId);
-        }
-      }
-    }
-
     if (!bullets.length) {
       // ✅ Refund (user cannot proceed; parsing failure)
       try {
@@ -1020,9 +922,6 @@ export async function POST(req: Request) {
       balance: charged.balance,
 
       ...analysis,
-
-      // ✅ NEW: stable highlights block for UI
-      highlights,
 
       experienceJobs,
       bullets,
