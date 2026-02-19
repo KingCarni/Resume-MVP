@@ -115,6 +115,91 @@ function filterBadBullets(arr: string[]) {
     .filter((b) => !looksLikeContactOrReferenceLine(b));
 }
 
+/** ---------------- FIX #2: clean leading bullet garbage + de-dupe helpers ---------------- */
+
+function cleanLeadingBulletGarbage(s: string) {
+  return String(s || "").replace(/^[\s•\u2022\u00B7o-]+/g, "").trim();
+}
+
+/** ---------------- FIX #3: build experienceJobs for preview (job blocks) ---------------- */
+
+function looksLikeJobHeaderLine(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+  if (!line) return false;
+
+  // Your resume lines look like: "Software Test Engineer 3 — Microsoft / Ascendion | May 2023 - Oct 2023"
+  if (!line.includes("|")) return false;
+  if (!(line.includes("—") || line.includes("-"))) return false;
+
+  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  return headerRegex.test(line);
+}
+
+function parseJobHeaderLine(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  const m = line.match(headerRegex);
+  if (!m) return null;
+  return { title: m[1].trim(), company: m[3].trim(), dates: m[4].trim() };
+}
+
+/**
+ * Builds experienceJobs from experience text ONLY for preview grouping.
+ * Does not change your existing bullets[] extraction logic.
+ */
+function buildExperienceJobsForPreviewFromText(experienceText: string) {
+  const lines = normalizeResumeText(experienceText)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const jobs: any[] = [];
+  let current: any | null = null;
+
+  for (const raw of lines) {
+    const line = String(raw || "").trim();
+
+    if (looksLikeJobHeaderLine(line)) {
+      const parsed = parseJobHeaderLine(line);
+      if (parsed) {
+        if (current && current.bullets.length) jobs.push(current);
+        current = {
+          id: `job_${jobs.length + 1}`,
+          title: parsed.title,
+          company: parsed.company,
+          dates: parsed.dates,
+          location: "",
+          bullets: [],
+        };
+      }
+      continue;
+    }
+
+    if (!current) continue;
+
+    // Only capture bullet lines for job blocks (avoid swallowing random content)
+    if (/^[•\u2022\u00B7o-]\s+/.test(line)) {
+      const b = cleanLeadingBulletGarbage(line);
+      if (b && !looksLikeContactOrReferenceLine(b)) current.bullets.push(b);
+    }
+  }
+
+  if (current && current.bullets.length) jobs.push(current);
+
+  // Deduplicate bullets inside each job
+  for (const j of jobs) {
+    const seen = new Set<string>();
+    j.bullets = (j.bullets || []).filter((b: string) => {
+      const k = normalizeForContains(b);
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  return jobs;
+}
+
 /** ---------------- Magic-byte sniffing ---------------- */
 
 type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
@@ -245,8 +330,11 @@ function extractExperienceSection(fullText: string) {
 /** Option B: capture metadata blocks (not bullets) */
 function extractMetaBlocks(fullText: string) {
   const text = normalizeResumeText(fullText);
+
+  // FIX #2: normalize line prefixes (kills "• - Delegated..." dupes)
   const lines = text
     .split("\n")
+    .map((l) => cleanLeadingBulletGarbage(l))
     .map((l) => l.trim())
     .filter(Boolean);
 
@@ -257,12 +345,19 @@ function extractMetaBlocks(fullText: string) {
   const gamesShipped: string[] = [];
   const metrics: string[] = [];
 
+  const seenGames = new Set<string>();
+  const seenMetrics = new Set<string>();
+
   for (const l0 of lines) {
     const l = l0.replace(/\s+/g, " ").trim();
     if (!l) continue;
 
     if (gamesShippedRegex.test(l)) {
-      gamesShipped.push(l);
+      const k = normalizeForContains(l);
+      if (!seenGames.has(k)) {
+        seenGames.add(k);
+        gamesShipped.push(l);
+      }
       continue;
     }
 
@@ -270,7 +365,11 @@ function extractMetaBlocks(fullText: string) {
       if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l)) continue;
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
 
-      metrics.push(l);
+      const k = normalizeForContains(l);
+      if (!seenMetrics.has(k)) {
+        seenMetrics.add(k);
+        metrics.push(l);
+      }
       continue;
     }
   }
@@ -401,8 +500,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
       }
       flushCurrent();
 
-      // Sort top-to-bottom (PDF Y often increases upward; but relative order here is “good enough”)
-      // If you see reversed lines, flip this comparator.
       const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
 
       out += pageLines.join("\n") + "\n\n";
@@ -690,6 +787,12 @@ export async function POST(req: Request) {
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
 
+    // FIX #1: provide highlights (UI expects this)
+    const highlights = {
+      gamesShipped: metaBlocks.gamesShipped,
+      keyMetrics: metaBlocks.metrics,
+    };
+
     const experienceSlice = extractExperienceSection(resumeText);
     const bulletSourceText = onlyExperienceBullets ? experienceSlice.experienceText : resumeText;
 
@@ -869,6 +972,14 @@ export async function POST(req: Request) {
       }
     }
 
+    // FIX #3: If bullets exist but jobs are empty, build experienceJobs ONLY for preview grouping.
+    if ((!experienceJobs || experienceJobs.length === 0) && bullets.length) {
+      const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
+      if (previewJobs.length) {
+        experienceJobs = previewJobs;
+      }
+    }
+
     // Suggestions + plan
     let bulletSuggestions: any[] = [];
     let weakBullets: any[] = [];
@@ -931,6 +1042,9 @@ export async function POST(req: Request) {
       weakBullets,
       rewritePlan,
       metaBlocks,
+
+      // FIX #1: provide highlights for the UI
+      highlights,
 
       debug: {
         contentType,
