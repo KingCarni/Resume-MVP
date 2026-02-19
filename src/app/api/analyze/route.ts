@@ -153,6 +153,8 @@ function friendlyUnsupportedDocMsg(extra?: string) {
   );
 }
 
+/** ---------------- DOCX bullet extraction ---------------- */
+
 function extractLiText(html: string): string[] {
   const matches = [...String(html ?? "").matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
   const bullets = matches
@@ -281,58 +283,56 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, Vercel-safe) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, workerless, Node-safe) ---------------- */
 
-async function ensurePdfPolyfills() {
-  // DOMMatrix
+async function ensurePdfJsPolyfills() {
+  // pdfjs v5 can touch DOMMatrix in some code paths even for text extraction.
   if (!(globalThis as any).DOMMatrix) {
     try {
       const dm: any = await import("dommatrix");
       (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
     } catch {
-      // leave undefined; pdfjs may still work depending on input
+      // leave it missing; we'll fail with a clear error below if needed
     }
   }
 
-  // ImageData (pdfjs sometimes probes this)
+  // Minimal stubs. We are NOT rendering; we only need these to exist so pdfjs doesn't crash.
+  if (!(globalThis as any).Path2D) {
+    (globalThis as any).Path2D = class Path2DStub {};
+  }
   if (!(globalThis as any).ImageData) {
-    (globalThis as any).ImageData = class ImageData {
+    (globalThis as any).ImageData = class ImageDataStub {
       data: Uint8ClampedArray;
       width: number;
       height: number;
-      constructor(dataOrWidth: any, width?: any, height?: any) {
-        if (typeof dataOrWidth === "number") {
-          this.width = dataOrWidth;
-          this.height = Number(width ?? 0);
-          this.data = new Uint8ClampedArray(this.width * this.height * 4);
-        } else {
-          this.data = dataOrWidth as Uint8ClampedArray;
-          this.width = Number(width ?? 0);
-          this.height = Number(height ?? 0);
-        }
+      constructor(data: any, width: number, height?: number) {
+        this.data = data instanceof Uint8ClampedArray ? data : new Uint8ClampedArray(data || []);
+        this.width = Number(width || 0);
+        this.height = Number(height ?? 0);
       }
-    };
-  }
-
-  // Path2D (pdfjs sometimes probes this)
-  if (!(globalThis as any).Path2D) {
-    (globalThis as any).Path2D = class Path2D {
-      constructor(_?: any) {}
-      addPath(_?: any) {}
     };
   }
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfPolyfills();
+    await ensurePdfJsPolyfills();
 
+    if (!(globalThis as any).DOMMatrix) {
+      throw new Error("DOMMatrix is not defined (polyfill failed).");
+    }
+
+    // Legacy build is best for Node/Vercel.
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true, // ✅ avoids workerSrc issues entirely
+
+      // Critical: do NOT use workers in Next/Vercel bundle environment
+      disableWorker: true,
+
+      // Avoid extra fetches / font embedding shenanigans
       useSystemFonts: true,
       disableFontFace: true,
     });
