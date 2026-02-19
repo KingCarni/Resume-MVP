@@ -322,9 +322,10 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // MUST be a string (undefined triggers “Invalid workerSrc type”)
+    // Hard-disable workers in Node to avoid workerSrc/workerPort runtime issues
     if (pdfjs?.GlobalWorkerOptions) {
       pdfjs.GlobalWorkerOptions.workerSrc = "";
+      pdfjs.GlobalWorkerOptions.workerPort = null;
     }
 
     const loadingTask = pdfjs.getDocument({
@@ -776,7 +777,6 @@ export async function POST(req: Request) {
             debug: {
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
-              experienceLen: experienceSlice.experienceText.length,
               bulletsFromFileCount: (bulletsFromFile || []).length,
               seededFileBulletsCount: seededFileBullets.length,
               blobDebug,
@@ -795,7 +795,6 @@ export async function POST(req: Request) {
             debug: {
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
-              experienceLen: experienceSlice.experienceText.length,
               bulletsFromFileCount: (bulletsFromFile || []).length,
               seededFileBulletsCount: seededFileBullets.length,
               blobDebug,

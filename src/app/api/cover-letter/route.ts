@@ -139,8 +139,10 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
+    // Hard-disable workers in Node to avoid workerSrc/workerPort runtime issues
     if (pdfjs?.GlobalWorkerOptions) {
       pdfjs.GlobalWorkerOptions.workerSrc = "";
+      pdfjs.GlobalWorkerOptions.workerPort = null;
     }
 
     const loadingTask = pdfjs.getDocument({
@@ -532,7 +534,12 @@ export async function POST(req: Request) {
         });
 
         return okJson(
-          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
+          {
+            ok: false,
+            error: `Blocked term detected in output: "${hit}". Try again.`,
+            refunded: true,
+            balance: refunded.balance,
+          },
           { status: 422 }
         );
       }
