@@ -2,7 +2,6 @@
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { createRequire } from "module";
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -55,19 +54,12 @@ function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
 }
 
-function collapseSpacedCapsWords(s: string) {
-  return String(s ?? "").replace(/(?:\b[A-Z]\s){2,}[A-Z]\b/g, (m) => m.replace(/\s+/g, ""));
-}
-
 function normalizeResumeText(input: unknown) {
-  const raw0 = String(input ?? "");
-  const raw = collapseSpacedCapsWords(raw0);
-
+  const raw = String(input ?? "");
   return raw
     .replace(/\r\n/g, "\n")
     .replace(/\u00A0/g, " ")
     .replace(/[ \t]+/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -109,7 +101,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER, Vercel-safe) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, WORKER FIXED for Vercel/Next) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -145,19 +137,19 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
       throw new Error("DOMMatrix is not defined (polyfill failed).");
     }
 
-    const pdfjsMod: any = await import("pdfjs-dist/legacy/build/pdf.js");
-    const pdfjs: any = pdfjsMod?.default ?? pdfjsMod;
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    const require = createRequire(import.meta.url);
-    const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+    // ✅ Critical: point pdfjs at a real bundled worker URL (prevents /chunks/pdf.worker.mjs missing on Vercel)
     if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/legacy/build/pdf.worker.mjs",
+        import.meta.url
+      ).toString();
     }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true,
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -167,22 +159,12 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     let out = "";
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-      const content = await page.getTextContent({ normalizeWhitespace: true });
-
-      const items = (content?.items || []) as any[];
-      let pageText = "";
-
-      for (const it of items) {
-        const s = String(it?.str ?? "");
-        if (!s) continue;
-        pageText += s;
-        pageText += it?.hasEOL ? "\n" : " ";
-      }
-
-      out += pageText + "\n";
+      const content = await page.getTextContent();
+      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
+      out += strings.join(" ") + "\n";
     }
 
-    return normalizeResumeText(out);
+    return out;
   } catch (err: any) {
     const msg = err?.message ? String(err.message) : String(err);
     throw new Error(`PDF parse failed: ${msg}`);
@@ -614,6 +596,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
