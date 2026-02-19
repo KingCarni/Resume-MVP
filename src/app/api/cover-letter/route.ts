@@ -102,8 +102,42 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
 
 /** --------- PDF extraction (pdfjs-dist, Vercel-safe) --------- */
 
+async function ensurePdfJsPolyfills() {
+  if (!(globalThis as any).DOMMatrix) {
+    const dm: any = await import("dommatrix");
+    (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+  }
+
+  if (!(globalThis as any).ImageData) {
+    (globalThis as any).ImageData = class ImageData {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(dataOrWidth: any, width?: any, height?: any) {
+        if (typeof dataOrWidth === "number") {
+          this.width = dataOrWidth;
+          this.height = Number(width) || 0;
+          this.data = new Uint8ClampedArray(this.width * this.height * 4);
+        } else {
+          this.data = dataOrWidth;
+          this.width = Number(width) || 0;
+          this.height = Number(height) || 0;
+        }
+      }
+    };
+  }
+
+  if (!(globalThis as any).Path2D) {
+    (globalThis as any).Path2D = class Path2D {
+      addPath() {}
+    };
+  }
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
+    await ensurePdfJsPolyfills();
+
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     if (pdfjs?.GlobalWorkerOptions) {
@@ -326,6 +360,7 @@ export async function POST(req: Request) {
     let blockedTerms: string[] = [];
     let targetTerms: string[] = [];
 
+    // --- Parse inputs first (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -482,6 +517,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Best-effort post-check: blocked terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
@@ -556,6 +592,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 

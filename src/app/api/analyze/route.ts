@@ -283,8 +283,44 @@ function extractMetaBlocks(fullText: string) {
 
 /** ---------------- PDF extraction (pdfjs-dist, Vercel-safe) ---------------- */
 
+async function ensurePdfJsPolyfills() {
+  // DOMMatrix is required by pdfjs for text positioning
+  if (!(globalThis as any).DOMMatrix) {
+    const dm: any = await import("dommatrix");
+    (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+  }
+
+  // Rendering-only in browsers, but pdfjs may touch these paths. Stubs prevent crashes.
+  if (!(globalThis as any).ImageData) {
+    (globalThis as any).ImageData = class ImageData {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(dataOrWidth: any, width?: any, height?: any) {
+        if (typeof dataOrWidth === "number") {
+          this.width = dataOrWidth;
+          this.height = Number(width) || 0;
+          this.data = new Uint8ClampedArray(this.width * this.height * 4);
+        } else {
+          this.data = dataOrWidth;
+          this.width = Number(width) || 0;
+          this.height = Number(height) || 0;
+        }
+      }
+    };
+  }
+
+  if (!(globalThis as any).Path2D) {
+    (globalThis as any).Path2D = class Path2D {
+      addPath() {}
+    };
+  }
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
+    await ensurePdfJsPolyfills();
+
     // Use legacy build for Node/Vercel compatibility
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
@@ -296,7 +332,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      // stop Vercel from trying to fetch cMaps or workers
       useSystemFonts: true,
       disableFontFace: true,
     });
