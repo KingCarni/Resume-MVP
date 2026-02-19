@@ -281,10 +281,9 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER, with polyfills) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, workerSrc FIXED for v5+) ---------------- */
 
 async function ensurePdfJsPolyfills() {
-  // DOMMatrix is the big one that breaks on Vercel
   if (!(globalThis as any).DOMMatrix) {
     try {
       const dm: any = await import("dommatrix");
@@ -294,7 +293,6 @@ async function ensurePdfJsPolyfills() {
     }
   }
 
-  // These are sometimes referenced by pdfjs even for text extraction
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2DStub {};
   }
@@ -312,26 +310,46 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
+async function loadPdfJsWithWorkerSrc(): Promise<any> {
+  await ensurePdfJsPolyfills();
+
+  if (!(globalThis as any).DOMMatrix) {
+    throw new Error("DOMMatrix is not defined (polyfill failed).");
+  }
+
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  // pdfjs v5+ requires workerSrc even for “fake worker” mode in Node
+  try {
+    const { createRequire } = await import("module");
+    const { pathToFileURL } = await import("url");
+    const require = createRequire(import.meta.url);
+
+    let workerPath = "";
+    try {
+      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    } catch {
+      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+    }
+
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
+    }
+  } catch {
+    // If this fails, pdfjs will likely throw the workerSrc error again
+  }
+
+  return pdfjs;
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfJsPolyfills();
-
-    if (!(globalThis as any).DOMMatrix) {
-      throw new Error("DOMMatrix is not defined (polyfill failed).");
-    }
-
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    // Hard-disable workers in Node to avoid workerSrc/workerPort runtime issues
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = "";
-      pdfjs.GlobalWorkerOptions.workerPort = null;
-    }
+    const pdfjs = await loadPdfJsWithWorkerSrc();
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true,
+      disableWorker: true, // still fine, but workerSrc must be set in v5+
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -777,6 +795,7 @@ export async function POST(req: Request) {
             debug: {
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
+              experienceLen: experienceSlice.experienceText.length,
               bulletsFromFileCount: (bulletsFromFile || []).length,
               seededFileBulletsCount: seededFileBullets.length,
               blobDebug,
@@ -795,6 +814,7 @@ export async function POST(req: Request) {
             debug: {
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
+              experienceLen: experienceSlice.experienceText.length,
               bulletsFromFileCount: (bulletsFromFile || []).length,
               seededFileBulletsCount: seededFileBullets.length,
               blobDebug,

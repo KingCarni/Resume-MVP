@@ -101,7 +101,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER, with polyfills) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, workerSrc FIXED for v5+) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -129,21 +129,40 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
+async function loadPdfJsWithWorkerSrc(): Promise<any> {
+  await ensurePdfJsPolyfills();
+
+  if (!(globalThis as any).DOMMatrix) {
+    throw new Error("DOMMatrix is not defined (polyfill failed).");
+  }
+
+  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  try {
+    const { createRequire } = await import("module");
+    const { pathToFileURL } = await import("url");
+    const require = createRequire(import.meta.url);
+
+    let workerPath = "";
+    try {
+      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    } catch {
+      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+    }
+
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
+    }
+  } catch {
+    // ignore
+  }
+
+  return pdfjs;
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfJsPolyfills();
-
-    if (!(globalThis as any).DOMMatrix) {
-      throw new Error("DOMMatrix is not defined (polyfill failed).");
-    }
-
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    // Hard-disable workers in Node to avoid workerSrc/workerPort runtime issues
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = "";
-      pdfjs.GlobalWorkerOptions.workerPort = null;
-    }
+    const pdfjs = await loadPdfJsWithWorkerSrc();
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
@@ -595,7 +614,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
