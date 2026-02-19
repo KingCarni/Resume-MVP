@@ -75,6 +75,10 @@ function stripTagsToText(html: string) {
     .trim();
 }
 
+/**
+ * Some inputs (resumeText) can arrive as HTML from the client UI.
+ * This ensures we never pollute the pipeline with <div>/<li> markup.
+ */
 function sanitizeResumeInput(input: unknown) {
   const s = String(input ?? "");
   const looksHtml = /<\/?[a-z][\s\S]*>/i.test(s);
@@ -117,6 +121,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
   try {
     const mod: any = await import("pdf-parse");
 
+    // pdf-parse export shapes vary (CJS/ESM). Accept the common ones.
     const parsePdf =
       (typeof mod === "function" ? mod : null) ??
       (typeof mod?.default === "function" ? mod.default : null) ??
@@ -389,10 +394,7 @@ export async function POST(req: Request) {
 
     if (resumeText.trim().length < MIN_RESUME_CHARS) {
       return okJson(
-        {
-          ok: false,
-          error: "Resume text is missing or too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste resume text.",
-        },
+        { ok: false, error: "Resume text is missing or too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste resume text." },
         { status: 400 }
       );
     }
@@ -459,10 +461,7 @@ export async function POST(req: Request) {
         meta: { cost: chargedCost },
       });
 
-      return okJson(
-        { ok: false, error: "Model returned empty response", refunded: true, balance: refunded.balance },
-        { status: 500 }
-      );
+      return okJson({ ok: false, error: "Model returned empty response", refunded: true, balance: refunded.balance }, { status: 500 });
     }
 
     // Best-effort post-check: blocked terms (refund on failure)
