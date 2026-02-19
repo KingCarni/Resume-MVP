@@ -101,7 +101,7 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, workerSrc FIXED for v5+) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, WORKER FIXED for Vercel/Next) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -129,45 +129,27 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
-async function loadPdfJsWithWorkerSrc(): Promise<any> {
-  await ensurePdfJsPolyfills();
-
-  if (!(globalThis as any).DOMMatrix) {
-    throw new Error("DOMMatrix is not defined (polyfill failed).");
-  }
-
-  const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-  try {
-    const { createRequire } = await import("module");
-    const { pathToFileURL } = await import("url");
-    const require = createRequire(import.meta.url);
-
-    let workerPath = "";
-    try {
-      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-    } catch {
-      workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
-    }
-
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).toString();
-    }
-  } catch {
-    // ignore
-  }
-
-  return pdfjs;
-}
-
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    const pdfjs = await loadPdfJsWithWorkerSrc();
+    await ensurePdfJsPolyfills();
+
+    if (!(globalThis as any).DOMMatrix) {
+      throw new Error("DOMMatrix is not defined (polyfill failed).");
+    }
+
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    // ✅ Critical: point pdfjs at a real bundled worker URL (prevents /chunks/pdf.worker.mjs missing on Vercel)
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/legacy/build/pdf.worker.mjs",
+        import.meta.url
+      ).toString();
+    }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true,
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -614,6 +596,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
