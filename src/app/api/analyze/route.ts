@@ -292,8 +292,14 @@ function extractMetaBlocks(fullText: string) {
 /** ---------------- File extraction ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  // ✅ Lazy-load pdf-parse so module shape can’t crash route boot on Vercel
   try {
+    // ✅ Polyfill DOMMatrix for pdfjs/pdf-parse on Node (Vercel)
+    if (!(globalThis as any).DOMMatrix) {
+      const dm: any = await import("dommatrix");
+      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    }
+
+    // ✅ Lazy-load pdf-parse so module shape can’t crash route boot on Vercel
     const mod: any = await import("pdf-parse");
     const parsePdf =
       (typeof mod === "function" ? mod : null) ??
@@ -448,7 +454,6 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
       if (!text) return null;
 
       const jobId = bulletJobIds?.[i] || fallbackJobId || "job_default";
-
       const b: ResumeBullet = { id: `b${i + 1}`, text, jobId };
       return b;
     })
@@ -498,7 +503,10 @@ export async function POST(req: Request) {
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
           return okJson(
-            { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
+            {
+              ok: false,
+              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
+            },
             { status: 400 }
           );
         }
@@ -799,8 +807,7 @@ export async function POST(req: Request) {
     }
 
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
-      const original =
-        typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
+      const original = typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
       const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
       return {
