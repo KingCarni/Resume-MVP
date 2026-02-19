@@ -281,10 +281,9 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, WORKER FIXED for Vercel/Next) ---------------- */
+/** ---------------- PDF extraction (match cover-letter behavior, but preserve lines for bullets) ---------------- */
 
 async function ensurePdfJsPolyfills() {
-  // DOMMatrix is the big one that breaks on Vercel
   if (!(globalThis as any).DOMMatrix) {
     try {
       const dm: any = await import("dommatrix");
@@ -293,8 +292,6 @@ async function ensurePdfJsPolyfills() {
       // ignore
     }
   }
-
-  // These are sometimes referenced by pdfjs even for text extraction
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2DStub {};
   }
@@ -312,6 +309,14 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
+// Helps preserve bullet structure for analyze (the reason cover-letter “works” but analyze fails to find bullets)
+function normalizePdfLine(s: string) {
+  return String(s || "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
     await ensurePdfJsPolyfills();
@@ -322,12 +327,9 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // ✅ Critical: point pdfjs at a real bundled worker URL (prevents /chunks/pdf.worker.mjs missing on Vercel)
+    // Keep identical behavior to cover-letter: set a workerSrc
     if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/legacy/build/pdf.worker.mjs",
-        import.meta.url
-      ).toString();
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
     }
 
     const loadingTask = pdfjs.getDocument({
@@ -340,11 +342,70 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     const pdf = await loadingTask.promise;
 
     let out = "";
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
+
+      // IMPORTANT: preserve line endings / structure.
+      // pdfjs items often come as a flat list — we reconstruct lines via hasEOL and Y-position grouping.
       const content = await page.getTextContent();
-      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
-      out += strings.join(" ") + "\n";
+
+      const items: any[] = Array.isArray(content?.items) ? content.items : [];
+      if (!items.length) {
+        out += "\n";
+        continue;
+      }
+
+      type Line = { y: number; parts: string[] };
+      const lines: Line[] = [];
+
+      // tolerance in PDF “text space” units; higher = more aggressive merging
+      const Y_TOL = 2.0;
+
+      let currentLine: Line | null = null;
+
+      const flushCurrent = () => {
+        if (!currentLine) return;
+        const lineText = normalizePdfLine(currentLine.parts.join(" "));
+        if (lineText) lines.push({ y: currentLine.y, parts: [lineText] });
+        currentLine = null;
+      };
+
+      for (const it of items) {
+        const str = String(it?.str ?? "");
+        const text = normalizePdfLine(str);
+        if (!text) {
+          // even if empty, respect hasEOL sometimes
+          if (it?.hasEOL) flushCurrent();
+          continue;
+        }
+
+        const y = Array.isArray(it?.transform) ? Number(it.transform[5] ?? 0) : 0;
+
+        if (!currentLine) {
+          currentLine = { y, parts: [text] };
+        } else {
+          const sameLine = Math.abs(currentLine.y - y) <= Y_TOL;
+          if (!sameLine) {
+            flushCurrent();
+            currentLine = { y, parts: [text] };
+          } else {
+            currentLine.parts.push(text);
+          }
+        }
+
+        // pdfjs sometimes explicitly flags end-of-line
+        if (it?.hasEOL) {
+          flushCurrent();
+        }
+      }
+      flushCurrent();
+
+      // Sort top-to-bottom (PDF Y often increases upward; but relative order here is “good enough”)
+      // If you see reversed lines, flip this comparator.
+      const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
+
+      out += pageLines.join("\n") + "\n\n";
     }
 
     return out;
