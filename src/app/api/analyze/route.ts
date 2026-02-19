@@ -15,6 +15,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const BOOT_TAG = "analyze_route_boot_ok";
+
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
@@ -27,6 +28,16 @@ type ResumeBullet = {
   text: string;
   jobId?: string;
 };
+
+function okJson(payload: any, init?: ResponseInit) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      ...(init?.headers || {}),
+    },
+  });
+}
 
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
@@ -55,8 +66,8 @@ function stripTagsToText(html: string) {
 }
 
 /**
- * Some of your inputs (resumeText) can arrive as HTML from the client UI.
- * This ensures we never pollute the analysis pipeline with <div> / <li> markup.
+ * Some inputs (resumeText) can arrive as HTML from the client UI.
+ * This ensures we never pollute the analysis pipeline with <div>/<li> markup.
  */
 function sanitizeResumeInput(input: unknown) {
   const s = String(input ?? "");
@@ -281,10 +292,9 @@ function extractMetaBlocks(fullText: string) {
 /** ---------------- File extraction ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
-  // ✅ Lazy-load pdf-parse so a bad/brittle import can't crash the whole route on boot
+  // ✅ Lazy-load pdf-parse so module shape can’t crash route boot on Vercel
   try {
     const mod: any = await import("pdf-parse");
-
     const parsePdf =
       (typeof mod === "function" ? mod : null) ??
       (typeof mod?.default === "function" ? mod.default : null) ??
@@ -448,7 +458,6 @@ function normalizeBulletsForSuggestions(args: { bullets: string[]; bulletJobIds?
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
-  // If you see this in Vercel logs, the route module booted and POST handler is executing.
   console.log(BOOT_TAG, { at: new Date().toISOString() });
 
   let chargedUserId = "";
@@ -460,10 +469,10 @@ export async function POST(req: Request) {
     // ✅ Require login
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
-    if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    if (!email) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const dbUser = await prisma.user.findUnique({ where: { email } });
-    if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
+    if (!dbUser) return okJson({ ok: false, error: "User not found" }, { status: 401 });
 
     let resumeText = "";
     let jobText = "";
@@ -488,26 +497,22 @@ export async function POST(req: Request) {
 
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.`,
-            },
+          return okJson(
+            { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
             { status: 400 }
           );
         }
 
         const extracted = await extractResumeFromFile(file);
-        resumeText = sanitizeResumeInput(extracted.text); // ✅ sanitize (in case upstream ever changes)
+        resumeText = sanitizeResumeInput(extracted.text);
         bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
           ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
           : [];
       } else {
-        // ✅ sanitize fallback; it may contain HTML from the UI
         resumeText = sanitizeResumeInput(resumeTextFallback);
       }
     } else if (contentType.includes("application/json")) {
-      const body = await req.json();
+      const body = (await req.json().catch(() => ({}))) as any;
 
       const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
@@ -531,7 +536,6 @@ export async function POST(req: Request) {
           url: resumeBlobUrl,
         };
 
-        // ✅ If client sends additional resumeText (sometimes HTML), sanitize before appending.
         const extra = sanitizeResumeInput(body.resumeText);
         if (extra && extra.length >= 200 && extra !== resumeText) {
           resumeText = `${resumeText}\n\n${extra}`;
@@ -541,21 +545,18 @@ export async function POST(req: Request) {
         resumeText = sanitizeResumeInput(body.resumeText);
       }
     } else {
-      return NextResponse.json(
+      return okJson(
         { ok: false, error: "Unsupported content type. Send JSON or multipart/form-data (file upload)." },
         { status: 415 }
       );
     }
 
     if (!resumeText || !jobText) {
-      return NextResponse.json(
-        { ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" },
-        { status: 400 }
-      );
+      return okJson({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" }, { status: 400 });
     }
 
     if (resumeText.length < 300) {
-      return NextResponse.json(
+      return okJson(
         { ok: false, error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text." },
         { status: 400 }
       );
@@ -572,7 +573,7 @@ export async function POST(req: Request) {
     });
 
     if (!charged.ok) {
-      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+      return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
     chargedUserId = dbUser.id;
@@ -613,10 +614,12 @@ export async function POST(req: Request) {
       return { outBullets, outJobIds };
     };
 
-    const tryExtract = (text: string) => {
+    // ✅ IMPORTANT FIX: replace require() with dynamic import (ESM-safe on Vercel)
+    const tryExtract = async (text: string) => {
       try {
-        const mod = require("@/lib/extractResumeBullets");
-        const extractResumeBullets = mod.extractResumeBullets as (t: string) => any;
+        const mod: any = await import("@/lib/extractResumeBullets");
+        const extractResumeBullets = mod?.extractResumeBullets as undefined | ((t: string) => any);
+        if (typeof extractResumeBullets !== "function") return { bullets: [] as string[], jobs: [] as any[] };
 
         const maybe: any = extractResumeBullets(text);
         if (Array.isArray(maybe)) return { bullets: maybe as string[], jobs: [] as any[] };
@@ -643,7 +646,7 @@ export async function POST(req: Request) {
     }
 
     // 1) strict on experience slice
-    const strict1 = tryExtract(experienceSlice.experienceText);
+    const strict1 = await tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
 
     const flat1 = flattenFromJobs(experienceJobs);
@@ -662,7 +665,7 @@ export async function POST(req: Request) {
 
     // 2) if no bullets, try bulletSourceText
     if (!bullets.length) {
-      const strict2 = tryExtract(bulletSourceText);
+      const strict2 = await tryExtract(bulletSourceText);
 
       const jobs2 = normalizeJobs(strict2.jobs);
       const flat2 = flattenFromJobs(jobs2);
@@ -686,7 +689,6 @@ export async function POST(req: Request) {
         }
       } else {
         const raw = (strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean);
-
         const filtered = filterBadBullets(raw);
         bullets = filtered;
 
@@ -721,7 +723,7 @@ export async function POST(req: Request) {
           },
         });
 
-        return NextResponse.json(
+        return okJson(
           {
             ok: false,
             error:
@@ -740,7 +742,7 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       } catch (refundErr: any) {
-        return NextResponse.json(
+        return okJson(
           {
             ok: false,
             error:
@@ -773,7 +775,6 @@ export async function POST(req: Request) {
       });
 
       const suggestionResult: any = suggestKeywordsForBullets(bulletObjs, jobText, analysis.missingKeywords);
-
       bulletSuggestions = suggestionResult?.bulletSuggestions ?? [];
       weakBullets = suggestionResult?.weakBullets ?? [];
     } catch {
@@ -790,7 +791,6 @@ export async function POST(req: Request) {
 
     if (!Array.isArray(rewritePlan) || rewritePlan.length === 0) {
       const seedKeywords = (analysis.highImpactMissing || analysis.missingKeywords || []).slice(0, 5);
-
       rewritePlan = bullets.map((b) => ({
         originalBullet: b,
         suggestedKeywords: seedKeywords,
@@ -811,7 +811,7 @@ export async function POST(req: Request) {
       };
     });
 
-    return NextResponse.json({
+    return okJson({
       ok: true,
       balance: charged.balance,
 
@@ -861,12 +861,12 @@ export async function POST(req: Request) {
           meta: { cost: chargedCost, error: message },
         });
 
-        return NextResponse.json(
+        return okJson(
           { ok: false, error: message || "Failed to analyze input", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {
-        return NextResponse.json(
+        return okJson(
           {
             ok: false,
             error: message || "Failed to analyze input",
@@ -878,13 +878,13 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: false, error: message || "Failed to analyze input" }, { status: 500 });
+    return okJson({ ok: false, error: message || "Failed to analyze input" }, { status: 500 });
   }
 }
 
 export async function GET() {
-  // ✅ If this returns, the module booted and Next is routing to THIS file.
-  return NextResponse.json({ ok: false, route: "src/app/api/analyze/route.ts", tag: BOOT_TAG }, { status: 405 });
+  // ✅ fingerprint: proves deployed route is THIS file and module boot didn’t crash
+  return okJson({ ok: false, route: "src/app/api/analyze/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
 export async function OPTIONS() {
