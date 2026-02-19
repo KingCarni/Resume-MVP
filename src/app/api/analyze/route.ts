@@ -134,30 +134,51 @@ function extractJobHeadersFromText(experienceText: string): ParsedHeader[] {
 
   const out: ParsedHeader[] = [];
 
-  // Matches: "QA Lead — Prodigy Education (Mass Layoff) | Feb 2025 - Jan 2026"
-  // Also tolerant of "-" instead of "—"
-  const headerRegex = /^(.{2,120}?)\s*(?:—|-)\s*(.{2,160}?)\s*\|\s*(.{6,60})$/;
+  // Single-line:
+  // "QA Lead — Prodigy Education (Mass Layoff) | Feb 2025 - Jan 2026"
+  const singleLine = /^(.{2,140}?)\s*(?:—|-)\s*(.{2,200}?)\s*\|\s*(.{4,80})$/;
 
-  const hasYear = (s: string) => /\b(19|20)\d{2}\b/.test(String(s || ""));
+  // Two-line:
+  // line i:  "QA Lead — Prodigy Education (Mass Layoff) |"
+  // line i+1:"Feb 2025 - Jan 2026"
+  const headerNoDates = /^(.{2,140}?)\s*(?:—|-)\s*(.{2,200}?)\s*\|\s*$/;
 
-  for (const line of lines) {
-    if (!line.includes("|")) continue;
+  const looksLikeDates = (s: string) => {
+    const v = String(s || "").trim();
+    if (!v) return false;
+    // accept "Feb 2025 - Jan 2026" or "Oct 2023 - Apr 2024" or "... - Present"
+    return /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(v) && /\b(19|20)\d{2}\b/.test(v);
+  };
 
-    const m = line.match(headerRegex);
-    if (!m) continue;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-    const title = String(m[1] || "").trim();
-    const company = String(m[2] || "").trim();
-    const dates = String(m[3] || "").trim();
+    // 1) single-line match
+    const m1 = line.match(singleLine);
+    if (m1) {
+      const title = String(m1[1] || "").trim();
+      const company = String(m1[2] || "").trim();
+      const dates = String(m1[3] || "").trim();
+      if (title && company && looksLikeDates(dates)) out.push({ title, company, dates });
+      continue;
+    }
 
-    // Guardrails: avoid swallowing random "Tools:" lines, etc.
-    if (!title || !company || !dates) continue;
-    if (!hasYear(dates)) continue;
+    // 2) two-line match (header ends with |, dates on next line)
+    const m2 = line.match(headerNoDates);
+    if (m2) {
+      const next = lines[i + 1] || "";
+      if (!looksLikeDates(next)) continue;
 
-    out.push({ title, company, dates });
+      const title = String(m2[1] || "").trim();
+      const company = String(m2[2] || "").trim();
+      const dates = String(next || "").trim();
+
+      if (title && company) out.push({ title, company, dates });
+      continue;
+    }
   }
 
-  // Dedup in order
+  // Dedup, preserve order
   const seen = new Set<string>();
   const deduped: ParsedHeader[] = [];
   for (const h of out) {
@@ -207,42 +228,70 @@ function looksLikeJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
 
+  // must contain a pipe (your format)
   if (!line.includes("|")) return false;
+
+  // must include a dash separator between title and company
   if (!(line.includes("—") || line.includes("-"))) return false;
 
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  // allow: "... |"  OR  "... | dates"
+  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,200}?)\s*\|\s*(.{0,80})$/;
   return headerRegex.test(line);
 }
 
+
 function parseJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
-  const headerRegex = /^(.{2,80})\s*(—|-)\s*(.{2,120})\s*\|\s*(.{6,40})$/;
+  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,200}?)\s*\|\s*(.{0,80})$/;
   const m = line.match(headerRegex);
   if (!m) return null;
-  return { title: m[1].trim(), company: m[3].trim(), dates: m[4].trim() };
+
+  const title = String(m[1] || "").trim();
+  const company = String(m[3] || "").trim();
+  const datesInline = String(m[4] || "").trim(); // may be empty
+
+  return { title, company, datesInline };
 }
 
 function buildExperienceJobsForPreviewFromText(experienceText: string) {
   const lines = normalizeResumeText(experienceText)
     .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+    .map((l) => l.trim());
+
+  const looksLikeDates = (s: string) => {
+    const v = String(s || "").trim();
+    if (!v) return false;
+    return /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(v) && /\b(19|20)\d{2}\b/.test(v);
+  };
 
   const jobs: any[] = [];
   let current: any | null = null;
 
-  for (const raw of lines) {
-    const line = String(raw || "").trim();
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || "").trim();
+    if (!line) continue;
 
     if (looksLikeJobHeaderLine(line)) {
       const parsed = parseJobHeaderLine(line);
       if (parsed) {
+        // close prior
         if (current && current.bullets.length) jobs.push(current);
+
+        // dates: inline, OR next-line
+        let dates = parsed.datesInline || "";
+        if (!dates) {
+          const next = String(lines[i + 1] || "").trim();
+          if (looksLikeDates(next)) {
+            dates = next;
+            i++; // consume date line
+          }
+        }
+
         current = {
           id: `job_${jobs.length + 1}`,
           title: parsed.title,
           company: parsed.company,
-          dates: parsed.dates,
+          dates: dates || "Dates",
           location: "",
           bullets: [],
         };
@@ -252,6 +301,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
 
     if (!current) continue;
 
+    // bullet capture
     if (/^[•\u2022\u00B7o-]\s+/.test(line)) {
       const b = cleanLeadingBulletGarbage(line);
       if (b && !looksLikeContactOrReferenceLine(b)) current.bullets.push(b);
@@ -260,6 +310,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
 
   if (current && current.bullets.length) jobs.push(current);
 
+  // Dedup bullets per job
   for (const j of jobs) {
     const seen = new Set<string>();
     j.bullets = (j.bullets || []).filter((b: string) => {
@@ -272,6 +323,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
 
   return jobs;
 }
+
 
 /** ---------------- Magic-byte sniffing ---------------- */
 
