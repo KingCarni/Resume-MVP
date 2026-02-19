@@ -1,6 +1,5 @@
 // src/app/api/cover-letter/route.ts
 import mammoth from "mammoth";
-import * as pdfParse from "pdf-parse";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -12,6 +11,8 @@ import { chargeCredits, refundCredits } from "@/lib/credits";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+
+const BOOT_TAG = "cover_letter_route_boot_ok";
 
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -39,6 +40,16 @@ type ReqBody = {
   blockedTerms?: string[];
   targetTerms?: string[];
 };
+
+function okJson(payload: any, init?: ResponseInit) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      ...(init?.headers || {}),
+    },
+  });
+}
 
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
@@ -102,11 +113,25 @@ async function extractTextFromDocx(file: File): Promise<string> {
 async function extractTextFromPdf(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // ✅ Handle both ESM/CJS shapes of pdf-parse
-  const parsePdf = (pdfParse as any).default ?? (pdfParse as any);
-  const data: any = await parsePdf(buffer as any);
+  // ✅ Lazy-load pdf-parse so import shape issues can't crash route module boot
+  try {
+    const mod: any = await import("pdf-parse");
 
-  return String(data?.text ?? "");
+    const parsePdf =
+      (typeof mod === "function" ? mod : null) ??
+      (typeof mod?.default === "function" ? mod.default : null) ??
+      (typeof mod?.pdfParse === "function" ? mod.pdfParse : null);
+
+    if (typeof parsePdf !== "function") {
+      throw new Error(`pdf-parse export not callable (keys=${Object.keys(mod || {}).join(",")})`);
+    }
+
+    const data: any = await parsePdf(buffer as any);
+    return String(data?.text ?? "");
+  } catch (err: any) {
+    const msg = err?.message ? String(err.message) : String(err);
+    throw new Error(`PDF parse failed: ${msg}`);
+  }
 }
 
 async function extractResumeTextFromFile(file: File): Promise<string> {
@@ -247,6 +272,8 @@ Now write the cover letter.
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
+  console.log(BOOT_TAG, { at: new Date().toISOString() });
+
   let chargedUserId = "";
   let chargedCost = 0;
 
@@ -254,13 +281,13 @@ export async function POST(req: Request) {
     // ✅ Require login
     const session = await getServerSession(authOptions);
     const emailFromSession = session?.user?.email;
-    if (!emailFromSession) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    if (!emailFromSession) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const dbUser = await prisma.user.findUnique({ where: { email: emailFromSession } });
-    if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
+    if (!dbUser) return okJson({ ok: false, error: "User not found" }, { status: 401 });
 
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return NextResponse.json({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
+    if (!apiKey) return okJson({ ok: false, error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
 
     const client = new OpenAI({ apiKey });
     const contentType = req.headers.get("content-type") || "";
@@ -297,7 +324,7 @@ export async function POST(req: Request) {
 
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
-          return NextResponse.json(
+          return okJson(
             { ok: false, error: `File too large. Max size is ${MAX_FILE_MB}MB. Tip: export an optimized PDF or upload DOCX.` },
             { status: 400 }
           );
@@ -350,22 +377,21 @@ export async function POST(req: Request) {
       blockedTerms = toArr(body.blockedTerms);
       targetTerms = toArr(body.targetTerms);
     } else {
-      return NextResponse.json(
+      return okJson(
         { ok: false, error: "Unsupported content type. Send JSON or multipart/form-data (file upload)." },
         { status: 415 }
       );
     }
 
     if (!resumeText || !jobText) {
-      return NextResponse.json({ ok: false, error: "Missing resumeText (or file) or jobText" }, { status: 400 });
+      return okJson({ ok: false, error: "Missing resumeText (or file) or jobText" }, { status: 400 });
     }
 
     if (resumeText.trim().length < MIN_RESUME_CHARS) {
-      return NextResponse.json(
+      return okJson(
         {
           ok: false,
-          error:
-            "Resume text is missing or too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste resume text.",
+          error: "Resume text is missing or too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste resume text.",
         },
         { status: 400 }
       );
@@ -386,7 +412,7 @@ export async function POST(req: Request) {
     });
 
     if (!charged.ok) {
-      return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
+      return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
     chargedUserId = dbUser.id;
@@ -433,7 +459,7 @@ export async function POST(req: Request) {
         meta: { cost: chargedCost },
       });
 
-      return NextResponse.json(
+      return okJson(
         { ok: false, error: "Model returned empty response", refunded: true, balance: refunded.balance },
         { status: 500 }
       );
@@ -452,14 +478,14 @@ export async function POST(req: Request) {
           meta: { cost: chargedCost, hit },
         });
 
-        return NextResponse.json(
+        return okJson(
           { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
           { status: 422 }
         );
       }
     }
 
-    return NextResponse.json({
+    return okJson({
       ok: true,
       coverLetter: text,
       balance: charged.balance,
@@ -486,13 +512,13 @@ export async function POST(req: Request) {
           meta: { error: message, cost: chargedCost },
         });
 
-        return NextResponse.json(
+        return okJson(
           { ok: false, error: message || "Cover letter generation failed", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {
         console.error("refundCredits failed:", refundErr);
-        return NextResponse.json(
+        return okJson(
           {
             ok: false,
             error: message || "Cover letter generation failed",
@@ -504,6 +530,22 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: false, error: message || "Cover letter generation failed" }, { status: 500 });
+    return okJson({ ok: false, error: message || "Cover letter generation failed" }, { status: 500 });
   }
+}
+
+export async function GET() {
+  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
+  return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
 }
