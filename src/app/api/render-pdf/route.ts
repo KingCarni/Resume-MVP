@@ -5,6 +5,11 @@ import chromium from "@sparticuz/chromium";
 import fs from "fs";
 import path from "path";
 
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { chargeCredits, refundCredits } from "@/lib/credits";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -12,7 +17,15 @@ export const dynamic = "force-dynamic";
 type ReqBody = {
   html: string;
   filename?: string;
+
+  /**
+   * Optional idempotency key for this download attempt.
+   * Client should generate a fresh ref per click (prevents double-charge on retry/network issues).
+   */
+  ref?: string;
 };
+
+const COST_PDF = 5;
 
 function safePdfFilename(name: string) {
   const base = (name || "document.pdf").trim() || "document.pdf";
@@ -27,13 +40,7 @@ function toPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
 }
 
 async function resolveExecutablePath(): Promise<string> {
-  const brotliDir = path.join(
-    process.cwd(),
-    "node_modules",
-    "@sparticuz",
-    "chromium",
-    "bin"
-  );
+  const brotliDir = path.join(process.cwd(), "node_modules", "@sparticuz", "chromium", "bin");
 
   if (fs.existsSync(brotliDir)) {
     const p = await chromium.executablePath(brotliDir);
@@ -53,7 +60,6 @@ async function resolveExecutablePath(): Promise<string> {
 async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   const executablePath = await resolveExecutablePath();
 
-  // Avoid TS warnings / keep puppeteer happy
   const headless: boolean = true;
   const defaultViewport: Viewport | null = null;
 
@@ -67,13 +73,13 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   try {
     const page = await browser.newPage();
 
-    // ✅ Load the doc as the preview sees it
+    // Load as preview sees it
     await page.setContent(html, { waitUntil: "networkidle2" });
 
-    // ✅ CRITICAL: render like the iframe preview (screen), NOT print
+    // CRITICAL: render like iframe preview (screen), NOT print
     await page.emulateMediaType("screen");
 
-    // Helps preserve backgrounds/colors exactly
+    // Preserve backgrounds/colors
     await page.addStyleTag({
       content: `
         html { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -99,15 +105,52 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
   }
 }
 
+function okJson(payload: any, init?: ResponseInit) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      ...(init?.headers || {}),
+    },
+  });
+}
+
 export async function POST(req: Request) {
+  let chargedUserId = "";
+  let charged = false;
+
   try {
-    const body = (await req.json()) as Partial<ReqBody>;
+    // ✅ Require login
+    const session = await getServerSession(authOptions);
+    const emailFromSession = session?.user?.email;
+    if (!emailFromSession) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+    const dbUser = await prisma.user.findUnique({ where: { email: emailFromSession } });
+    if (!dbUser) return okJson({ ok: false, error: "User not found" }, { status: 401 });
+
+    const body = (await req.json().catch(() => ({}))) as Partial<ReqBody>;
     const html = String(body?.html ?? "").trim();
     const filename = safePdfFilename(String(body?.filename ?? "document.pdf"));
+    const ref = String(body?.ref ?? "").trim();
 
-    if (!html) {
-      return NextResponse.json({ ok: false, error: "Missing html" }, { status: 400 });
+    if (!html) return okJson({ ok: false, error: "Missing html" }, { status: 400 });
+
+    // ✅ Charge credits
+    const charge = await chargeCredits({
+      userId: dbUser.id,
+      cost: COST_PDF,
+      reason: "render_pdf",
+      eventType: "cover_letter", // reuse EventType you already have
+      meta: { cost: COST_PDF, filename, htmlLen: html.length },
+      ref: ref ? `render_pdf:${ref}` : undefined,
+    });
+
+    if (!charge.ok) {
+      return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charge.balance }, { status: 402 });
     }
+
+    chargedUserId = dbUser.id;
+    charged = true;
 
     const pdfBytes = await renderPdfFromHtml(html);
     const ab = toPureArrayBuffer(pdfBytes);
@@ -121,10 +164,30 @@ export async function POST(req: Request) {
       },
     });
   } catch (e: any) {
+    const msg = e?.message || "PDF render failed";
     console.error("render-pdf error:", e);
-    return NextResponse.json(
-      { ok: false, error: e?.message || "PDF render failed" },
-      { status: 500 }
-    );
+
+    // ✅ Refund if we charged but failed
+    if (charged && chargedUserId) {
+      try {
+        const refunded = await refundCredits({
+          userId: chargedUserId,
+          amount: COST_PDF,
+          reason: "refund_render_pdf_failed",
+          eventType: "cover_letter",
+          meta: { cost: COST_PDF, error: msg },
+        });
+
+        return okJson({ ok: false, error: msg, refunded: true, balance: refunded.balance }, { status: 500 });
+      } catch (refundErr: any) {
+        console.error("refundCredits failed:", refundErr);
+        return okJson(
+          { ok: false, error: msg, refunded: false, refundError: refundErr?.message || String(refundErr) },
+          { status: 500 }
+        );
+      }
+    }
+
+    return okJson({ ok: false, error: msg }, { status: 500 });
   }
 }

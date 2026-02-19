@@ -49,65 +49,6 @@ type ResumeProfile = {
 
 type ApiResp = { ok: true; coverLetter: string } | { ok: false; error?: string };
 
-/** ---------------- Credit costs ---------------- */
-
-const CREDIT_COST_GENERATE = 5;
-const CREDIT_COST_PDF = 5;
-
-/**
- * Best-effort credit charge helper.
- * Tries a couple common endpoints (in case your route name differs).
- *
- * Expected JSON response shapes supported:
- * - { ok: true }
- * - { ok: false, error: "..." }
- * - { ok: true, remaining: number } (ignored here)
- */
-async function chargeCreditsClient(args: { amount: number; reason: string }) {
-  const payload = { amount: args.amount, reason: args.reason };
-
-  const tryEndpoints = ["/api/charge-credits", "/api/credits/charge"];
-
-  let lastErr = "";
-
-  for (const url of tryEndpoints) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        lastErr = `${url} -> ${res.status} ${t}`.trim();
-        continue;
-      }
-
-      const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        const t = await res.text().catch(() => "");
-        lastErr = `${url} -> non-JSON response: ${t.slice(0, 200)}`.trim();
-        continue;
-      }
-
-      const data = (await res.json().catch(() => null)) as any;
-      if (data?.ok === true) return;
-
-      lastErr = `${url} -> ${data?.error || "Unknown credit charge error"}`.trim();
-    } catch (e: any) {
-      lastErr = `${url} -> ${e?.message || "Network error"}`.trim();
-    }
-  }
-
-  // If your backend already charges elsewhere (e.g. /api/cover-letter),
-  // this will surface quickly so you can align the endpoint name.
-  throw new Error(
-    lastErr ||
-      "Could not charge credits (no compatible credit-charge endpoint found)."
-  );
-}
-
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
 
 const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
@@ -170,19 +111,17 @@ function Callout({
   );
 }
 
-function CreditPill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-lg border border-black/10 bg-white px-2 py-1 text-[11px] font-extrabold text-black/70 dark:border-white/10 dark:bg-white/10 dark:text-white/70">
-      {children}
-    </span>
-  );
-}
-
 async function downloadPdfFromHtml(filename: string, html: string) {
+  // unique per click; server will prefix it (render_pdf:...)
+  const ref =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
   const res = await fetch("/api/render-pdf", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ html, filename }),
+    body: JSON.stringify({ html, filename, ref }),
   });
 
   if (!res.ok) {
@@ -1062,22 +1001,11 @@ function templateStyles(template: ResumeTemplateId) {
 
 /**
  * Cover letter wrapper
- *
- * Parity:
- * - The inner “letter card” uses:
- *   - terminal -> var(--cardbg) (dark)
- *   - everything else -> var(--pagebg) (tinted sheet color)
- *
- * ✅ PDF parity:
- * - Do NOT force white backgrounds in print.
- * - We override any template @media print rules after template CSS is injected.
  */
 function templateStylesCover(template: ResumeTemplateId) {
   const isTerminal = template === "terminal";
 
-  const letterCardBg = isTerminal
-    ? "var(--cardbg, #061a10)"
-    : "var(--pagebg, #fff)";
+  const letterCardBg = isTerminal ? "var(--cardbg, #061a10)" : "var(--pagebg, #fff)";
 
   return `
 ${templateStyles(template)}
@@ -1090,11 +1018,7 @@ ${templateStyles(template)}
   border: 1px var(--borderstyle, solid) var(--line, #e7e7e7);
   border-radius: calc(var(--radius, 16px) - 2px);
   padding: 18px;
-
-  /* critical: match the theme sheet color for ALL themes */
   background: ${letterCardBg};
-
-  /* keep it “sheet-like” */
   box-shadow: none;
 }
 
@@ -1143,14 +1067,7 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const {
-    template,
-    profile,
-    bodyText,
-    includeSignature,
-    signatureClosing,
-    signatureName,
-  } = args;
+  const { template, profile, bodyText, includeSignature, signatureClosing, signatureName } = args;
 
   const contactBits = [
     profile.email?.trim() ? safe(profile.email) : "",
@@ -1158,8 +1075,7 @@ function buildCoverLetterHtml(args: {
     profile.linkedin?.trim() ? safe(profile.linkedin) : "",
   ].filter(Boolean);
 
-  const useChips =
-    template !== "terminal" && template !== "ats" && template !== "compact";
+  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
 
   const topContact = useChips
     ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
@@ -1256,13 +1172,7 @@ function buildCoverLetterHtml(args: {
 </html>`;
 }
 
-function HtmlDocPreview({
-  html,
-  footer,
-}: {
-  html: string;
-  footer?: React.ReactNode;
-}) {
+function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1280,9 +1190,7 @@ function HtmlDocPreview({
         />
       </div>
 
-      {footer ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div>
-      ) : null}
+      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
     </div>
   );
 }
@@ -1292,54 +1200,20 @@ function HtmlDocPreview({
 function recommendToneHeuristic(jobText: string) {
   const t = String(jobText || "").toLowerCase();
 
-  const startupSignals = [
-    "startup",
-    "0-1",
-    "zero-to-one",
-    "fast-paced",
-    "scrappy",
-    "wear multiple hats",
-  ];
-  const enterpriseSignals = [
-    "enterprise",
-    "stakeholders",
-    "cross-functional",
-    "governance",
-    "compliance",
-    "risk",
-  ];
-  const leadershipSignals = [
-    "lead",
-    "manager",
-    "mentored",
-    "managed",
-    "owned",
-    "strategy",
-    "roadmap",
-  ];
-  const technicalSignals = [
-    "api",
-    "automation",
-    "ci/cd",
-    "pipeline",
-    "performance",
-    "observability",
-    "kpi",
-    "metrics",
-  ];
+  const startupSignals = ["startup", "0-1", "zero-to-one", "fast-paced", "scrappy", "wear multiple hats"];
+  const enterpriseSignals = ["enterprise", "stakeholders", "cross-functional", "governance", "compliance", "risk"];
+  const leadershipSignals = ["lead", "manager", "mentored", "managed", "owned", "strategy", "roadmap"];
+  const technicalSignals = ["api", "automation", "ci/cd", "pipeline", "performance", "observability", "kpi", "metrics"];
 
-  const score = (arr: string[]) =>
-    arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
+  const score = (arr: string[]) => arr.reduce((n, s) => (t.includes(s) ? n + 1 : n), 0);
 
   const sStartup = score(startupSignals);
   const sEnterprise = score(enterpriseSignals);
   const sLead = score(leadershipSignals);
   const sTech = score(technicalSignals);
 
-  if (sStartup >= 2 && sTech >= 1)
-    return "confident, scrappy, technically fluent, execution-focused";
-  if (sEnterprise >= 2 && sLead >= 1)
-    return "professional, structured, stakeholder-friendly, risk-aware";
+  if (sStartup >= 2 && sTech >= 1) return "confident, scrappy, technically fluent, execution-focused";
+  if (sEnterprise >= 2 && sLead >= 1) return "professional, structured, stakeholder-friendly, risk-aware";
   if (sTech >= 2) return "confident, concise, technically precise, impact-driven";
   if (sLead >= 2) return "confident, leadership-forward, concise, outcomes-first";
   return "confident, concise, impact-driven";
@@ -1380,9 +1254,7 @@ export default function CoverLetterGenerator() {
   });
 
   const [tone, setTone] = useState("confident, concise, impact-driven");
-  const [length, setLength] = useState<"short" | "standard" | "detailed">(
-    "standard"
-  );
+  const [length, setLength] = useState<"short" | "standard" | "detailed">("standard");
   const [includeBullets, setIncludeBullets] = useState(true);
 
   const [template, setTemplate] = useState<ResumeTemplateId>("modern");
@@ -1393,7 +1265,6 @@ export default function CoverLetterGenerator() {
 
   const [loading, setLoading] = useState(false);
   const [toneLoading, setToneLoading] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
@@ -1414,12 +1285,6 @@ export default function CoverLetterGenerator() {
     setCoverLetterDraft("");
 
     try {
-      // ✅ charge credits (Generate = 5)
-      await chargeCreditsClient({
-        amount: CREDIT_COST_GENERATE,
-        reason: "cover_letter_generate",
-      });
-
       let res: Response;
 
       // Keep requests under Vercel payload limits
@@ -1435,7 +1300,6 @@ export default function CoverLetterGenerator() {
       const safeResumeText = clamp(resumeText);
       const safeJobText = clamp(jobText);
 
-      // Optional: warn if we had to truncate (helps debugging)
       if (resumeText && safeResumeText.length < resumeText.trim().length) {
         setError("Resume text was very large — truncated for upload safety.");
       }
@@ -1495,17 +1359,10 @@ export default function CoverLetterGenerator() {
         try {
           payload = JSON.parse(raw) as ApiResp;
         } catch {
-          throw new Error(
-            `Cover letter route returned invalid JSON: ${raw.slice(0, 200)}`
-          );
+          throw new Error(`Cover letter route returned invalid JSON: ${raw.slice(0, 200)}`);
         }
       } else {
-        throw new Error(
-          `Cover letter route returned non-JSON (${contentType}): ${raw.slice(
-            0,
-            200
-          )}`
-        );
+        throw new Error(`Cover letter route returned non-JSON (${contentType}): ${raw.slice(0, 200)}`);
       }
 
       if (!payload.ok) {
@@ -1559,17 +1416,9 @@ export default function CoverLetterGenerator() {
       signatureClosing,
       signatureName: signatureName.trim() ? signatureName : profile.fullName,
     });
-  }, [
-    coverLetterDraft,
-    template,
-    profile,
-    includeSignature,
-    signatureClosing,
-    signatureName,
-  ]);
+  }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
 
-  const templateLabel =
-    TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
+  const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   const navBtn =
     "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
@@ -1614,14 +1463,16 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
       </div>
 
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">
-          Git-a-Job: Cover Letter Generator
-        </h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
           Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
           Preview renders as a real HTML document (resume-template style). You can edit the letter
           below and the preview updates live.
         </p>
+
+        <div className="mt-2 text-xs font-extrabold text-black/50 dark:text-white/50">
+          Pricing: Generate cover letter = 5 credits • Download PDF = 5 credits
+        </div>
       </div>
 
       {error ? (
@@ -1635,13 +1486,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-extrabold">Inputs</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <CreditPill>Generate: {CREDIT_COST_GENERATE} credits</CreditPill>
-              <CreditPill>PDF: {CREDIT_COST_PDF} credits</CreditPill>
-            </div>
-          </div>
+          <h2 className="text-base font-extrabold">Inputs</h2>
 
           <div className="mt-3 grid gap-3">
             {/* File input */}
@@ -1657,9 +1502,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
                   // Vercel payload guard (client-side)
                   if (f && f.size > 3.5 * 1024 * 1024) {
-                    setError(
-                      "File too large. Please upload a smaller file (under ~3.5MB) or paste text instead."
-                    );
+                    setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
                     e.target.value = "";
                     setFile(null);
                     return;
@@ -1672,9 +1515,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               />
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                    {file.name}
-                  </div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">{file.name}</div>
                   <button
                     type="button"
                     onClick={clearFile}
@@ -1704,9 +1545,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Job posting text
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -1718,9 +1557,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Template
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Template</div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
@@ -1732,9 +1569,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/60 dark:text-white/60">
-                Selected: {templateLabel}
-              </div>
+              <div className="text-xs text-black/60 dark:text-white/60">Selected: {templateLabel}</div>
             </label>
 
             {/* Header details */}
@@ -1745,41 +1580,31 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, fullName: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.locationLine}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, locationLine: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.email}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, email: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.phone}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, phone: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.linkedin}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, linkedin: e.target.value }))
-                  }
+                  onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
                 />
@@ -1790,9 +1615,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                    Tone
-                  </div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Tone</div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
@@ -1811,9 +1634,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                  Length
-                </div>
+                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Length</div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
@@ -1841,9 +1662,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
             {/* Signature */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
-                  Signature block
-                </div>
+                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Signature block</div>
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
                   <input
                     type="checkbox"
@@ -1873,8 +1692,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               </div>
 
               <div className="mt-2 text-xs text-black/60 dark:text-white/60">
-                Leave “Closing” empty if your generated text already includes a sign-off (prevents
-                duplicate “Sincerely”).
+                Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate “Sincerely”).
               </div>
             </div>
 
@@ -1885,9 +1703,8 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
                 className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
-                title={`Costs ${CREDIT_COST_GENERATE} credits`}
               >
-                {loading ? "Generating…" : `Generate Cover Letter (${CREDIT_COST_GENERATE} credits)`}
+                {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
 
               <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-white/50">
@@ -1919,33 +1736,18 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
                   <button
                     type="button"
-                    disabled={!coverLetterDraft || pdfLoading}
+                    disabled={!coverLetterDraft}
                     onClick={async () => {
                       if (!coverLetterDraft) return;
-                      setPdfLoading(true);
-                      setError(null);
-
                       try {
-                        // ✅ charge credits (PDF = 5)
-                        await chargeCreditsClient({
-                          amount: CREDIT_COST_PDF,
-                          reason: "cover_letter_pdf_download",
-                        });
-
-                        await downloadPdfFromHtml(
-                          "cover-letter.pdf",
-                          coverLetterHtml || ""
-                        );
+                        await downloadPdfFromHtml("cover-letter.pdf", coverLetterHtml || "");
                       } catch (e: any) {
                         setError(e?.message || "Download failed");
-                      } finally {
-                        setPdfLoading(false);
                       }
                     }}
                     className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                    title={`Costs ${CREDIT_COST_PDF} credits`}
                   >
-                    {pdfLoading ? "Preparing PDF…" : `Download PDF (${CREDIT_COST_PDF} credits)`}
+                    Download PDF (5 credits)
                   </button>
                 </div>
               </div>
