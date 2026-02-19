@@ -16,7 +16,6 @@ const BOOT_TAG = "cover_letter_route_boot_ok";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-// If resume text is smaller than this, we refuse to generate
 const MIN_RESUME_CHARS = 300;
 
 type ReqBody = {
@@ -101,6 +100,40 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
+/** --------- PDF extraction (pdfjs-dist, Vercel-safe) --------- */
+
+async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
+  try {
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = undefined as any;
+    }
+
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      verbosity: 0,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+
+    const pdf = await loadingTask.promise;
+
+    let out = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
+      out += strings.join(" ") + "\n";
+    }
+
+    return out;
+  } catch (err: any) {
+    const msg = err?.message ? String(err.message) : String(err);
+    throw new Error(`PDF parse failed: ${msg}`);
+  }
+}
+
 /** --------- File extraction --------- */
 
 async function extractTextFromDocx(file: File): Promise<string> {
@@ -109,43 +142,21 @@ async function extractTextFromDocx(file: File): Promise<string> {
   return parsed?.value ?? "";
 }
 
-async function extractTextFromPdf(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  try {
-    // ✅ Polyfill DOMMatrix for pdfjs/pdf-parse on Node (Vercel)
-    if (!(globalThis as any).DOMMatrix) {
-      const dm: any = await import("dommatrix");
-      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
-    }
-
-    // ✅ Lazy-load pdf-parse so import shape issues can't crash route module boot
-    const mod: any = await import("pdf-parse");
-    const parsePdf =
-      (typeof mod === "function" ? mod : null) ??
-      (typeof mod?.default === "function" ? mod.default : null) ??
-      (typeof mod?.pdfParse === "function" ? mod.pdfParse : null);
-
-    if (typeof parsePdf !== "function") {
-      throw new Error(`pdf-parse export not callable (keys=${Object.keys(mod || {}).join(",")})`);
-    }
-
-    const data: any = await parsePdf(buffer as any);
-    return String(data?.text ?? "");
-  } catch (err: any) {
-    const msg = err?.message ? String(err.message) : String(err);
-    throw new Error(`PDF parse failed: ${msg}`);
-  }
-}
-
 async function extractResumeTextFromFile(file: File): Promise<string> {
   const name = (file.name || "").toLowerCase();
+
   if (name.endsWith(".docx")) return extractTextFromDocx(file);
-  if (name.endsWith(".pdf")) return extractTextFromPdf(file);
+
+  if (name.endsWith(".pdf")) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    return extractTextFromPdfBuffer(buffer);
+  }
+
   if (name.endsWith(".txt")) {
     const buffer = Buffer.from(await file.arrayBuffer());
     return buffer.toString("utf-8");
   }
+
   throw new Error("Unsupported file type. Please upload a PDF, DOCX, or TXT.");
 }
 
@@ -282,7 +293,6 @@ export async function POST(req: Request) {
   let chargedCost = 0;
 
   try {
-    // ✅ Require login
     const session = await getServerSession(authOptions);
     const emailFromSession = session?.user?.email;
     if (!emailFromSession) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -316,7 +326,6 @@ export async function POST(req: Request) {
     let blockedTerms: string[] = [];
     let targetTerms: string[] = [];
 
-    // --- Parse inputs first (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -473,7 +482,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Best-effort post-check: blocked terms (refund on failure)
     if (blockedTerms.length) {
       const lower = text.toLowerCase();
       const hit = blockedTerms.find((t) => t && lower.includes(String(t).toLowerCase()));
@@ -487,7 +495,12 @@ export async function POST(req: Request) {
         });
 
         return okJson(
-          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
+          {
+            ok: false,
+            error: `Blocked term detected in output: "${hit}". Try again.`,
+            refunded: true,
+            balance: refunded.balance,
+          },
           { status: 422 }
         );
       }
@@ -543,7 +556,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 

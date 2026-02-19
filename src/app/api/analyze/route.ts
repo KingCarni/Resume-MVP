@@ -19,10 +19,6 @@ const BOOT_TAG = "analyze_route_boot_ok";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-/**
- * ✅ Local compat type: the /lib/bullet_suggestions module expects ResumeBullet[]
- * but our extraction pipeline produces string[].
- */
 type ResumeBullet = {
   id: string;
   text: string;
@@ -65,10 +61,6 @@ function stripTagsToText(html: string) {
     .trim();
 }
 
-/**
- * Some inputs (resumeText) can arrive as HTML from the client UI.
- * This ensures we never pollute the analysis pipeline with <div>/<li> markup.
- */
 function sanitizeResumeInput(input: unknown) {
   const s = String(input ?? "");
   const looksHtml = /<\/?[a-z][\s\S]*>/i.test(s);
@@ -289,34 +281,44 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- File extraction ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, Vercel-safe) ---------------- */
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    // ✅ Polyfill DOMMatrix for pdfjs/pdf-parse on Node (Vercel)
-    if (!(globalThis as any).DOMMatrix) {
-      const dm: any = await import("dommatrix");
-      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    // Use legacy build for Node/Vercel compatibility
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    // Avoid worker config surprises on serverless
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = undefined as any;
     }
 
-    // ✅ Lazy-load pdf-parse so module shape can’t crash route boot on Vercel
-    const mod: any = await import("pdf-parse");
-    const parsePdf =
-      (typeof mod === "function" ? mod : null) ??
-      (typeof mod?.default === "function" ? mod.default : null) ??
-      (typeof mod?.pdfParse === "function" ? mod.pdfParse : null);
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      verbosity: 0,
+      // stop Vercel from trying to fetch cMaps or workers
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
 
-    if (typeof parsePdf !== "function") {
-      throw new Error(`pdf-parse export not callable (keys=${Object.keys(mod || {}).join(",")})`);
+    const pdf = await loadingTask.promise;
+
+    let out = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = (content?.items || []).map((it: any) => String(it?.str ?? "")).filter(Boolean);
+      out += strings.join(" ") + "\n";
     }
 
-    const data: any = await parsePdf(buffer as any);
-    return String(data?.text ?? "");
+    return out;
   } catch (err: any) {
     const msg = err?.message ? String(err.message) : String(err);
     throw new Error(`PDF parse failed: ${msg}`);
   }
 }
+
+/** ---------------- File extraction ---------------- */
 
 async function extractResumeFromFile(file: File): Promise<{ text: string; bulletsFromFile?: string[] }> {
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -622,7 +624,6 @@ export async function POST(req: Request) {
       return { outBullets, outJobIds };
     };
 
-    // ✅ IMPORTANT FIX: replace require() with dynamic import (ESM-safe on Vercel)
     const tryExtract = async (text: string) => {
       try {
         const mod: any = await import("@/lib/extractResumeBullets");
@@ -807,7 +808,8 @@ export async function POST(req: Request) {
     }
 
     rewritePlan = (rewritePlan || []).map((item: any, i: number) => {
-      const original = typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
+      const original =
+        typeof item?.originalBullet === "string" ? item.originalBullet : String(item?.originalBullet ?? "");
       const jobId = bulletJobIds[i] || experienceJobs[0]?.id || "job_default";
 
       return {
@@ -890,7 +892,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  // ✅ fingerprint: proves deployed route is THIS file and module boot didn’t crash
   return okJson({ ok: false, route: "src/app/api/analyze/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
