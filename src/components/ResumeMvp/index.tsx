@@ -2678,35 +2678,43 @@ export default function ResumeMvp() {
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Resume file (optional)
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  resetDerivedState();
-                }}
-                className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
-              />
-              {file ? (
-                <div className="mt-1 flex items-center gap-2">
-                  <Chip text={file.name} />
-                  <button
-                    type="button"
-                    onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Clear
-                  </button>
-                  {uploadingResume ? (
-                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
-                  ) : null}
-                </div>
+          <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+            Resume file (optional)
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              resetDerivedState();
+            }}
+            className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
+          />
+
+          {/* ✅ ADD THIS LINE */}
+          <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+            Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
+          </div>
+
+          {file ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Chip text={file.name} />
+              <button
+                type="button"
+                onClick={clearFile}
+                className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+              >
+                Clear
+              </button>
+              {uploadingResume ? (
+                <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
               ) : null}
-            </label>
+            </div>
+          ) : null}
+        </label>
+
 
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
