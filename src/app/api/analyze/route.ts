@@ -9,7 +9,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chargeCredits, refundCredits } from "@/lib/credits";
-import { createRequire } from "module";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -40,21 +39,12 @@ function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
 }
 
-function collapseSpacedCapsWords(s: string) {
-  // Turns "E X P E R I E N C E" -> "EXPERIENCE"
-  // Also helps with PDFs that split headings into spaced letters.
-  return String(s ?? "").replace(/(?:\b[A-Z]\s){2,}[A-Z]\b/g, (m) => m.replace(/\s+/g, ""));
-}
-
 function normalizeResumeText(input: unknown) {
-  const raw0 = String(input ?? "");
-  const raw = collapseSpacedCapsWords(raw0);
-
+  const raw = String(input ?? "");
   return raw
     .replace(/\r\n/g, "\n")
     .replace(/\u00A0/g, " ")
     .replace(/[ \t]+/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -291,7 +281,7 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist, NO WORKER, Vercel-safe) ---------------- */
+/** ---------------- PDF extraction (match cover-letter behavior, but preserve lines for bullets) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -302,7 +292,6 @@ async function ensurePdfJsPolyfills() {
       // ignore
     }
   }
-
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2DStub {};
   }
@@ -320,6 +309,14 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
+// Helps preserve bullet structure for analyze (the reason cover-letter “works” but analyze fails to find bullets)
+function normalizePdfLine(s: string) {
+  return String(s || "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
     await ensurePdfJsPolyfills();
@@ -328,21 +325,16 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
       throw new Error("DOMMatrix is not defined (polyfill failed).");
     }
 
-    // Use the legacy CommonJS build so we can resolve the worker path reliably on Vercel.
-    const pdfjsMod: any = await import("pdfjs-dist/legacy/build/pdf.js");
-    const pdfjs: any = pdfjsMod?.default ?? pdfjsMod;
+    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // Point workerSrc at a real file inside node_modules (prevents /var/task/.next/... pdf.worker.mjs lookup).
-    const require = createRequire(import.meta.url);
-    const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+    // Keep identical behavior to cover-letter: set a workerSrc
     if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
     }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true, // run in-process
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -350,25 +342,73 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     const pdf = await loadingTask.promise;
 
     let out = "";
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-      const content = await page.getTextContent({ normalizeWhitespace: true });
 
-      const items = (content?.items || []) as any[];
-      let pageText = "";
+      // IMPORTANT: preserve line endings / structure.
+      // pdfjs items often come as a flat list — we reconstruct lines via hasEOL and Y-position grouping.
+      const content = await page.getTextContent();
 
-      // Preserve line breaks so bullet parsers work.
-      for (const it of items) {
-        const s = String(it?.str ?? "");
-        if (!s) continue;
-        pageText += s;
-        pageText += it?.hasEOL ? "\n" : " ";
+      const items: any[] = Array.isArray(content?.items) ? content.items : [];
+      if (!items.length) {
+        out += "\n";
+        continue;
       }
 
-      out += pageText + "\n";
+      type Line = { y: number; parts: string[] };
+      const lines: Line[] = [];
+
+      // tolerance in PDF “text space” units; higher = more aggressive merging
+      const Y_TOL = 2.0;
+
+      let currentLine: Line | null = null;
+
+      const flushCurrent = () => {
+        if (!currentLine) return;
+        const lineText = normalizePdfLine(currentLine.parts.join(" "));
+        if (lineText) lines.push({ y: currentLine.y, parts: [lineText] });
+        currentLine = null;
+      };
+
+      for (const it of items) {
+        const str = String(it?.str ?? "");
+        const text = normalizePdfLine(str);
+        if (!text) {
+          // even if empty, respect hasEOL sometimes
+          if (it?.hasEOL) flushCurrent();
+          continue;
+        }
+
+        const y = Array.isArray(it?.transform) ? Number(it.transform[5] ?? 0) : 0;
+
+        if (!currentLine) {
+          currentLine = { y, parts: [text] };
+        } else {
+          const sameLine = Math.abs(currentLine.y - y) <= Y_TOL;
+          if (!sameLine) {
+            flushCurrent();
+            currentLine = { y, parts: [text] };
+          } else {
+            currentLine.parts.push(text);
+          }
+        }
+
+        // pdfjs sometimes explicitly flags end-of-line
+        if (it?.hasEOL) {
+          flushCurrent();
+        }
+      }
+      flushCurrent();
+
+      // Sort top-to-bottom (PDF Y often increases upward; but relative order here is “good enough”)
+      // If you see reversed lines, flip this comparator.
+      const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
+
+      out += pageLines.join("\n") + "\n\n";
     }
 
-    return normalizeResumeText(out);
+    return out;
   } catch (err: any) {
     const msg = err?.message ? String(err.message) : String(err);
     throw new Error(`PDF parse failed: ${msg}`);
