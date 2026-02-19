@@ -281,17 +281,56 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (pdfjs-dist legacy, NO WORKER) ---------------- */
+/** ---------------- PDF extraction (pdfjs-dist, NO WORKER, with polyfills) ---------------- */
+
+async function ensurePdfJsPolyfills() {
+  // DOMMatrix is the big one that breaks on Vercel
+  if (!(globalThis as any).DOMMatrix) {
+    try {
+      const dm: any = await import("dommatrix");
+      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    } catch {
+      // ignore
+    }
+  }
+
+  // These are sometimes referenced by pdfjs even for text extraction
+  if (!(globalThis as any).Path2D) {
+    (globalThis as any).Path2D = class Path2DStub {};
+  }
+  if (!(globalThis as any).ImageData) {
+    (globalThis as any).ImageData = class ImageDataStub {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: any, width: number, height?: number) {
+        this.data = data instanceof Uint8ClampedArray ? data : new Uint8ClampedArray(data || []);
+        this.width = Number(width || 0);
+        this.height = Number(height ?? 0);
+      }
+    };
+  }
+}
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    // Legacy CJS build is most reliable under Next/Vercel bundling.
+    await ensurePdfJsPolyfills();
+
+    if (!(globalThis as any).DOMMatrix) {
+      throw new Error("DOMMatrix is not defined (polyfill failed).");
+    }
+
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+    // MUST be a string (undefined triggers “Invalid workerSrc type”)
+    if (pdfjs?.GlobalWorkerOptions) {
+      pdfjs.GlobalWorkerOptions.workerSrc = "";
+    }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
-      disableWorker: true, // ✅ absolute must on Vercel/Next
+      disableWorker: true,
       useSystemFonts: true,
       disableFontFace: true,
     });
