@@ -283,14 +283,18 @@ function extractMetaBlocks(fullText: string) {
 
 /** ---------------- PDF extraction (pdfjs-dist, Vercel-safe) ---------------- */
 
-async function ensurePdfJsPolyfills() {
-  // DOMMatrix is required by pdfjs for text positioning
+async function ensurePdfPolyfills() {
+  // DOMMatrix
   if (!(globalThis as any).DOMMatrix) {
-    const dm: any = await import("dommatrix");
-    (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    try {
+      const dm: any = await import("dommatrix");
+      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    } catch {
+      // leave undefined; pdfjs may still work depending on input
+    }
   }
 
-  // Rendering-only in browsers, but pdfjs may touch these paths. Stubs prevent crashes.
+  // ImageData (pdfjs sometimes probes this)
   if (!(globalThis as any).ImageData) {
     (globalThis as any).ImageData = class ImageData {
       data: Uint8ClampedArray;
@@ -299,39 +303,36 @@ async function ensurePdfJsPolyfills() {
       constructor(dataOrWidth: any, width?: any, height?: any) {
         if (typeof dataOrWidth === "number") {
           this.width = dataOrWidth;
-          this.height = Number(width) || 0;
+          this.height = Number(width ?? 0);
           this.data = new Uint8ClampedArray(this.width * this.height * 4);
         } else {
-          this.data = dataOrWidth;
-          this.width = Number(width) || 0;
-          this.height = Number(height) || 0;
+          this.data = dataOrWidth as Uint8ClampedArray;
+          this.width = Number(width ?? 0);
+          this.height = Number(height ?? 0);
         }
       }
     };
   }
 
+  // Path2D (pdfjs sometimes probes this)
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2D {
-      addPath() {}
+      constructor(_?: any) {}
+      addPath(_?: any) {}
     };
   }
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfJsPolyfills();
+    await ensurePdfPolyfills();
 
-    // Use legacy build for Node/Vercel compatibility
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    // Avoid worker config surprises on serverless
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = undefined as any;
-    }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
+      disableWorker: true, // ✅ avoids workerSrc issues entirely
       useSystemFonts: true,
       disableFontFace: true,
     });

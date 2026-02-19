@@ -100,12 +100,47 @@ function parseBoolFromFormData(v: FormDataEntryValue | null, defaultValue: boole
   return defaultValue;
 }
 
+/** ---------------- Magic-byte sniffing (prevents Mammoth reading PDFs) ---------------- */
+
+type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
+
+function startsWith(buf: Buffer, bytes: number[]) {
+  if (!Buffer.isBuffer(buf)) return false;
+  if (buf.length < bytes.length) return false;
+  for (let i = 0; i < bytes.length; i++) {
+    if (buf[i] !== bytes[i]) return false;
+  }
+  return true;
+}
+
+function sniffBufferType(buf: Buffer): SniffedType {
+  if (buf.length >= 5 && buf.slice(0, 5).toString("ascii") === "%PDF-") return "pdf";
+  if (buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b) return "docx";
+  if (startsWith(buf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) return "doc";
+
+  const head = buf.slice(0, Math.min(buf.length, 4096));
+  if (head.length) {
+    let printable = 0;
+    for (const b of head) {
+      if (b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e)) printable++;
+    }
+    const ratio = printable / head.length;
+    if (ratio > 0.92) return "txt";
+  }
+
+  return "unknown";
+}
+
 /** --------- PDF extraction (pdfjs-dist, Vercel-safe) --------- */
 
-async function ensurePdfJsPolyfills() {
+async function ensurePdfPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
-    const dm: any = await import("dommatrix");
-    (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    try {
+      const dm: any = await import("dommatrix");
+      (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
+    } catch {
+      // ignore
+    }
   }
 
   if (!(globalThis as any).ImageData) {
@@ -116,12 +151,12 @@ async function ensurePdfJsPolyfills() {
       constructor(dataOrWidth: any, width?: any, height?: any) {
         if (typeof dataOrWidth === "number") {
           this.width = dataOrWidth;
-          this.height = Number(width) || 0;
+          this.height = Number(width ?? 0);
           this.data = new Uint8ClampedArray(this.width * this.height * 4);
         } else {
-          this.data = dataOrWidth;
-          this.width = Number(width) || 0;
-          this.height = Number(height) || 0;
+          this.data = dataOrWidth as Uint8ClampedArray;
+          this.width = Number(width ?? 0);
+          this.height = Number(height ?? 0);
         }
       }
     };
@@ -129,24 +164,22 @@ async function ensurePdfJsPolyfills() {
 
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2D {
-      addPath() {}
+      constructor(_?: any) {}
+      addPath(_?: any) {}
     };
   }
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    await ensurePdfJsPolyfills();
+    await ensurePdfPolyfills();
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-    if (pdfjs?.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = undefined as any;
-    }
 
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(buffer),
       verbosity: 0,
+      disableWorker: true, // ✅ avoids workerSrc type validation
       useSystemFonts: true,
       disableFontFace: true,
     });
@@ -170,25 +203,22 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
 /** --------- File extraction --------- */
 
-async function extractTextFromDocx(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
+async function extractTextFromDocxBuffer(buffer: Buffer): Promise<string> {
+  // mammoth expects a real .docx (zip)
   const parsed = await mammoth.extractRawText({ buffer });
   return parsed?.value ?? "";
 }
 
 async function extractResumeTextFromFile(file: File): Promise<string> {
-  const name = (file.name || "").toLowerCase();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const sniffed = sniffBufferType(buffer);
 
-  if (name.endsWith(".docx")) return extractTextFromDocx(file);
+  if (sniffed === "docx") return extractTextFromDocxBuffer(buffer);
+  if (sniffed === "pdf") return extractTextFromPdfBuffer(buffer);
+  if (sniffed === "txt") return buffer.toString("utf-8");
 
-  if (name.endsWith(".pdf")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    return extractTextFromPdfBuffer(buffer);
-  }
-
-  if (name.endsWith(".txt")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    return buffer.toString("utf-8");
+  if (sniffed === "doc") {
+    throw new Error("Unsupported Word format (.doc). Please convert it to .docx or export to PDF, then upload again.");
   }
 
   throw new Error("Unsupported file type. Please upload a PDF, DOCX, or TXT.");
@@ -531,12 +561,7 @@ export async function POST(req: Request) {
         });
 
         return okJson(
-          {
-            ok: false,
-            error: `Blocked term detected in output: "${hit}". Try again.`,
-            refunded: true,
-            balance: refunded.balance,
-          },
+          { ok: false, error: `Blocked term detected in output: "${hit}". Try again.`, refunded: true, balance: refunded.balance },
           { status: 422 }
         );
       }
@@ -592,7 +617,6 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  // ✅ fingerprint: proves the deployed route is THIS file (and module boot didn’t crash)
   return okJson({ ok: false, route: "src/app/api/cover-letter/route.ts", tag: BOOT_TAG }, { status: 405 });
 }
 
