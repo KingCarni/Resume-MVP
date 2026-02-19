@@ -115,215 +115,164 @@ function filterBadBullets(arr: string[]) {
     .filter((b) => !looksLikeContactOrReferenceLine(b));
 }
 
-/** ---------------- FIX #2: clean leading bullet garbage + de-dupe helpers ---------------- */
+/** ---------------- Clean leading bullet garbage + helpers ---------------- */
 
 function cleanLeadingBulletGarbage(s: string) {
+  // handles "•", "• -", "-", "o", "", etc.
   return String(s || "").replace(/^[\s•\u2022\u00B7o-]+/g, "").trim();
 }
 
-/** ---------------- FIX #4: patch missing company/title/dates onto parsed jobs ---------------- */
+function isLikelySectionHeading(line: string) {
+  const l = String(line || "").trim().toLowerCase();
+  if (!l) return false;
+  // your PDF extraction sometimes produces these headings as separate lines
+  return (
+    l === "highlights" ||
+    l === "experience" ||
+    l === "experi e n ce" ||
+    l === "education" ||
+    l === "skills" ||
+    l === "projects" ||
+    l === "certifications" ||
+    l === "certificates" ||
+    l === "volunteer" ||
+    l === "interests"
+  );
+}
 
-type ParsedHeader = { title: string; company: string; dates: string };
+function looksLikeDatesOnly(line: string) {
+  const v = String(line || "").trim();
+  if (!v) return false;
+  // "Feb 2025 - Jan 2026" / "Oct 2023 - Apr 2024" / "... - Present"
+  const hasMonth = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(v);
+  const hasYear = /\b(19|20)\d{2}\b/.test(v);
+  const hasDash = /[–—-]/.test(v);
+  return hasMonth && hasYear && hasDash && v.length <= 40;
+}
 
-function extractJobHeadersFromText(experienceText: string): ParsedHeader[] {
-  const text = normalizeResumeText(experienceText);
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+/** ---------------- FIX: Build experienceJobs from text (works for PDF lines w/o bullet markers) ---------------- */
 
-  const out: ParsedHeader[] = [];
+type TextJob = {
+  id: string;
+  company: string;
+  title: string;
+  dates: string;
+  location: string;
+  bullets: string[];
+};
 
-  // Single-line:
+function parseHeaderLine(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+
+  // Most common in your resume text:
   // "QA Lead — Prodigy Education (Mass Layoff) | Feb 2025 - Jan 2026"
-  const singleLine = /^(.{2,140}?)\s*(?:—|-)\s*(.{2,200}?)\s*\|\s*(.{4,80})$/;
-
-  // Two-line:
-  // line i:  "QA Lead — Prodigy Education (Mass Layoff) |"
-  // line i+1:"Feb 2025 - Jan 2026"
-  const headerNoDates = /^(.{2,140}?)\s*(?:—|-)\s*(.{2,200}?)\s*\|\s*$/;
-
-  const looksLikeDates = (s: string) => {
-    const v = String(s || "").trim();
-    if (!v) return false;
-    // accept "Feb 2025 - Jan 2026" or "Oct 2023 - Apr 2024" or "... - Present"
-    return /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(v) && /\b(19|20)\d{2}\b/.test(v);
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 1) single-line match
-    const m1 = line.match(singleLine);
-    if (m1) {
-      const title = String(m1[1] || "").trim();
-      const company = String(m1[2] || "").trim();
-      const dates = String(m1[3] || "").trim();
-      if (title && company && looksLikeDates(dates)) out.push({ title, company, dates });
-      continue;
-    }
-
-    // 2) two-line match (header ends with |, dates on next line)
-    const m2 = line.match(headerNoDates);
-    if (m2) {
-      const next = lines[i + 1] || "";
-      if (!looksLikeDates(next)) continue;
-
-      const title = String(m2[1] || "").trim();
-      const company = String(m2[2] || "").trim();
-      const dates = String(next || "").trim();
-
-      if (title && company) out.push({ title, company, dates });
-      continue;
-    }
-  }
-
-  // Dedup, preserve order
-  const seen = new Set<string>();
-  const deduped: ParsedHeader[] = [];
-  for (const h of out) {
-    const k = normalizeForContains(`${h.title}__${h.company}__${h.dates}`);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    deduped.push(h);
-  }
-
-  return deduped;
-}
-
-function looksLikePlaceholderJobs(jobs: any[]) {
-  const arr = Array.isArray(jobs) ? jobs : [];
-  if (!arr.length) return false;
-
-  // If most jobs are still defaults, treat as placeholder parse
-  let placeholderCount = 0;
-  for (const j of arr) {
-    const company = String(j?.company ?? "").trim();
-    const title = String(j?.title ?? "").trim();
-    const dates = String(j?.dates ?? "").trim();
-    const isPlaceholder =
-      company === "Company" || title === "Role" || dates === "Dates" || !company || !title || !dates;
-    if (isPlaceholder) placeholderCount++;
-  }
-  return placeholderCount / arr.length >= 0.6;
-}
-
-function patchJobsWithHeadersInOrder(jobs: any[], headers: ParsedHeader[]) {
-  const out = (Array.isArray(jobs) ? jobs : []).map((j) => ({ ...j }));
-  if (!out.length || !headers.length) return out;
-
-  const n = Math.min(out.length, headers.length);
-  for (let i = 0; i < n; i++) {
-    const h = headers[i];
-    out[i].title = h.title || out[i].title;
-    out[i].company = h.company || out[i].company;
-    out[i].dates = h.dates || out[i].dates;
-  }
-  return out;
-}
-
-/** ---------------- FIX #3: build experienceJobs for preview (job blocks) ---------------- */
-
-function looksLikeJobHeaderLine(lineRaw: string) {
-  const line = String(lineRaw || "").trim();
-  if (!line) return false;
-
-  // must contain a pipe (your format)
-  if (!line.includes("|")) return false;
-
-  // must include a dash separator between title and company
-  if (!(line.includes("—") || line.includes("-"))) return false;
-
-  // allow: "... |"  OR  "... | dates"
-  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,200}?)\s*\|\s*(.{0,80})$/;
-  return headerRegex.test(line);
-}
-
-
-function parseJobHeaderLine(lineRaw: string) {
-  const line = String(lineRaw || "").trim();
-  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,200}?)\s*\|\s*(.{0,80})$/;
-  const m = line.match(headerRegex);
+  // "Software Test Engineer 3 — Microsoft / Ascendion | May 2023 - Oct 2023"
+  // Allow "-" or "—", and allow trailing "|" with dates on next line.
+  const m = line.match(/^(.{2,160}?)\s*(?:—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/);
   if (!m) return null;
 
   const title = String(m[1] || "").trim();
-  const company = String(m[3] || "").trim();
-  const datesInline = String(m[4] || "").trim(); // may be empty
+  const company = String(m[2] || "").trim();
+  const datesInline = String(m[3] || "").trim(); // may be empty
+  if (!title || !company) return null;
+
+  // guard against false positives
+  if (isLikelySectionHeading(title) || isLikelySectionHeading(company)) return null;
 
   return { title, company, datesInline };
 }
 
-function buildExperienceJobsForPreviewFromText(experienceText: string) {
+function buildExperienceJobsFromText(experienceText: string) {
   const lines = normalizeResumeText(experienceText)
     .split("\n")
-    .map((l) => l.trim());
+    .map((l) => String(l || "").trim());
 
-  const looksLikeDates = (s: string) => {
-    const v = String(s || "").trim();
-    if (!v) return false;
-    return /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(v) && /\b(19|20)\d{2}\b/.test(v);
+  const jobs: TextJob[] = [];
+  let current: TextJob | null = null;
+
+  const pushCurrent = () => {
+    if (!current) return;
+
+    // clean + dedupe bullets
+    const seen = new Set<string>();
+    current.bullets = (current.bullets || [])
+      .map((b) => cleanLeadingBulletGarbage(b))
+      .map((b) => b.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .filter((b) => !looksLikeContactOrReferenceLine(b))
+      .filter((b) => {
+        const k = normalizeForContains(b);
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
+    if (current.company && current.title && current.bullets.length) {
+      jobs.push(current);
+    }
+    current = null;
   };
 
-  const jobs: any[] = [];
-  let current: any | null = null;
-
   for (let i = 0; i < lines.length; i++) {
-    const line = String(lines[i] || "").trim();
+    const line = lines[i];
     if (!line) continue;
+    if (isLikelySectionHeading(line)) continue;
 
-    if (looksLikeJobHeaderLine(line)) {
-      const parsed = parseJobHeaderLine(line);
-      if (parsed) {
-        // close prior
-        if (current && current.bullets.length) jobs.push(current);
+    const parsed = parseHeaderLine(line);
+    if (parsed) {
+      pushCurrent();
 
-        // dates: inline, OR next-line
-        let dates = parsed.datesInline || "";
-        if (!dates) {
-          const next = String(lines[i + 1] || "").trim();
-          if (looksLikeDates(next)) {
-            dates = next;
-            i++; // consume date line
-          }
+      let dates = parsed.datesInline || "";
+      if (!dates) {
+        const next = String(lines[i + 1] || "").trim();
+        if (looksLikeDatesOnly(next)) {
+          dates = next;
+          i++; // consume the date line
         }
-
-        current = {
-          id: `job_${jobs.length + 1}`,
-          title: parsed.title,
-          company: parsed.company,
-          dates: dates || "Dates",
-          location: "",
-          bullets: [],
-        };
       }
+
+      current = {
+        id: `job_${jobs.length + 1}`,
+        title: parsed.title,
+        company: parsed.company,
+        dates: dates || "Dates",
+        location: "",
+        bullets: [],
+      };
       continue;
     }
 
+    // If we haven't hit a header yet, ignore preamble
     if (!current) continue;
 
-    // bullet capture
-    if (/^[•\u2022\u00B7o-]\s+/.test(line)) {
-      const b = cleanLeadingBulletGarbage(line);
-      if (b && !looksLikeContactOrReferenceLine(b)) current.bullets.push(b);
-    }
+    // Stop conditions: next section headings (already handled), or a weird lone dates line
+    if (looksLikeDatesOnly(line)) continue;
+
+    // PDF extraction often gives bullet lines without "•". Treat non-header lines as bullets.
+    // But keep it sane: ignore ultra-short noise.
+    const b = cleanLeadingBulletGarbage(line);
+    if (!b) continue;
+    if (b.length <= 1) continue;
+
+    current.bullets.push(b);
   }
 
-  if (current && current.bullets.length) jobs.push(current);
-
-  // Dedup bullets per job
-  for (const j of jobs) {
-    const seen = new Set<string>();
-    j.bullets = (j.bullets || []).filter((b: string) => {
-      const k = normalizeForContains(b);
-      if (!k || seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-  }
-
+  pushCurrent();
   return jobs;
 }
 
+function remapBulletJobIdsFromJobs(bullets: string[], jobs: { id: string; bullets: string[] }[], fallbackJobId: string) {
+  const map = new Map<string, string>();
+  for (const j of jobs || []) {
+    for (const b of j.bullets || []) {
+      const k = normalizeForContains(b);
+      if (!k) continue;
+      if (!map.has(k)) map.set(k, String(j.id));
+    }
+  }
+
+  return (bullets || []).map((b) => map.get(normalizeForContains(b)) || fallbackJobId);
+}
 
 /** ---------------- Magic-byte sniffing ---------------- */
 
@@ -566,7 +515,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-
       const content = await page.getTextContent();
 
       const items: any[] = Array.isArray(content?.items) ? content.items : [];
@@ -577,7 +525,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
       type Line = { y: number; parts: string[] };
       const lines: Line[] = [];
-
       const Y_TOL = 2.0;
 
       let currentLine: Line | null = null;
@@ -611,14 +558,11 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
           }
         }
 
-        if (it?.hasEOL) {
-          flushCurrent();
-        }
+        if (it?.hasEOL) flushCurrent();
       }
       flushCurrent();
 
       const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
-
       out += pageLines.join("\n") + "\n\n";
     }
 
@@ -646,7 +590,6 @@ async function extractResumeFromFile(file: File): Promise<{ text: string; bullet
   }
 
   if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
-
   if (sniffed === "txt") return { text: buffer.toString("utf8"), bulletsFromFile: undefined };
 
   const name = (file.name || "").toLowerCase();
@@ -798,6 +741,7 @@ export async function POST(req: Request) {
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
 
+    // --- Parse inputs (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -881,6 +825,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // ✅ Charge credits AFTER validation
     const COST_ANALYZE = 3;
     const charged = await chargeCredits({
       userId: dbUser.id,
@@ -897,6 +842,7 @@ export async function POST(req: Request) {
     chargedUserId = dbUser.id;
     chargedCost = COST_ANALYZE;
 
+    // --- Do analysis ---
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
 
@@ -954,6 +900,7 @@ export async function POST(req: Request) {
       }
     };
 
+    // keep your existing safety-gated DOCX bullet fallback
     const seededFileBulletsRaw = filterBadBullets(bulletsFromFile || []);
     let seededFileBullets = seededFileBulletsRaw;
 
@@ -969,14 +916,6 @@ export async function POST(req: Request) {
     // 1) strict on experience slice
     const strict1 = await tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
-
-    // ✅ FIX: if parser returned jobs with bullets but placeholder company/title/dates, patch headers from text.
-    if (looksLikePlaceholderJobs(experienceJobs)) {
-      const headers = extractJobHeadersFromText(experienceSlice.experienceText || "");
-      if (headers.length) {
-        experienceJobs = patchJobsWithHeadersInOrder(experienceJobs, headers);
-      }
-    }
 
     const flat1 = flattenFromJobs(experienceJobs);
     bullets = filterBadBullets(flat1.outBullets);
@@ -997,18 +936,10 @@ export async function POST(req: Request) {
       const strict2 = await tryExtract(bulletSourceText);
 
       const jobs2 = normalizeJobs(strict2.jobs);
-
-      // ✅ Same patch in the fallback path too (if jobs exist but are placeholders)
-      let jobs2Patched = jobs2;
-      if (looksLikePlaceholderJobs(jobs2Patched)) {
-        const headers2 = extractJobHeadersFromText(experienceSlice.experienceText || bulletSourceText || "");
-        if (headers2.length) jobs2Patched = patchJobsWithHeadersInOrder(jobs2Patched, headers2);
-      }
-
-      const flat2 = flattenFromJobs(jobs2Patched);
+      const flat2 = flattenFromJobs(jobs2);
 
       if (flat2.outBullets.length) {
-        experienceJobs = jobs2Patched;
+        experienceJobs = jobs2;
 
         const filtered = filterBadBullets(flat2.outBullets);
         bullets = filtered;
@@ -1043,6 +974,7 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
+      // ✅ Refund (user cannot proceed; parsing failure)
       try {
         const refunded = await refundCredits({
           userId: chargedUserId,
@@ -1099,14 +1031,38 @@ export async function POST(req: Request) {
       }
     }
 
-    // If jobs are truly empty, try preview grouping builder (kept as-is)
-    if ((!experienceJobs || experienceJobs.length === 0) && bullets.length) {
-      const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
-      if (previewJobs.length) {
-        experienceJobs = previewJobs;
-      }
+    /**
+     * ✅ THE FIX YOU’RE MISSING:
+     * Your PDF extraction gives job bullets as plain lines (no "•"),
+     * so the previous preview-builder (that required bullet markers) can’t reliably build jobs,
+     * and patch-by-index can get out of order.
+     *
+     * So: build jobs directly from the experience text (header lines), keep order top-to-bottom,
+     * attach the following lines as bullets until next header.
+     */
+    const jobsFromText = buildExperienceJobsFromText(experienceSlice.experienceText || bulletSourceText || "");
+    if (jobsFromText.length) {
+      experienceJobs = jobsFromText;
+
+      // also remap bulletJobIds so rewrites stay aligned with the correct job
+      const fallbackJobId = jobsFromText[0]?.id || bulletJobIds[0] || "job_default";
+      bulletJobIds = remapBulletJobIdsFromJobs(bullets, jobsFromText, fallbackJobId);
+    } else if (!experienceJobs?.length) {
+      // worst-case fallback: keep a single bucket so UI doesn’t show "Company — Role"
+      experienceJobs = [
+        {
+          id: "job_default",
+          company: "Company",
+          title: "Role",
+          dates: "Dates",
+          location: "",
+          bullets: bullets.slice(0, 50),
+        },
+      ];
+      bulletJobIds = bullets.map(() => "job_default");
     }
 
+    // Suggestions + plan
     let bulletSuggestions: any[] = [];
     let weakBullets: any[] = [];
 
@@ -1182,7 +1138,7 @@ export async function POST(req: Request) {
         bulletsFromFileCount: (bulletsFromFile || []).length,
         seededFileBulletsCount: seededFileBullets.length,
         jobsDetected: experienceJobs.length,
-        jobsWithBullets: experienceJobs.filter((j) => j.bullets?.length).length,
+        jobsWithBullets: experienceJobs.filter((j: any) => j.bullets?.length).length,
         flattenedBulletCount: bullets.length,
         rewritePlanCount: Array.isArray(rewritePlan) ? rewritePlan.length : 0,
         metaGamesCount: metaBlocks.gamesShipped.length,
@@ -1195,6 +1151,7 @@ export async function POST(req: Request) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
 
+    // ✅ Refund if we charged and then something blew up
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({
