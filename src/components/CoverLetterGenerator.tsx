@@ -1107,7 +1107,7 @@ function buildCoverLetterHtml(args: {
 <body>
   <div class="page">
     <div class="side">
-      <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+      <h1 class="name">${safe(profile.fullName || "")}</h1>
       <div class="title">Cover Letter</div>
       <div class="contact">
         ${[

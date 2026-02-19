@@ -26,11 +26,6 @@ export default async function HomePage() {
         <>
           <p className="mt-2 opacity-80">Choose a tool:</p>
 
-          {/* Buy credits */}
-          <div className="mt-4">
-            <BuyCreditsButton />
-          </div>
-
           {/* Primary Tools */}
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -82,6 +77,11 @@ export default async function HomePage() {
               ))}
             </div>
           </section>
+
+          {/* Buy credits (moved below Support Development) */}
+          <div className="mt-10 max-w-xl">
+            <BuyCreditsButton />
+          </div>
         </>
       )}
     </main>
