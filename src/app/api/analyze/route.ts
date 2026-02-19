@@ -977,6 +977,16 @@ export async function POST(req: Request) {
       const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
       if (previewJobs.length) {
         experienceJobs = previewJobs;
+
+        // Map bulletJobIds to these jobs if they were all fallback/default
+        const hasRealIds = bulletJobIds.some((id) => id && id !== "job_default");
+        if (!hasRealIds && experienceJobs.length) {
+          const rebuilt: string[] = [];
+          for (const job of experienceJobs) {
+            for (const _b of job.bullets || []) rebuilt.push(job.id);
+          }
+          if (rebuilt.length) bulletJobIds = rebuilt.slice(0, bullets.length);
+        }
       }
     }
 
