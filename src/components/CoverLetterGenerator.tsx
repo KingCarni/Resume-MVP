@@ -1044,7 +1044,42 @@ function splitParagraphs(text: string) {
     .filter(Boolean);
   return paras.length ? paras : raw.trim() ? [raw.trim()] : [];
 }
+function stripLegacyHeaderBlock(text: string) {
+  if (!text) return "";
 
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+
+  const isLegacyLine = (l: string) => {
+    const s = l.trim().toLowerCase();
+    return (
+      s === "your name" ||
+      s === "your address" ||
+      s === "city, state, zip" ||
+      s === "your email" ||
+      s === "your phone number" ||
+      s === "date"
+    );
+  };
+
+  let i = 0;
+
+  // Skip blank lines at top
+  while (i < lines.length && !lines[i].trim()) i++;
+
+  // Remove legacy block if present at top
+  const start = i;
+  while (i < lines.length && isLegacyLine(lines[i])) {
+    i++;
+  }
+
+  if (i > start) {
+    // Remove trailing blank line after block
+    while (i < lines.length && !lines[i].trim()) i++;
+    return lines.slice(i).join("\n");
+  }
+
+  return text;
+}
 /**
  * ✅ Removes common “template placeholder header lines” that should NOT be uploaded
  * because you already provide header details via the inputs.
@@ -1405,10 +1440,12 @@ export default function CoverLetterGenerator() {
         throw new Error((payload as any)?.error || "Cover letter generation failed");
       }
 
-      const text = payload.coverLetter?.trim();
-      if (!text) throw new Error("Empty cover letter returned");
+      const rawText = payload.coverLetter?.trim();
+if (!rawText) throw new Error("Empty cover letter returned");
 
-      setCoverLetterDraft(text);
+const cleanedText = stripLegacyHeaderBlock(rawText);
+
+setCoverLetterDraft(cleanedText);
     } catch (e: any) {
       setError(e?.message || "Generation failed");
     } finally {
