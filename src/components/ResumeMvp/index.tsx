@@ -1,9 +1,7 @@
 // src/components/ResumeMvp/index.tsx
 "use client";
 
-import Link from "next/link";
 import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
-import ThemeToggle from "@/components/ThemeToggle";
 import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 import { upload } from "@vercel/blob/client";
 import type { PutBlobResult } from "@vercel/blob";
@@ -34,11 +32,6 @@ type RewritePlanItem = {
   jobId?: string; // server-provided mapping
 };
 
-const navBtn =
-  "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-  "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
-  "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
-
 type ResumeTemplateId =
   | "modern"
   | "classic"
@@ -52,7 +45,6 @@ type ResumeTemplateId =
   | "neon"
   | "terminal"
   | "blueprint"
-  // --- NEW THEMES (18) ---
   | "monochrome"
   | "noir"
   | "paper"
@@ -211,7 +203,7 @@ function findInjectedTerms(text: string, terms: string[]) {
   return Array.from(new Set(hits));
 }
 
-/** ---------------- NEW: keyword + rewrite guardrail helpers ---------------- */
+/** ---------------- keyword + rewrite guardrail helpers ---------------- */
 
 function normalizeSuggestedKeywordsForBullet(originalBullet: string, suggested: string[]) {
   const text = normalizeForMatch(originalBullet);
@@ -237,9 +229,7 @@ function normalizeSuggestedKeywordsForBullet(originalBullet: string, suggested: 
     return text.includes(kk);
   });
 
-  if (cleaned.length < 2) {
-    cleaned = ["qa", "test planning", "release", "jira"];
-  }
+  if (cleaned.length < 2) cleaned = ["qa", "test planning", "release", "jira"];
 
   return cleaned.slice(0, 5);
 }
@@ -346,8 +336,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/10 dark:text-white/70"
-          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/15 dark:text-white/90",
+          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
+          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/80",
       ].join(" ")}
     >
       {text}
@@ -366,10 +356,10 @@ function Callout({
 }) {
   const toneClasses =
     tone === "warn"
-      ? "border-amber-300/60 bg-amber-100/60 text-amber-950 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"
+      ? "border-amber-300/60 bg-amber-100/60 text-amber-950 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100"
       : tone === "danger"
-      ? "border-red-300/60 bg-red-100/60 text-red-950 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-100"
-      : "border-sky-300/60 bg-sky-100/60 text-sky-950 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100";
+      ? "border-red-300/60 bg-red-100/60 text-red-950 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-100"
+      : "border-sky-300/60 bg-sky-100/60 text-sky-950 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-100";
 
   return (
     <div className={`rounded-xl border p-3 ${toneClasses}`}>
@@ -418,7 +408,6 @@ function headerContactChipsCss() {
 }
 
 function printLockCss() {
-  // Media-invariant lock: same in iframe preview AND pdf render
   return `
 html, body{
   margin:0;
@@ -427,7 +416,6 @@ html, body{
   print-color-adjust: exact;
 }
 
-/* ✅ Always lock "paper" geometry, not just print */
 .page{
   width: 8.5in !important;
   min-height: 11in !important;
@@ -435,7 +423,6 @@ html, body{
   margin: 0 auto !important;
 }
 
-/* ✅ Avoid browser-specific print inset surprises */
 @page{
   size: Letter;
   margin: 0;
@@ -443,11 +430,6 @@ html, body{
 `.trim();
 }
 
-/**
- * IMPORTANT: Theme parity (Resume ⇄ Cover Letter)
- * - Use the SAME CSS variables naming as the cover letter generator (lowercase).
- * - Ensure .page uses --pagebg (not --bodybg), and print keeps both.
- */
 type ThemeArgs = {
   font: "sans" | "serif" | "mono";
   ink: string;
@@ -456,8 +438,8 @@ type ThemeArgs = {
   accent: string;
   accent2?: string;
 
-  bodyBg: string; // body background
-  pageBg: string; // page background
+  bodyBg: string;
+  pageBg: string;
   headerBg: string;
   cardBg: string;
 
@@ -490,7 +472,6 @@ function mkThemeCss(t: ThemeArgs) {
   --accent:${t.accent};
   --accent2:${accent2};
 
-  /* ✅ cover-letter parity variable names (lowercase) */
   --bodybg:${t.bodyBg};
   --pagebg:${t.pageBg};
   --headerbg:${t.headerBg};
@@ -678,19 +659,10 @@ ${headerContactChipsCss()}
 `.trim();
 }
 
-/**
- * ✅ Resume-specific wrapper
- * Fixes the actual mismatch bug:
- * - DO NOT reference --bodyBg/--pageBg (camelCase) — they don't exist.
- * - Use lowercase vars to match CoverLetterGenerator: --bodybg / --pagebg
- */
 function templateStylesResume(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white)
-   IMPORTANT: mkThemeCss uses lowercase vars: --bodybg / --pagebg
-*/
 @media print {
   html, body{
     -webkit-print-color-adjust: exact;
@@ -699,14 +671,14 @@ ${templateStyles(template)}
 
   body{
     background: var(--bodybg) !important;
-    padding: 0 !important; /* prevents double-inset differences */
+    padding: 0 !important;
   }
 
   .page{
     background: var(--pagebg, var(--bodybg)) !important;
     box-shadow: none !important;
     margin: 0 auto !important;
-    border-radius: 0 !important; /* browsers often clip radius differently in print */
+    border-radius: 0 !important;
   }
 
   .top:after{ display:none !important; }
@@ -721,7 +693,6 @@ ${templateStyles(template)}
  * - .page uses --pagebg
  */
 function templateStyles(template: ResumeTemplateId) {
-  // ---------- Canonical "classic" CSS fallback ----------
   const classicCss = `
 :root{
   --ink:#111;
@@ -858,7 +829,6 @@ ${headerContactChipsCss()}
 ${printLockCss()}
 `.trim();
 
-  // ---------- Themed layouts ----------
   if (template === "modern") {
     return mkThemeCss({
       font: "sans",
@@ -943,7 +913,6 @@ ${printLockCss()}
   }
 
   if (template === "ats") {
-    // ultra-plain: no bars, no fancy boxes
     return `
 ${classicCss}
 .page{ border: none; }
@@ -956,7 +925,6 @@ ${printLockCss()}
   }
 
   if (template === "sidebar") {
-    // Sidebar uses same variable naming scheme too.
     return `
 :root{
   --ink:#0f172a;
@@ -1128,7 +1096,6 @@ ${printLockCss()}
     });
   }
 
-  // --- The “18” additional themes ---
   if (template === "monochrome") {
     return mkThemeCss({
       font: "sans",
@@ -1532,7 +1499,6 @@ function buildResumeHtml(args: {
       if (!list.length) return "";
 
       const headerLeft = `${safe(sec.company || "Company")} — ${safe(sec.title || "Role")}`;
-
       const headerRight = [sec.location?.trim() ? safe(sec.location) : "", safe(sec.dates || "")]
         .filter(Boolean)
         .join(" • ");
@@ -1594,7 +1560,6 @@ function buildResumeHtml(args: {
 </html>`;
   }
 
-  // ✅ Terminal parity: cover letter shows plain contact lines (no chips)
   const useChips = template !== "ats" && template !== "terminal";
 
   const topContact = contactBits
@@ -1666,19 +1631,18 @@ function buildResumeHtml(args: {
 }
 
 function openPreviewWindow(html: string) {
-  const w = window.open("", "_blank"); // keep simple for compatibility
+  const w = window.open("", "_blank");
   if (!w) {
     alert("Popup blocked. Allow popups for this site to use Preview.");
     return;
   }
-
   w.document.open();
   w.document.write(html);
   w.document.close();
 }
 
 function openPrintWindow(html: string) {
-  const w = window.open("", "_blank"); // no noopener so we can write
+  const w = window.open("", "_blank");
   if (!w) {
     alert("Popup blocked. Allow popups for this site to use Print.");
     return;
@@ -1783,7 +1747,7 @@ export default function ResumeMvp() {
         setCreditsBalance(null);
         return;
       }
-      if (payload?.ok) setCreditsBalance(Number(payload.balance ?? 0));
+      if (payload?.ok) setCreditsBalance(Number(payload.balance ?? payload.credits ?? 0));
       else setCreditsBalance(null);
     } finally {
       setCreditsLoading(false);
@@ -1849,7 +1813,7 @@ export default function ResumeMvp() {
     return hasResume && hasJob;
   }, [file, resumeText, jobText]);
 
-  function resetDerivedState() {
+  const resetDerivedState = useCallback(() => {
     setAnalysis(null);
     setSelectedBulletIdx(new Set());
     setAssignments({});
@@ -1860,50 +1824,54 @@ export default function ResumeMvp() {
     setShowPreviewEditor(false);
     setPreviewHtmlDraft("");
     setPreviewHtmlOverride("");
-  }
+    setResumeBlobUrl("");
+  }, []);
 
-  async function ensureResumeUploadedToBlob(f: File) {
-    if (resumeBlobUrl) return resumeBlobUrl;
+  const ensureResumeUploadedToBlob = useCallback(
+    async (f: File) => {
+      if (resumeBlobUrl) return resumeBlobUrl;
 
-    setUploadingResume(true);
-    try {
-      const safeName = f.name.replace(/\s+/g, "-");
-      const pathname = `resume/${Date.now()}-${safeName}`;
+      setUploadingResume(true);
+      try {
+        const safeName = f.name.replace(/\s+/g, "-");
+        const pathname = `resume/${Date.now()}-${safeName}`;
 
-      const blob = (await upload(pathname, f, {
-        access: "public",
-        handleUploadUrl: "/api/blob/upload",
-      })) as PutBlobResult;
+        const blob = (await upload(pathname, f, {
+          access: "public",
+          handleUploadUrl: "/api/blob/upload",
+        })) as PutBlobResult;
 
-      setResumeBlobUrl(blob.url);
-      return blob.url;
-    } finally {
-      setUploadingResume(false);
-    }
-  }
+        setResumeBlobUrl(blob.url);
+        return blob.url;
+      } finally {
+        setUploadingResume(false);
+      }
+    },
+    [resumeBlobUrl]
+  );
 
-  function clearFile() {
+  const clearFile = useCallback(() => {
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     resetDerivedState();
-  }
+  }, [resetDerivedState]);
 
-  function toggleSelected(i: number) {
+  const toggleSelected = useCallback((i: number) => {
     setSelectedBulletIdx((prev) => {
       const next = new Set(prev);
       if (next.has(i)) next.delete(i);
       else next.add(i);
       return next;
     });
-  }
+  }, []);
 
-  function selectAll(count: number) {
+  const selectAll = useCallback((count: number) => {
     setSelectedBulletIdx(new Set(Array.from({ length: count }, (_, i) => i)));
-  }
+  }, []);
 
-  function selectNone() {
+  const selectNone = useCallback(() => {
     setSelectedBulletIdx(new Set());
-  }
+  }, []);
 
   function ensureAssignmentsForPlan(planLen: number, fallbackSectionId: string) {
     setAssignments((prev) => {
@@ -1946,10 +1914,8 @@ export default function ResumeMvp() {
     try {
       let res: Response;
 
-      // ✅ If user pasted HTML, convert it to plain text first
       const resumeInput = resumeText.trim();
       const resumePlain = looksLikeHtmlInput(resumeInput) ? htmlToPlainText(resumeInput) : resumeInput;
-
       const resumeTextForApi = resumePlain ? normalizeResumeTextForParsing(resumePlain) : "";
 
       if (file) {
@@ -1991,12 +1957,12 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        const err = typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed";
+        const errMsg = typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed";
         if ((payload as any)?.error === "OUT_OF_CREDITS") {
           const bal = (payload as any)?.balance;
           throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
         }
-        throw new Error(err);
+        throw new Error(errMsg);
       }
 
       if (typeof payload === "string") {
@@ -2028,7 +1994,6 @@ export default function ResumeMvp() {
 
       if (planLen) {
         const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
-
         const auto = buildAssignmentsFromServerMapping({
           rewritePlan: rewritePlanLocal,
           bulletJobIds,
@@ -2042,11 +2007,10 @@ export default function ResumeMvp() {
         setAssignments({});
       }
 
-      // ✅ keep credits UI in sync
       refreshCredits();
     } catch (e: any) {
       setError(e?.message || "Analyze failed");
-      refreshCredits(); // refresh anyway in case server decremented before error
+      refreshCredits();
     } finally {
       setLoadingAnalyze(false);
     }
@@ -2106,7 +2070,6 @@ export default function ResumeMvp() {
       return;
     }
 
-    // Training bullets: safe rewrite without inventing work
     if (isTrainingLikeBullet(originalBullet)) {
       const rewrittenTraining = defaultTrainingRewrite(originalBullet);
       if (!rewrittenTraining) {
@@ -2382,7 +2345,6 @@ export default function ResumeMvp() {
   }
 
   function handleUndoRewrite(index: number) {
-    // ✅ UI undo: clears rewrite, keeps backend logic untouched
     setAnalysis((prev) => {
       if (!prev) return prev;
       const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
@@ -2396,13 +2358,11 @@ export default function ResumeMvp() {
         ...cur,
         rewrittenBullet: "",
         needsMoreInfo: false,
-        // keep suggestedKeywords / notes internally if you want; user won't see them anyway
       };
 
       return { ...prev, rewritePlan: nextPlan };
     });
 
-    // Also unselect so there’s no “applied” confusion.
     setSelectedBulletIdx((prev) => {
       const next = new Set(prev);
       next.delete(index);
@@ -2442,7 +2402,6 @@ export default function ResumeMvp() {
     }
   }
 
-  // ✅ If server didn’t return rewritePlan, synthesize a simple one from bullets
   const effectivePlan: RewritePlanItem[] = useMemo(() => {
     const plan = Array.isArray(analysis?.rewritePlan) ? analysis!.rewritePlan! : [];
     if (plan.length) return plan;
@@ -2484,7 +2443,6 @@ export default function ResumeMvp() {
       const original = planItemToText(item);
       const rewritten = String(item?.rewrittenBullet ?? "").trim();
       const isSelected = selectedBulletIdx.has(i);
-      // apply rewrite only when selected + exists
       if (isSelected && rewritten) return rewritten;
       return original;
     });
@@ -2514,17 +2472,7 @@ export default function ResumeMvp() {
       metaMetrics,
       includeMeta: includeMetaInResumeDoc,
     });
-  }, [
-    analysis,
-    effectivePlan.length,
-    resumeTemplate,
-    profile,
-    sections,
-    bulletsBySection,
-    metaGames,
-    metaMetrics,
-    includeMetaInResumeDoc,
-  ]);
+  }, [analysis, effectivePlan.length, resumeTemplate, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMetaInResumeDoc]);
 
   const effectiveResumeHtml = useMemo(() => {
     return (previewHtmlOverride || resumeHtml || "").trim();
@@ -2533,7 +2481,7 @@ export default function ResumeMvp() {
   const activeResumeHtml = useMemo(() => {
     if (showPreviewEditor) return (previewHtmlDraft || effectiveResumeHtml || "").trim();
     return (previewHtmlOverride || effectiveResumeHtml || "").trim();
-  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml, previewHtmlOverride]);
+  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml]);
 
   async function handleCopyOutput() {
     const html = activeResumeHtml;
@@ -2609,70 +2557,19 @@ export default function ResumeMvp() {
   }, [effectivePlan, guardrailTerms]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/resume" className={navBtn}>
-            Resume Compiler
-          </Link>
-
-          <Link href="/cover-letter" className={navBtn}>
-            Cover Letter Generator
-          </Link>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* ✅ Credits counter */}
-          <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-white/10 dark:text-white">
-            {status !== "authenticated" ? (
-              <span className="opacity-70">Credits: —</span>
-            ) : creditsLoading ? (
-              <span className="opacity-70">Credits: …</span>
-            ) : (
-              <span className={creditsBalance !== null && creditsBalance <= 0 ? "text-red-600 dark:text-red-300" : ""}>
-                Credits: {creditsBalance ?? 0}
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={refreshCredits}
-            disabled={status !== "authenticated" || creditsLoading}
-            title="Refresh credits"
-            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-          >
-            ↻
-          </button>
-
-          <a
-            href="https://git-a-job.com/donate"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition hover:border-emerald-700 hover:bg-emerald-700"
-          >
-            Donate
-          </a>
-
-          <a
-            href="https://git-a-job.com/feedback"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
-          >
-            Feedback
-          </a>
-
-          <ThemeToggle />
-        </div>
-      </div>
-
+    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-white">
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
           Analyze → assign bullets → rewrite selected → compile into your chosen template.
         </p>
+
+        {/* Optional: tiny credits badge if you want it here */}
+        {status === "authenticated" ? (
+          <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+            Credits: {creditsLoading ? "…" : creditsBalance ?? "—"}
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -2713,7 +2610,6 @@ export default function ResumeMvp() {
                 className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
               />
 
-              {/* ✅ ADD THIS LINE */}
               <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                 Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
               </div>
@@ -2728,7 +2624,9 @@ export default function ResumeMvp() {
                   >
                     Clear
                   </button>
-                  {uploadingResume ? <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span> : null}
+                  {uploadingResume ? (
+                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
+                  ) : null}
                 </div>
               ) : null}
             </label>
@@ -2863,7 +2761,6 @@ export default function ResumeMvp() {
                   {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
                 </button>
 
-                {/* ✅ small costs hint right near the action buttons */}
                 <div className="ml-1 text-xs text-black/60 dark:text-white/60">
                   Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
                 </div>
@@ -3152,8 +3049,6 @@ export default function ResumeMvp() {
                         <div className="whitespace-pre-wrap text-sm">{rewritten}</div>
                       </>
                     ) : null}
-
-                    {/* ✅ Notes intentionally hidden from user UI (kept in data) */}
                   </div>
                 </div>
               );
