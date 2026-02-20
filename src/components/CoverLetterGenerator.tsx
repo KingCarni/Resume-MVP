@@ -1426,28 +1426,14 @@ export default function CoverLetterGenerator() {
     "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
-     
+  <main className="mx-auto max-w-6xl px-4 py-6">
+    {error ? (
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
-        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-black/70">
-          Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
-          Preview renders as a real HTML document (resume-template style). You can edit the letter
-          below and the preview updates live.
-        </p>
-
-        <div className="mt-2 text-xs font-extrabold text-black/50 dark:text-black/70">
-          Pricing: Generate cover letter = 5 credits • Download PDF = 5 credits
-        </div>
+        <Callout title="Error" tone="danger">
+          <div className="whitespace-pre-wrap text-sm">{error}</div>
+        </Callout>
       </div>
-
-      {error ? (
-        <div className="mb-4">
-          <Callout title="Error" tone="danger">
-            <div className="whitespace-pre-wrap text-sm">{error}</div>
-          </Callout>
-        </div>
-      ) : null}
+    ) : null}      
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
