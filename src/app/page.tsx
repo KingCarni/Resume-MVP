@@ -24,14 +24,23 @@ export default async function HomePage() {
       {/* Top nav (marketing) */}
       <div className="mx-auto max-w-6xl px-6 pt-10">
         <div className="flex items-center justify-between">
-          <Link
-            href="/"
-            className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-sm font-black text-black shadow-sm backdrop-blur hover:bg-white/35"
-          >
-            Git-a-Job
-          </Link>
+          {session ? (
+            <Link
+              href="/api/auth/signout?callbackUrl=/"
+              className="rounded-xl border border-white/40 bg-white/25 px-4 py-2 text-sm font-black text-black shadow-sm backdrop-blur transition-all duration-200 hover:bg-white/35 hover:scale-[1.02]"
+            >
+              Sign Out
+            </Link>
+          ) : (
+            <Link
+              href="/"
+              className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-sm font-black text-black shadow-sm backdrop-blur hover:bg-white/35"
+            >
+              Git-a-Job
+            </Link>
+          )}
 
-          {/* ✅ Single CTA only (remove Open Resume) */}
+          {/* ✅ Single CTA only */}
           <Link
             href={primaryHref}
             className="rounded-xl bg-black px-4 py-2 text-sm font-black text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
@@ -50,8 +59,6 @@ export default async function HomePage() {
           secondaryLabel="See how it works"
           perkLine="New accounts start with 25 free credits."
         />
-
-        {/* ✅ Mini bar removed (TrustBar) */}
 
         <div className="mt-10 grid gap-10">
           <ProblemSolution />
