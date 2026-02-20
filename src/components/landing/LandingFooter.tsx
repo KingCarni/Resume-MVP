@@ -5,18 +5,17 @@ export default function LandingFooter() {
   return (
     <footer className="rounded-3xl border border-white/30 bg-white/25 p-6 shadow-sm backdrop-blur-xl">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-black text-black/70">© {new Date().getFullYear()} Git-a-Job</div>
+        <div className="text-sm font-black text-black/70">
+          © {new Date().getFullYear()} Git-a-Job
+        </div>
 
         <div className="flex flex-wrap gap-2 text-sm font-extrabold">
-          <Link href="/toolbelt" className="rounded-xl border border-white/35 bg-white/30 px-3 py-2 text-black/80 hover:bg-white/40">
-            Toolbelt
-          </Link>
-          <Link href="/donate" className="rounded-xl border border-white/35 bg-white/30 px-3 py-2 text-black/80 hover:bg-white/40">
+          <Link
+            href="/donate"
+            className="rounded-xl bg-emerald-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] hover:shadow-lg"
+          >
             Donate
           </Link>
-          {/* Add these pages when you have them */}
-          {/* <Link href="/privacy" ...>Privacy</Link> */}
-          {/* <Link href="/terms" ...>Terms</Link> */}
         </div>
       </div>
 
