@@ -12,7 +12,7 @@ export default function LandingHero(props: {
     <section className="rounded-3xl border border-white/30 bg-white/35 p-6 shadow-xl backdrop-blur-xl sm:p-10">
       <div className="max-w-3xl">
         <h1 className="text-4xl font-black tracking-tight text-black sm:text-5xl">
-          Land better roles in Tech &amp; Gaming — without paying $30/month.
+          Land better roles — without paying $30/month.
         </h1>
 
         <p className="mt-4 text-base font-semibold text-black/75">
@@ -38,7 +38,7 @@ export default function LandingHero(props: {
             {props.primaryLabel}
           </Link>
 
-          {/* ✅ Use a normal anchor for hash navigation (prevents Next RSC refetch + preserves scroll) */}
+          {/* ✅ normal anchor for hash navigation */}
           <a
             href={props.secondaryHref || "#how-it-works"}
             className="rounded-xl border border-white/40 bg-white/25 px-6 py-3 text-sm font-extrabold text-black shadow-sm backdrop-blur hover:bg-white/35"
