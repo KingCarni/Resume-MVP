@@ -2566,7 +2566,7 @@ export default function ResumeMvp() {
 
         {/* Optional: tiny credits badge if you want it here */}
         {status === "authenticated" ? (
-          <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+          <div className="mt-2 text-xs text-black/60 dark:text-black/70">
             Credits: {creditsLoading ? "…" : creditsBalance ?? "—"}
           </div>
         ) : null}
@@ -2585,7 +2585,7 @@ export default function ResumeMvp() {
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
-            <div className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+            <div className="flex items-center gap-2 text-xs text-black/60 dark:text-black/70">
               <span className="hidden sm:inline">Theme ready</span>
               <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
                 next-themes
@@ -2595,8 +2595,7 @@ export default function ResumeMvp() {
 
           <div className="mt-3 grid gap-3">
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
-                Resume file (optional)
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
               </div>
 
               <input
@@ -2625,14 +2624,14 @@ export default function ResumeMvp() {
                     Clear
                   </button>
                   {uploadingResume ? (
-                    <span className="text-xs text-black/60 dark:text-white/60">Uploading…</span>
+                    <span className="text-xs text-black/60dark:text-black/70">Uploading…</span>
                   ) : null}
                 </div>
               ) : null}
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
                 Resume text (paste if not uploading)
               </div>
               <textarea
@@ -2649,7 +2648,7 @@ export default function ResumeMvp() {
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -2661,7 +2660,7 @@ export default function ResumeMvp() {
 
             {/* Template */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Template</div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Template</div>
 
               <select
                 value={resumeTemplate}
@@ -2678,7 +2677,7 @@ export default function ResumeMvp() {
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-white/80">Header details</div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
@@ -2748,7 +2747,7 @@ export default function ResumeMvp() {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/70 dark:text-white/70">Only experience bullets</span>
+                <span className="text-xs font-extrabold text-black/70 dark:text-black/70">Only experience bullets</span>
               </label>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2765,7 +2764,7 @@ export default function ResumeMvp() {
                   Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
                 </div>
 
-                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
                   <input
                     type="checkbox"
                     checked={includeMetaInResumeDoc}
@@ -2775,7 +2774,7 @@ export default function ResumeMvp() {
                   Include meta blocks
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
                   <input
                     type="checkbox"
                     checked={showDebugJson}
@@ -2785,7 +2784,7 @@ export default function ResumeMvp() {
                   Show debug
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
                   <input
                     type="checkbox"
                     checked={logNetworkDebug}
@@ -2821,7 +2820,7 @@ export default function ResumeMvp() {
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-white/60">
+            <div className="text-xs text-black/60 dark:text-black/70">
               {effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}
             </div>
           </div>
@@ -2895,7 +2894,7 @@ export default function ResumeMvp() {
           {showPreviewEditor ? (
             <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">
+                <div className="text-xs font-extrabold text-black/60 dark:text-black/70">
                   Edit resume HTML (live preview)
                 </div>
 
@@ -2926,7 +2925,7 @@ export default function ResumeMvp() {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
 
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+              <div className="mt-2 text-xs text-black/60 dark:text-black/70">
                 Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
               </div>
             </div>

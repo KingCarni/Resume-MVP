@@ -1464,13 +1464,13 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
-        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
+        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-black/70">
           Upload resume (PDF/DOCX/TXT) or paste text + job posting → generate a cover letter.
           Preview renders as a real HTML document (resume-template style). You can edit the letter
           below and the preview updates live.
         </p>
 
-        <div className="mt-2 text-xs font-extrabold text-black/50 dark:text-white/50">
+        <div className="mt-2 text-xs font-extrabold text-black/50 dark:text-black/70">
           Pricing: Generate cover letter = 5 credits • Download PDF = 5 credits
         </div>
       </div>
@@ -1491,7 +1491,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
           <div className="mt-3 grid gap-3">
             {/* File input */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
                 Resume file (optional)
               </div>
               <input
@@ -1515,7 +1515,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               />
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">{file.name}</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">{file.name}</div>
                   <button
                     type="button"
                     onClick={clearFile}
@@ -1525,14 +1525,14 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                   </button>
                 </div>
               ) : null}
-              <div className="text-xs text-black/60 dark:text-white/60">
+              <div className="text-xs text-black/60 dark:text-black/70">
                 If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT).
               </div>
             </label>
 
             {/* Resume text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
                 Resume text (paste if not uploading)
               </div>
               <textarea
@@ -1545,7 +1545,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -1557,7 +1557,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Template</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Template</div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
@@ -1569,12 +1569,12 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/60 dark:text-white/60">Selected: {templateLabel}</div>
+              <div className="text-xs text-black/60 dark:text-black/70">Selected: {templateLabel}</div>
             </label>
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">
+              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">
                 Header details
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1615,7 +1615,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Tone</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Tone</div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
@@ -1634,7 +1634,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-white/70">Length</div>
+                <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Length</div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
@@ -1654,7 +1654,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 onChange={(e) => setIncludeBullets(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-xs font-extrabold text-black/70 dark:text-white/70">
+              <span className="text-xs font-extrabold text-black/70 dark:text-black/70">
                 Include 3 impact bullets
               </span>
             </label>
@@ -1662,8 +1662,8 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
             {/* Signature */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Signature block</div>
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-white/70">
+                <div className="text-xs font-extrabold text-black/60 dark:text-black/70">Signature block</div>
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
                   <input
                     type="checkbox"
                     checked={includeSignature}
@@ -1691,7 +1691,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 />
               </div>
 
-              <div className="mt-2 text-xs text-black/60 dark:text-white/60">
+              <div className="mt-2 text-xs text-black/60 dark:text-black/70">
                 Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate “Sincerely”).
               </div>
             </div>
@@ -1707,7 +1707,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
 
-              <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-white/50">
+              <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-black/70">
                 Preview is live-editable after generation.
               </div>
             </div>
@@ -1756,7 +1756,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
 
           {/* Live editor */}
           <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-white/60">
+            <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">
               Edit cover letter (live preview)
             </div>
             <textarea
