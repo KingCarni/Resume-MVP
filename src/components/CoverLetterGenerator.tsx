@@ -1655,7 +1655,7 @@ export default function CoverLetterGenerator() {
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:bg-neutral-800 disabled:opacity-50 dark:border-white/10"
+                 className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
               >
                 {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
@@ -1698,7 +1698,7 @@ export default function CoverLetterGenerator() {
                         setError(e?.message || "Download failed");
                       }
                     }}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                     className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                   >
                     Download PDF (5 credits)
                   </button>
