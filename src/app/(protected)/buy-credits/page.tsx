@@ -1,25 +1,17 @@
-// src/app/(protected)/cover-letter/page.tsx
-import CoverLetterGenerator from "@/components/CoverLetterGenerator";
+// src/app/(protected)/buy-credits/page.tsx
 import DashboardShell from "@/components/layout/DashboardShell";
 import CreditsPill from "@/components/Billing/CreditsPill";
+import BuyCreditsButton from "@/components/Billing/BuyCreditsButton";
 import Link from "next/link";
 
 export default function Page() {
   return (
     <DashboardShell
-      title="Cover Letter Generator"
-      subtitle="Generate a tailored cover letter that matches your resume and the job post."
+      title="Buy credits"
+      subtitle="Purchase credits to power AI rewrites and premium features."
       topRight={
         <div className="flex items-center gap-2">
           <CreditsPill />
-
-          {/* Simple header button (NOT the big component) */}
-          <Link
-            href="/buy-credits"
-            className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm font-extrabold text-black hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-          >
-            Buy credits
-          </Link>
 
           <a
             href="https://git-a-job.com/donate"
@@ -29,11 +21,18 @@ export default function Page() {
           >
             Donate
           </a>
+
+          <Link
+            href="/account"
+            className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm font-extrabold text-black hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            Account
+          </Link>
         </div>
       }
     >
       <div className="text-black dark:text-white">
-        <CoverLetterGenerator />
+        <BuyCreditsButton />
       </div>
     </DashboardShell>
   );
