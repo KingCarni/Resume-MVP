@@ -1,9 +1,7 @@
 // src/components/CoverLetterGenerator.tsx
 "use client";
 
-import Link from "next/link";
 import React, { useMemo, useState } from "react";
-import ThemeToggle from "@/components/ThemeToggle";
 
 /** ---------------- Types ---------------- */
 
@@ -112,7 +110,6 @@ function Callout({
 }
 
 async function downloadPdfFromHtml(filename: string, html: string) {
-  // unique per click; server will prefix it (render_pdf:...)
   const ref =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
@@ -176,13 +173,6 @@ ${templateStyles(template)}
 `.trim();
 }
 
-/**
- * mkThemeCss is used by the “new” themes.
- *
- * Supports BOTH:
- * - body background (outside the sheet)
- * - page background (the sheet itself)
- */
 function mkThemeCss(opts: {
   font?: "sans" | "serif" | "mono";
   ink: string;
@@ -987,8 +977,6 @@ function templateStyles(template: ResumeTemplateId) {
  * Cover letter wrapper
  */
 function templateStylesCover(template: ResumeTemplateId) {
-  // Use card background for the inner letter box so templates like Grid (rgba card)
-  // and Terminal (dark card) match the resume visuals.
   const letterCardBg = `var(--cardbg, var(--pagebg, #fff))`;
 
   return `
@@ -997,7 +985,6 @@ ${templateStyles(template)}
 /* ---- Cover letter additions (MATCH ResumeMvp) ---- */
 .cover-wrap { margin-top: 14px; }
 
-/* The inner “Resume box” behind the letter text */
 .letter-card{
   border: 1px var(--borderstyle, solid) var(--line, #e7e7e7);
   border-radius: calc(var(--radius, 16px) - 2px);
@@ -1006,14 +993,11 @@ ${templateStyles(template)}
   box-shadow: none;
 }
 
-/* Typography for letter */
 .letter { font-size: 13px; line-height: 1.65; }
 .letter .p { margin: 0 0 12px 0; white-space: pre-wrap; }
 
-/* Signature spacing */
 .sig { margin-top: 16px; }
 
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body{
@@ -1044,6 +1028,11 @@ function splitParagraphs(text: string) {
     .filter(Boolean);
   return paras.length ? paras : raw.trim() ? [raw.trim()] : [];
 }
+
+/**
+ * Removes the old boilerplate header block that the API sometimes injects:
+ * Your Name / Your Address / City, State, Zip / Your Email / Your Phone Number / Date
+ */
 function stripLegacyHeaderBlock(text: string) {
   if (!text) return "";
 
@@ -1063,54 +1052,17 @@ function stripLegacyHeaderBlock(text: string) {
 
   let i = 0;
 
-  // Skip blank lines at top
   while (i < lines.length && !lines[i].trim()) i++;
 
-  // Remove legacy block if present at top
   const start = i;
-  while (i < lines.length && isLegacyLine(lines[i])) {
-    i++;
-  }
+  while (i < lines.length && isLegacyLine(lines[i])) i++;
 
   if (i > start) {
-    // Remove trailing blank line after block
     while (i < lines.length && !lines[i].trim()) i++;
     return lines.slice(i).join("\n");
   }
 
   return text;
-}
-/**
- * ✅ Removes common “template placeholder header lines” that should NOT be uploaded
- * because you already provide header details via the inputs.
- */
-function stripHeaderPlaceholders(input: string) {
-  const raw = String(input || "").replace(/\r\n/g, "\n");
-
-  // Match whole-line placeholders, forgiving punctuation/spacing and some variants.
-  const patterns: RegExp[] = [
-    /^\s*your\s+name\s*$/i,
-    /^\s*your\s+address\s*$/i,
-    /^\s*city\s*,?\s*state\s*,?\s*zip(?:\s*code)?\s*$/i,
-    /^\s*city\s*,?\s*state\s+zip(?:\s*code)?\s*$/i,
-    /^\s*your\s+email\s*$/i,
-    /^\s*your\s+phone(?:\s+number)?\s*$/i,
-    /^\s*date\s*$/i,
-  ];
-
-  const lines = raw.split("\n");
-  const kept: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const isPlaceholder = patterns.some((re) => re.test(trimmed));
-    if (!isPlaceholder) kept.push(line);
-  }
-
-  // Cleanup: collapse excess blank lines created by removal
-  const cleaned = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-
-  return cleaned;
 }
 
 function buildCoverLetterHtml(args: {
@@ -1340,7 +1292,6 @@ export default function CoverLetterGenerator() {
     try {
       let res: Response;
 
-      // Keep requests under Vercel payload limits
       const MAX_CHARS = 120_000;
 
       const clamp = (s: string) =>
@@ -1350,23 +1301,11 @@ export default function CoverLetterGenerator() {
           .trim()
           .slice(0, MAX_CHARS);
 
-      // ✅ Remove cover-letter header placeholders from what we upload
-      const sanitizeResumeForUpload = (s: string) => clamp(stripHeaderPlaceholders(s));
-
-      const safeResumeText = sanitizeResumeForUpload(resumeText);
+      const safeResumeText = clamp(resumeText);
       const safeJobText = clamp(jobText);
 
-      // Detect placeholder removal (so you can sanity-check quickly)
-      const placeholderRemoved =
-        resumeText.trim().length > 0 && safeResumeText.length < clamp(resumeText).length;
-
       if (resumeText && safeResumeText.length < resumeText.trim().length) {
-        // This message covers both truncation and placeholder removal; keep it simple.
-        setError(
-          placeholderRemoved
-            ? "Removed template header placeholders (Your Name/Address/City/Email/Phone/Date) from the uploaded resume text."
-            : "Resume text was very large — truncated for upload safety."
-        );
+        setError("Resume text was very large — truncated for upload safety.");
       }
       if (jobText && safeJobText.length < jobText.trim().length) {
         setError("Job text was very large — truncated for upload safety.");
@@ -1388,9 +1327,6 @@ export default function CoverLetterGenerator() {
         fd.append("length", length);
         fd.append("includeBullets", String(includeBullets));
 
-        // Optional forward-compatible hint for server-side parsing (safe if ignored)
-        fd.append("stripHeaderPlaceholders", "true");
-
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
         const body = {
@@ -1406,9 +1342,6 @@ export default function CoverLetterGenerator() {
           tone: tone.trim(),
           length,
           includeBullets,
-
-          // Optional forward-compatible hint for server-side parsing (safe if ignored)
-          stripHeaderPlaceholders: true,
         };
 
         res = await fetch("/api/cover-letter", {
@@ -1441,11 +1374,11 @@ export default function CoverLetterGenerator() {
       }
 
       const rawText = payload.coverLetter?.trim();
-if (!rawText) throw new Error("Empty cover letter returned");
+      if (!rawText) throw new Error("Empty cover letter returned");
 
-const cleanedText = stripLegacyHeaderBlock(rawText);
+      const cleanedText = stripLegacyHeaderBlock(rawText);
 
-setCoverLetterDraft(cleanedText);
+      setCoverLetterDraft(cleanedText);
     } catch (e: any) {
       setError(e?.message || "Generation failed");
     } finally {
@@ -1493,23 +1426,8 @@ setCoverLetterDraft(cleanedText);
 
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
-  const navBtn =
-    "rounded-xl border px-3 py-2 text-sm font-extrabold transition " +
-    "border-black/10 bg-black/5 text-green-600 hover:bg-black/10 " +
-    "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
-
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Optional top nav row (kept lightweight) */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Link href="/" className={navBtn}>
-          ← Back
-        </Link>
-        <div className="ml-auto">
-          <ThemeToggle />
-        </div>
-      </div>
-
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -1535,11 +1453,8 @@ setCoverLetterDraft(cleanedText);
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
 
-                  // Vercel payload guard (client-side)
                   if (f && f.size > 3.5 * 1024 * 1024) {
-                    setError(
-                      "File too large. Please upload a smaller file (under ~3.5MB) or paste text instead."
-                    );
+                    setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
                     e.target.value = "";
                     setFile(null);
                     return;
@@ -1557,9 +1472,7 @@ setCoverLetterDraft(cleanedText);
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-                    {file.name}
-                  </div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">{file.name}</div>
                   <button
                     type="button"
                     onClick={clearFile}
@@ -1585,16 +1498,11 @@ setCoverLetterDraft(cleanedText);
                 rows={8}
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
-              <div className="text-xs text-black/60 dark:text-black/70">
-                Note: We automatically strip placeholder lines like “Your Name”, “Your Address”, “City, State, Zip”, “Your Email”, “Your Phone Number”, and “Date” from what gets uploaded.
-              </div>
             </label>
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-                Job posting text
-              </div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -1623,9 +1531,7 @@ setCoverLetterDraft(cleanedText);
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">
-                Header details
-              </div>
+              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">Header details</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
