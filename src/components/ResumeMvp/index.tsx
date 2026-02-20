@@ -2981,11 +2981,10 @@ export default function ResumeMvp() {
               const selected = selectedBulletIdx.has(i);
 
               return (
-                <div
+               <div
                 key={i}
                 className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
-
-                >
+              >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
                       <input
@@ -3026,7 +3025,7 @@ export default function ResumeMvp() {
                         </button>
                       ) : null}
 
-                      <button
+                     <button
                       type="button"
                       onClick={() => handleRewriteBullet(i)}
                       disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
