@@ -7,8 +7,8 @@ import Link from "next/link";
 export default function Page() {
   return (
     <DashboardShell
-      title="Buy credits"
-      subtitle="Purchase credits to power AI rewrites and premium features."
+      title="Buy Credits"
+      subtitle="Purchase Credits to power AI rewrites and premium features."
       topRight={
         <div className="flex items-center gap-2">
           <CreditsPill />
