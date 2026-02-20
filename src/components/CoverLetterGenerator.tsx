@@ -1438,7 +1438,7 @@ export default function CoverLetterGenerator() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <h2 className="text-base font-extrabold">Inputs</h2>
+          <h2 className="text-base font-extrabold text-black">Inputs</h2>
 
           <div className="mt-3 grid gap-3">
             {/* File input */}
@@ -1463,8 +1463,13 @@ export default function CoverLetterGenerator() {
                   setError(null);
                   setFile(f);
                 }}
-                className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
-              />
+                className="block w-full text-sm text-black
+                file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
+                file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
+                file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
+                dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+              /> 
+
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
                   <div className="text-xs font-extrabold text-black/70 dark:text-black/70">{file.name}</div>
@@ -1654,7 +1659,7 @@ export default function CoverLetterGenerator() {
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:bg-neutral-800 disabled:opacity-50 dark:border-white/10"
               >
                 {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
