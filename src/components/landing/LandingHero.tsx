@@ -4,7 +4,7 @@ import Link from "next/link";
 export default function LandingHero(props: {
   primaryHref: string;
   primaryLabel: string;
-  secondaryHref: string;
+  secondaryHref: string; // e.g. "#how-it-works"
   secondaryLabel: string;
   perkLine?: string;
 }) {
@@ -38,12 +38,13 @@ export default function LandingHero(props: {
             {props.primaryLabel}
           </Link>
 
-          <Link
-            href={props.secondaryHref}
+          {/* ✅ Use a normal anchor for hash navigation (prevents Next RSC refetch + preserves scroll) */}
+          <a
+            href={props.secondaryHref || "#how-it-works"}
             className="rounded-xl border border-white/40 bg-white/25 px-6 py-3 text-sm font-extrabold text-black shadow-sm backdrop-blur hover:bg-white/35"
           >
             {props.secondaryLabel}
-          </Link>
+          </a>
         </div>
       </div>
     </section>
