@@ -2559,11 +2559,13 @@ export default function ResumeMvp() {
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
       <div className="mb-4">
-        <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
-        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-black/70">
-          Analyze → assign bullets → rewrite selected → compile into your chosen template.
-        </p>
-
+      <h1 className="text-3xl font-black tracking-tight text-black">
+        Resume Compiler
+      </h1>
+      <p className="mt-2 text-sm text-black/70">
+        Build, rewrite, and export a resume that matches your target job.
+      </p>
+    
         {/* Optional: tiny credits badge if you want it here */}
         {status === "authenticated" ? (
           <div className="mt-2 text-xs text-black/60 dark:text-black/70">
