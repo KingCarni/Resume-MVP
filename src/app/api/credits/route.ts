@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chargeCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,107 +17,98 @@ function ok(payload: any, init?: ResponseInit) {
   });
 }
 
-function err(message: string, status = 400) {
+function bad(message: string, status = 400) {
   return ok({ ok: false, error: message }, { status });
 }
 
-/**
- * Your Prisma client indicates the model accessor is `creditsLedger`.
- * We'll compute current balance from ledger sum.
- *
- * NOTE:
- * - We intentionally use `(prisma as any)` so this file compiles even if:
- *   - the ledger field isn't named `delta`
- *   - the model fields differ slightly
- *   (You can tighten types once you confirm exact field names.)
- */
-async function getBalanceFromLedger(userId: string): Promise<number> {
-  try {
-    const ledger = (prisma as any).creditsLedger;
+async function getUserIdOr401() {
+  const session = await getServerSession(authOptions);
+  const userId = (session as any)?.user?.id as string | undefined;
+  if (!userId) return null;
+  return userId;
+}
 
-    if (!ledger?.aggregate) return 0;
+async function getBalance(userId: string) {
+  const agg = await prisma.creditsLedger.aggregate({
+    where: { userId },
+    _sum: { delta: true },
+  });
 
-    // Try common field names. We'll attempt `delta` first (most common),
-    // then fall back to `amount` if needed.
-    try {
-      const agg = await ledger.aggregate({
-        where: { userId },
-        _sum: { delta: true },
-      });
-
-      const n = Number(agg?._sum?.delta ?? 0);
-      return Number.isFinite(n) ? Math.max(0, n) : 0;
-    } catch {
-      const agg = await ledger.aggregate({
-        where: { userId },
-        _sum: { amount: true },
-      });
-
-      const n = Number(agg?._sum?.amount ?? 0);
-      return Number.isFinite(n) ? Math.max(0, n) : 0;
-    }
-  } catch {
-    return 0;
-  }
+  const balance = Number(agg._sum.delta ?? 0);
+  return Number.isFinite(balance) ? balance : 0;
 }
 
 /**
  * GET /api/credits
- * Returns { ok: true, balance }
+ * -> { ok:true, balance:number }
  */
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session as any)?.user?.id as string | undefined;
+    const userId = await getUserIdOr401();
+    if (!userId) return bad("Unauthorized", 401);
 
-    if (!userId) return err("Unauthorized", 401);
-
-    const balance = await getBalanceFromLedger(userId);
+    const balance = await getBalance(userId);
     return ok({ ok: true, balance });
   } catch (e: any) {
-    return err(e?.message || "Failed to fetch credits", 500);
+    return bad(e?.message || "Failed to load credits", 500);
   }
 }
 
 /**
  * POST /api/credits
- * Body: { amount: number, reason: string }
- * DEDUCTS credits by `amount` (amount must be positive).
+ * Body: { amount:number, reason:string, ref?:string }
+ * - amount > 0 means "spend" credits (we store as negative delta)
+ * - optional ref lets you enforce idempotency per action
  */
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const userId = (session as any)?.user?.id as string | undefined;
-
-    if (!userId) return err("Unauthorized", 401);
+    const userId = await getUserIdOr401();
+    if (!userId) return bad("Unauthorized", 401);
 
     const body = (await req.json().catch(() => null)) as any;
     const amount = Number(body?.amount);
     const reason = String(body?.reason ?? "").trim();
+    const refRaw = body?.ref;
+    const ref = typeof refRaw === "string" ? refRaw.trim() : undefined;
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      return err("Invalid amount (must be a positive number).", 400);
+      return bad("Invalid amount (must be a positive number).", 400);
     }
-    if (!reason) return err("Missing reason.", 400);
+    if (!reason) return bad("Missing reason.", 400);
 
-    // Friendly insufficient balance error (instead of a vague 500)
-    const balance = await getBalanceFromLedger(userId);
-    if (balance < amount) return err("Not enough credits.", 402);
+    // Optional idempotency: if a ref is provided and we already have it, do nothing.
+    if (ref) {
+      const exists = await prisma.creditsLedger.findFirst({
+        where: { userId, ref },
+        select: { id: true },
+      });
+      if (exists) {
+        const balance = await getBalance(userId);
+        return ok({ ok: true, balance, deduped: true });
+      }
+    }
 
-    // Your existing helper should handle atomic deduction + ledger write.
-    // If it expects a different signature, paste it and I’ll align this call.
-    await (chargeCredits as any)({
-      prisma,
-      userId,
-      amount,
-      reason,
+    // Check balance before spending
+    const balance = await getBalance(userId);
+    if (balance < amount) return bad("Not enough credits.", 402);
+
+    await prisma.creditsLedger.create({
+      data: {
+        userId,
+        delta: -Math.trunc(amount),
+        reason,
+        ref: ref || null,
+      },
     });
 
-    const newBalance = await getBalanceFromLedger(userId);
+    const newBalance = await getBalance(userId);
     return ok({ ok: true, balance: newBalance });
   } catch (e: any) {
-    const msg = e?.message || "Failed to charge credits";
-    const status = msg.toLowerCase().includes("not enough") ? 402 : 500;
-    return err(msg, status);
+    // If ref uniqueness trips (rare race), treat as dedupe
+    const msg = String(e?.message || "");
+    if (msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("creditsledger_userid_ref")) {
+      return ok({ ok: true, deduped: true });
+    }
+    return bad(e?.message || "Failed to spend credits", 500);
   }
 }
