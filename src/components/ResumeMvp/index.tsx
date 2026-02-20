@@ -336,8 +336,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-black/60"
-          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-black/80",
+          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
+          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/80",
       ].join(" ")}
     >
       {text}
