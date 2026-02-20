@@ -72,7 +72,7 @@ export default async function HomePage() {
           <FeatureGrid />
           <HowItWorks id="how-it-works" />
           <Values />
-          <DonateCreditsTeaser primaryHref={primaryHref} />
+          <DonateCreditsTeaser />
           <FinalCTA primaryHref={primaryHref} primaryLabel={primaryLabel} />
         </div>
 
