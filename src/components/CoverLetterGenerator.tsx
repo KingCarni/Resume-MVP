@@ -151,14 +151,18 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
 function templateStylesResume(template: ResumeTemplateId) {
   return `
 ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  body{
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body{
     background: var(--bodybg) !important;
+  }
+  body{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -647,8 +651,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       bodyBg: "#f8fafc",
       pageBg: "#f8fafc",
-      headerBg:
-        "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(15,23,42,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 45px rgba(2,6,23,.08)",
@@ -666,8 +669,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f6f7fb",
       pageBg: "#f6f7fb",
-      headerBg:
-        "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(135deg, rgba(2,6,23,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(2,6,23,.12)",
@@ -685,8 +687,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 480px at 20% 10%, rgba(17,24,39,.06), rgba(255,255,255,0)), #fffdf7",
       pageBg: "#fffdf7",
-      headerBg:
-        "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(245,158,11,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 12,
@@ -705,8 +706,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(1000px 520px at 10% 10%, rgba(15,23,42,.10), rgba(255,255,255,0)), #f8fafc",
       pageBg: "#f8fafc",
-      headerBg:
-        "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(15,23,42,.10), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "dashed",
       radius: 18,
@@ -725,8 +725,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#111827",
       bodyBg: "#f3f6fb",
       pageBg: "#f3f6fb",
-      headerBg:
-        "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
+      headerBg: "linear-gradient(135deg, rgba(11,87,208,.10), rgba(17,24,39,.04))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 16px 45px rgba(11,19,36,.10)",
@@ -744,8 +743,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent2: "#0b0f18",
       bodyBg: "#ffffff",
       pageBg: "#f7f7f7",
-      headerBg:
-        "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(0,0,0,.08), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 0,
@@ -763,8 +761,7 @@ function templateStyles(template: ResumeTemplateId) {
       accent: "#111827",
       bodyBg: "#ffffff",
       pageBg: "#fbfbfc",
-      headerBg:
-        "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(17,24,39,.04), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 24,
@@ -784,8 +781,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "linear-gradient(90deg, rgba(11,87,208,.05) 1px, rgba(255,255,255,0) 1px), linear-gradient(180deg, rgba(6,182,212,.05) 1px, rgba(255,255,255,0) 1px), #f7fbff",
       pageBg: "#f7fbff",
-      headerBg:
-        "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
+      headerBg: "linear-gradient(135deg, rgba(11,87,208,.12), rgba(6,182,212,.08))",
       cardBg: "rgba(255,255,255,.92)",
       borderStyle: "dashed",
       radius: 18,
@@ -806,8 +802,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(245,158,11,.10), rgba(255,255,255,0)), #fff7ed",
       pageBg: "#fff7ed",
-      headerBg:
-        "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(245,158,11,.10))",
       cardBg: "linear-gradient(180deg, rgba(249,115,22,.04), rgba(255,255,255,0))",
       radius: 18,
       shadow: "0 16px 45px rgba(43,27,18,.10)",
@@ -826,8 +821,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fbfaff",
       pageBg: "#fbfaff",
-      headerBg:
-        "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(96,165,250,.12))",
       cardBg: "#ffffff",
       radius: 20,
       shadow: "0 18px 55px rgba(31,41,55,.08)",
@@ -846,8 +840,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f7fbff",
       pageBg: "#effdf6",
-      headerBg:
-        "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
+      headerBg: "linear-gradient(135deg, rgba(34,197,94,.14), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.10)",
@@ -863,11 +856,9 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#e8defa",
       accent: "#7c3aed",
       accent2: "#a78bfa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
       pageBg: "#fbf8ff",
-      headerBg:
-        "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(167,139,250,.22), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 16px 48px rgba(31,27,46,.10)",
@@ -886,8 +877,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 25% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f7",
       pageBg: "#fff6f7",
-      headerBg:
-        "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 18px 55px rgba(43,18,32,.10)",
@@ -906,8 +896,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(22,163,74,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(14,165,233,.08), rgba(255,255,255,0)), #f3fbf7",
       pageBg: "#f3fbf7",
-      headerBg:
-        "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
+      headerBg: "linear-gradient(135deg, rgba(22,163,74,.16), rgba(14,165,233,.08))",
       cardBg: "#ffffff",
       radius: 16,
       shadow: "0 18px 55px rgba(11,31,23,.10)",
@@ -926,8 +915,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(14,165,233,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #f4fbff",
       pageBg: "#f4fbff",
-      headerBg:
-        "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
+      headerBg: "linear-gradient(135deg, rgba(14,165,233,.16), rgba(6,182,212,.12))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(6,26,42,.10)",
@@ -943,11 +931,9 @@ function templateStyles(template: ResumeTemplateId) {
       line: "#f1e2c7",
       accent: "#d97706",
       accent2: "#f59e0b",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
+      bodyBg: "radial-gradient(900px 520px at 20% 10%, rgba(217,119,6,.14), rgba(255,255,255,0)), #fffbf2",
       pageBg: "#fffbf2",
-      headerBg:
-        "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
+      headerBg: "linear-gradient(180deg, rgba(245,158,11,.16), rgba(255,255,255,0))",
       cardBg: "#ffffff",
       radius: 14,
       shadow: "0 14px 40px rgba(43,32,18,.08)",
@@ -966,8 +952,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(29,78,216,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7f9ff",
       pageBg: "#f2f0ff",
-      headerBg:
-        "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
+      headerBg: "linear-gradient(135deg, rgba(29,78,216,.16), rgba(124,58,237,.10))",
       cardBg: "#ffffff",
       radius: 18,
       shadow: "0 20px 60px rgba(11,16,32,.12)",
@@ -986,8 +971,7 @@ function templateStyles(template: ResumeTemplateId) {
       bodyBg:
         "radial-gradient(900px 520px at 20% 10%, rgba(245,158,11,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(180,83,9,.10), rgba(255,255,255,0)), #fffaf0",
       pageBg: "#fff6e6",
-      headerBg:
-        "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
+      headerBg: "linear-gradient(135deg, rgba(245,158,11,.18), rgba(180,83,9,.10))",
       cardBg: "#ffffff",
       borderStyle: "solid",
       radius: 18,
@@ -1003,9 +987,9 @@ function templateStyles(template: ResumeTemplateId) {
  * Cover letter wrapper
  */
 function templateStylesCover(template: ResumeTemplateId) {
-  const isTerminal = template === "terminal";
-
-  const letterCardBg = isTerminal ? "var(--cardbg, #061a10)" : "var(--pagebg, #fff)";
+  // Use card background for the inner letter box so templates like Grid (rgba card)
+  // and Terminal (dark card) match the resume visuals.
+  const letterCardBg = `var(--cardbg, var(--pagebg, #fff))`;
 
   return `
 ${templateStyles(template)}
@@ -1031,8 +1015,11 @@ ${templateStyles(template)}
 
 /* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
-  body{
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body{
     background: var(--bodybg) !important;
+  }
+  body{
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -1102,7 +1089,7 @@ function buildCoverLetterHtml(args: {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cover Letter - ${safe(profile.fullName || "Updated")}</title>
-  <style>${templateStylesResume(template)}</style>
+  <style>${templateStylesCover(template)}</style>
 </head>
 <body>
   <div class="page">
@@ -1176,9 +1163,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">
-          Document Preview (HTML)
-        </div>
+        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
@@ -1426,14 +1411,24 @@ export default function CoverLetterGenerator() {
     "dark:border-white/10 dark:bg-white/10 dark:text-green-400 dark:hover:bg-white/15";
 
   return (
-  <main className="mx-auto max-w-6xl px-4 py-6">
-    {error ? (
-      <div className="mb-4">
-        <Callout title="Error" tone="danger">
-          <div className="whitespace-pre-wrap text-sm">{error}</div>
-        </Callout>
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* Optional top nav row (kept lightweight) */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Link href="/" className={navBtn}>
+          ← Back
+        </Link>
+        <div className="ml-auto">
+          <ThemeToggle />
+        </div>
       </div>
-    ) : null}      
+
+      {error ? (
+        <div className="mb-4">
+          <Callout title="Error" tone="danger">
+            <div className="whitespace-pre-wrap text-sm">{error}</div>
+          </Callout>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
@@ -1454,7 +1449,9 @@ export default function CoverLetterGenerator() {
 
                   // Vercel payload guard (client-side)
                   if (f && f.size > 3.5 * 1024 * 1024) {
-                    setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
+                    setError(
+                      "File too large. Please upload a smaller file (under ~3.5MB) or paste text instead."
+                    );
                     e.target.value = "";
                     setFile(null);
                     return;
@@ -1468,11 +1465,13 @@ export default function CoverLetterGenerator() {
                 file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
                 file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
                 dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
-              /> 
+              />
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">{file.name}</div>
+                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
+                    {file.name}
+                  </div>
                   <button
                     type="button"
                     onClick={clearFile}
@@ -1502,7 +1501,9 @@ export default function CoverLetterGenerator() {
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
+                Job posting text
+              </div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -1611,9 +1612,7 @@ export default function CoverLetterGenerator() {
                 onChange={(e) => setIncludeBullets(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-xs font-extrabold text-black/70 dark:text-black/70">
-                Include 3 impact bullets
-              </span>
+              <span className="text-xs font-extrabold text-black/70 dark:text-black/70">Include 3 impact bullets</span>
             </label>
 
             {/* Signature */}
