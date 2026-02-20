@@ -10,7 +10,7 @@ export default function Page() {
       subtitle="Build, rewrite, and export a resume that matches your target job."
       topRight={<CreditsPill />}
     >
-      <div className="text-black dark:text-white">
+      <div className="text-black">
         <ResumeMvp />
       </div>
     </DashboardShell>

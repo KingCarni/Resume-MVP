@@ -1176,7 +1176,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-white/85">
+        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">
           Document Preview (HTML)
         </div>
       </div>
@@ -1446,14 +1446,14 @@ export default function CoverLetterGenerator() {
             href="https://git-a-job.com/donate"
             target="_blank"
             className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
-bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+bg-emerald-600 text-black border-emerald-600 hover:bg-emerald-700"
           >
             Donate
           </a>
 
           <a
             href="https://git-a-job.com/feedback"
-            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/15"
+            className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-black/10 dark:bg-black/10 dark:hover:bg-black/15"
           >
             Feedback
           </a>
@@ -1620,7 +1620,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                     type="button"
                     onClick={handleRecommendTone}
                     disabled={!jobText.trim() || toneLoading}
-                    className="rounded-lg border border-black/10 bg-white px-2 py-1 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    className="rounded-lg border border-black/10 bg-white px-2 py-1 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-black/15"
                     title="Uses /api/recommend-tone if available; otherwise a heuristic."
                   >
                     {toneLoading ? "Recommending…" : "Recommended tone"}
@@ -1702,7 +1702,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
               >
                 {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
@@ -1724,7 +1724,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                   type="button"
                   onClick={copyToClipboard}
                   disabled={!coverLetterDraft}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                 >
                   Copy
                 </button>
@@ -1745,7 +1745,7 @@ bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                         setError(e?.message || "Download failed");
                       }
                     }}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                   >
                     Download PDF (5 credits)
                   </button>
