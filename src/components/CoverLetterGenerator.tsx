@@ -1427,41 +1427,7 @@ export default function CoverLetterGenerator() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      {/* Top bar */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        {/* LEFT: nav buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/resume" className={navBtn}>
-            Resume Compiler
-          </Link>
-
-          <Link href="/cover-letter" className={navBtn}>
-            Cover Letter Generator
-          </Link>
-        </div>
-
-        {/* RIGHT: donate + feedback + theme */}
-        <div className="flex flex-wrap items-center gap-2">
-          <a
-            href="https://git-a-job.com/donate"
-            target="_blank"
-            className="rounded-xl border px-3 py-2 text-sm font-extrabold transition
-bg-emerald-600 text-black border-emerald-600 hover:bg-emerald-700"
-          >
-            Donate
-          </a>
-
-          <a
-            href="https://git-a-job.com/feedback"
-            className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-black/10 dark:bg-black/10 dark:hover:bg-black/15"
-          >
-            Feedback
-          </a>
-
-          <ThemeToggle />
-        </div>
-      </div>
-
+     
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Cover Letter Generator</h1>
         <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-black/70">
