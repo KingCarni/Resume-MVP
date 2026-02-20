@@ -16,10 +16,12 @@ import LandingFooter from "@/components/landing/LandingFooter";
 export default async function HomePage() {
   const session = await getServerSession(authOptions);
 
-  const primaryHref = "/toolbelt"; // protected; redirects to signin if not authed
-  const primaryLabel = session ? "Go to Toolbelt" : "Try it free";
-  const secondaryHref = session ? "/toolbelt" : "/api/auth/signin";
-  const secondaryLabel = session ? "Open tools" : "Sign in";
+  // ✅ Landing CTA now points to /resume (public entry tool)
+  const primaryHref = "/resume";
+  const primaryLabel = session ? "Go to Resume" : "Try it free";
+
+  const secondaryHref = session ? "/resume" : "/api/auth/signin";
+  const secondaryLabel = session ? "Open Resume" : "Sign in";
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-emerald-400 via-emerald-300 to-blue-500">
@@ -58,6 +60,7 @@ export default async function HomePage() {
           primaryLabel={primaryLabel}
           secondaryHref="#how-it-works"
           secondaryLabel="See how it works"
+          perkLine="New accounts start with 25 free credits."
         />
 
         <div className="mt-6">
@@ -69,7 +72,7 @@ export default async function HomePage() {
           <FeatureGrid />
           <HowItWorks id="how-it-works" />
           <Values />
-          <DonateCreditsTeaser />
+          <DonateCreditsTeaser primaryHref={primaryHref} />
           <FinalCTA primaryHref={primaryHref} primaryLabel={primaryLabel} />
         </div>
 

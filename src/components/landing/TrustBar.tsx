@@ -4,7 +4,7 @@ export default function TrustBar() {
     "Built for Tech + Gaming applicants",
     "Upload PDF/DOCX or paste text",
     "Template preview + PDF export",
-    "Transparent credits (no gotchas)",
+    "New users start with 25 free credits",
   ];
 
   return (

@@ -6,6 +6,7 @@ export default function LandingHero(props: {
   primaryLabel: string;
   secondaryHref: string;
   secondaryLabel: string;
+  perkLine?: string;
 }) {
   return (
     <section className="rounded-3xl border border-white/30 bg-white/35 p-6 shadow-xl backdrop-blur-xl sm:p-10">
@@ -18,6 +19,16 @@ export default function LandingHero(props: {
           Git-a-Job helps you turn messy resume bullets into clear impact, and generate cover letters
           that match the role. Built to be affordable, transparent, and actually useful.
         </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-xs font-extrabold text-black/70 shadow-sm backdrop-blur">
+            {props.perkLine || "Start free. Upgrade only if you want."}
+          </div>
+
+          <div className="text-xs font-extrabold text-black/55">
+            No subscription traps. Credits are clear and optional.
+          </div>
+        </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Link
@@ -33,10 +44,6 @@ export default function LandingHero(props: {
           >
             {props.secondaryLabel}
           </Link>
-
-          <div className="text-xs font-extrabold text-black/55">
-            No subscription traps. Credits are clear and optional.
-          </div>
         </div>
       </div>
     </section>
