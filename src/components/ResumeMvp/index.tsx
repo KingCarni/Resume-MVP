@@ -336,8 +336,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
-          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/80",
+          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-black/60"
+          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-black/80",
       ].join(" ")}
     >
       {text}
@@ -2557,10 +2557,10 @@ export default function ResumeMvp() {
   }, [effectivePlan, guardrailTerms]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-white">
+    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
       <div className="mb-4">
         <h1 className="text-2xl font-extrabold tracking-tight">Git-a-Job: Resume Compiler</h1>
-        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-white/70">
+        <p className="mt-2 max-w-3xl text-sm text-black/70 dark:text-black/70">
           Analyze → assign bullets → rewrite selected → compile into your chosen template.
         </p>
 
@@ -2641,7 +2641,7 @@ export default function ResumeMvp() {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
               {resumeText.trim() ? (
-                <div className="text-xs text-black/60 dark:text-white/60">
+                <div className="text-xs text-black/60 dark:text-black/60">
                   Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on Analyze.
                 </div>
               ) : null}
@@ -2665,7 +2665,7 @@ export default function ResumeMvp() {
               <select
                 value={resumeTemplate}
                 onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -2684,34 +2684,34 @@ export default function ResumeMvp() {
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.titleLine}
                   onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
                   placeholder="Professional Title (e.g. QA Lead | Game & VR Systems)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.locationLine}
                   onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.email}
                   onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.phone}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
               </div>
 
@@ -2720,13 +2720,13 @@ export default function ResumeMvp() {
                   value={profile.linkedin}
                   onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.portfolio}
                   onChange={(e) => setProfile((p) => ({ ...p, portfolio: e.target.value }))}
                   placeholder="Portfolio / Website"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
               </div>
 
@@ -2736,7 +2736,7 @@ export default function ResumeMvp() {
                   onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
                   rows={3}
                   placeholder="Summary (optional)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
               </div>
 
@@ -2755,12 +2755,12 @@ export default function ResumeMvp() {
                   type="button"
                   onClick={handleAnalyze}
                   disabled={!canAnalyze || loadingAnalyze}
-                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
                 >
                   {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
                 </button>
 
-                <div className="ml-1 text-xs text-black/60 dark:text-white/60">
+                <div className="ml-1 text-xs text-black/60 dark:text-black/60">
                   Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
                 </div>
 
@@ -2808,7 +2808,7 @@ export default function ResumeMvp() {
               ) : null}
 
               {showDebugJson && analysis ? (
-                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-white/80">
+                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-black/80">
                   {JSON.stringify(analysis, null, 2)}
                 </pre>
               ) : null}
@@ -2830,7 +2830,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleCopyOutput}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Copy
             </button>
@@ -2843,7 +2843,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleDownloadPdf}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Download
             </button>
@@ -2852,7 +2852,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handlePrintPdf}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Print
             </button>
@@ -2864,7 +2864,7 @@ export default function ResumeMvp() {
                 setShowPreviewEditor(true);
               }}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Edit Live Preview
             </button>
@@ -2873,7 +2873,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleViewPreview}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Preview
             </button>
@@ -2902,7 +2902,7 @@ export default function ResumeMvp() {
                   <button
                     type="button"
                     onClick={() => setPreviewHtmlDraft(effectiveResumeHtml || "")}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                   >
                     Reset
                   </button>
@@ -2922,7 +2922,7 @@ export default function ResumeMvp() {
                 onChange={(e) => setPreviewHtmlDraft(e.target.value)}
                 rows={12}
                 spellCheck={false}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
               />
 
               <div className="mt-2 text-xs text-black/60 dark:text-black/70">
@@ -2943,7 +2943,7 @@ export default function ResumeMvp() {
               <button
                 type="button"
                 onClick={() => selectAll(effectivePlan.length)}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
               >
                 Select all
               </button>
@@ -2951,7 +2951,7 @@ export default function ResumeMvp() {
               <button
                 type="button"
                 onClick={selectNone}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
               >
                 Select none
               </button>
@@ -2960,14 +2960,14 @@ export default function ResumeMvp() {
                 type="button"
                 onClick={handleRewriteSelected}
                 disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
               >
                 {loadingBatchRewrite
                   ? "Rewriting…"
                   : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
               </button>
 
-              <div className="text-xs text-black/60 dark:text-white/60">
+              <div className="text-xs text-black/60 dark:text-black/70">
                 Selecting a bullet applies its rewrite (if available) to the compiled resume.
               </div>
             </div>
@@ -3006,7 +3006,7 @@ export default function ResumeMvp() {
                             [i]: { sectionId: e.target.value },
                           }))
                         }
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/30 dark:text-white"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/30 dark:text-black"
                       >
                         {sections.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -3019,7 +3019,7 @@ export default function ResumeMvp() {
                         <button
                           type="button"
                           onClick={() => handleUndoRewrite(i)}
-                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                         >
                           Undo Rewrite
                         </button>
@@ -3029,7 +3029,7 @@ export default function ResumeMvp() {
                         type="button"
                         onClick={() => handleRewriteBullet(i)}
                         disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-white hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                        className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
                       >
                         {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
                       </button>
@@ -3037,7 +3037,7 @@ export default function ResumeMvp() {
                   </div>
 
                   <div className="mt-2 grid gap-2">
-                    <div className="text-xs font-extrabold text-black/60 dark:text-white/60">Original</div>
+                    <div className="text-xs font-extrabold text-black/60 dark:text-black/70">Original</div>
                     <div className="whitespace-pre-wrap text-sm">{original}</div>
 
                     {rewritten ? (
