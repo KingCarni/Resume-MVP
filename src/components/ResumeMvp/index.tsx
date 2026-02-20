@@ -2982,8 +2982,9 @@ export default function ResumeMvp() {
 
               return (
                 <div
-                  key={i}
-                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+                key={i}
+                className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
@@ -3026,11 +3027,11 @@ export default function ResumeMvp() {
                       ) : null}
 
                       <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i)}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
-                      >
+                      type="button"
+                      onClick={() => handleRewriteBullet(i)}
+                      disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                    >
                         {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
                       </button>
                     </div>
