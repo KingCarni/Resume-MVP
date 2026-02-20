@@ -2,7 +2,7 @@
 export default function FeatureGrid() {
   const features = [
     {
-      title: "Resume Compiler",
+      title: "Resume Builder",
       desc: "Turn experience into stronger bullets with clearer verbs, structure, and impact.",
     },
     {
@@ -26,7 +26,9 @@ export default function FeatureGrid() {
           <div className="text-xs font-black uppercase tracking-widest text-black/60">
             What it does
           </div>
-          <h2 className="mt-2 text-2xl font-black text-black">Tools that actually ship applications.</h2>
+          <h2 className="mt-2 text-2xl font-black text-black">
+            Tools that help you apply with confidence.
+          </h2>
         </div>
       </div>
 

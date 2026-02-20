@@ -22,11 +22,14 @@ export default function ProblemSolution() {
             The problem
           </div>
           <h2 className="mt-2 text-2xl font-black text-black">
-            Applying is brutal. Most tools don&apos;t help.
+            Applying is hard — and it’s easy to get stuck.
           </h2>
           <ul className="mt-4 space-y-2">
             {problems.map((p) => (
-              <li key={p} className="rounded-2xl border border-white/35 bg-white/30 p-3 text-sm font-semibold text-black/75">
+              <li
+                key={p}
+                className="rounded-2xl border border-white/35 bg-white/30 p-3 text-sm font-semibold text-black/75"
+              >
                 {p}
               </li>
             ))}
@@ -42,7 +45,10 @@ export default function ProblemSolution() {
           </h2>
           <ul className="mt-4 space-y-2">
             {solutions.map((s) => (
-              <li key={s} className="rounded-2xl border border-white/35 bg-white/30 p-3 text-sm font-semibold text-black/75">
+              <li
+                key={s}
+                className="rounded-2xl border border-white/35 bg-white/30 p-3 text-sm font-semibold text-black/75"
+              >
                 {s}
               </li>
             ))}
