@@ -2755,7 +2755,7 @@ export default function ResumeMvp() {
                   type="button"
                   onClick={handleAnalyze}
                   disabled={!canAnalyze || loadingAnalyze}
-                  className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
                   {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
                 </button>
@@ -2983,7 +2983,7 @@ export default function ResumeMvp() {
               return (
                 <div
                   key={i}
-                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
@@ -3029,7 +3029,7 @@ export default function ResumeMvp() {
                         type="button"
                         onClick={() => handleRewriteBullet(i)}
                         disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl border border-black/10 bg-black px-3 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                        className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                       >
                         {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
                       </button>
