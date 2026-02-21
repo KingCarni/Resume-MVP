@@ -2581,41 +2581,7 @@ export default function ResumeMvp() {
           </div>
 
           <div className="mt-3 grid gap-3">
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  resetDerivedState();
-                }}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-black hover:bg-emerald-700 transition-colors"
-              />
-
-              <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
-                Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
-              </div>
-
-              {file ? (
-                <div className="mt-1 flex items-center gap-2">
-                  <Chip text={file.name} />
-                  <button
-                    type="button"
-                    onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Clear
-                  </button>
-                  {uploadingResume ? (
-                    <span className="text-xs text-black/60dark:text-black/70">Uploading…</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </label>
+           
 
             <div className="grid gap-1.5">
             <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
