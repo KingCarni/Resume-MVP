@@ -2617,22 +2617,49 @@ export default function ResumeMvp() {
               ) : null}
             </label>
 
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-                Resume text (paste if not uploading)
-              </div>
-              <textarea
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-                rows={6}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+            <div className="grid gap-1.5">
+            <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
+              Upload resume file
+            </div>
+
+            <div>
+              <label
+                htmlFor="resume-upload"
+                className="inline-flex cursor-pointer items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors"
+              >
+                Choose File
+              </label>
+
+              <input
+                id="resume-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  resetDerivedState();
+                }}
+                className="hidden"
               />
-              {resumeText.trim() ? (
-                <div className="text-xs text-black/60 dark:text-black/60">
-                  Tip: If you accidentally paste HTML (from the preview editor), we auto-strip it to plain text on Analyze.
-                </div>
-              ) : null}
-            </label>
+            </div>
+
+            <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
+              Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
+            </div>
+
+            {file ? (
+              <div className="mt-1 flex items-center gap-2">
+                <Chip text={file.name} />
+                <button
+                  type="button"
+                  onClick={clearFile}
+                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
+          </div>
 
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
