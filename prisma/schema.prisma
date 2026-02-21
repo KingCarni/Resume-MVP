@@ -14,14 +14,14 @@ datasource db {
  */
 
 model User {
-  id            String   @id @default(cuid())
-  name          String?
-  email         String?  @unique
-  emailVerified DateTime?
-  image         String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String    @id @default(cuid())
+  name             String?
+  email            String?   @unique
+  emailVerified    DateTime?
+  image            String?
+  lastDailyBonusAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   accounts      Account[]
   sessions      Session[]
@@ -75,14 +75,14 @@ model CreditsLedger {
   userId    String
   delta     Int
   reason    String
-  ref       String?  // idempotency key (stripe event id, request id, etc.)
+  ref       String? // idempotency key (stripe event id, request id, etc.)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, ref])
   @@index([userId, createdAt])
   @@index([userId, ref])
-  @@unique([userId, ref])
 }
 
 enum DocumentType {
@@ -116,11 +116,11 @@ enum EventType {
 }
 
 model Event {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   type      EventType
   metaJson  Json?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -12,11 +12,11 @@ export default function LandingHero(props: {
     <section className="rounded-3xl border border-white/30 bg-white/35 p-6 shadow-xl backdrop-blur-xl sm:p-10">
       <div className="max-w-3xl">
         <h1 className="text-4xl font-black tracking-tight text-black sm:text-5xl">
-          Land better roles — without paying for monthly subscription fees.
+          Land better roles — without paying monthly subscription fees.
         </h1>
 
         <p className="mt-4 text-base font-semibold text-black/75">
-          Git-a-Job helps you turn messy resumes into clear impactful tools, can generate cover letters
+          Git-a-Job helps you turn messy resumes into clear, impactful tools. It can also generate cover letters
           that match the role. Built to be affordable, transparent, and actually useful.
         </p>
 
@@ -26,7 +26,7 @@ export default function LandingHero(props: {
           </div>
 
           <div className="text-xs font-extrabold text-black/55">
-            No subscription traps. Credits are clear and optional. Bonus 25 Credits on sign up!
+            No subscription traps. Credits are clear and optional.
           </div>
         </div>
 
