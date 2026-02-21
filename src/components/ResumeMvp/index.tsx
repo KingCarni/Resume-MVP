@@ -2593,10 +2593,10 @@ export default function ResumeMvp() {
                   setFile(e.target.files?.[0] ?? null);
                   resetDerivedState();
                 }}
-                className="block w-full text-sm file:mr-3 file:rounded-lg file:border file:border-black/10 file:bg-black/5 file:px-3 file:py-2 file:text-sm file:font-extrabold hover:file:bg-black/10 dark:file:border-white/10 dark:file:bg-white/10 dark:hover:file:bg-white/15"
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-black hover:bg-emerald-700 transition-colors"
               />
 
-              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
                 Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
               </div>
 
