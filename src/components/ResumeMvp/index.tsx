@@ -2940,7 +2940,11 @@ export default function ResumeMvp() {
                 type="button"
                 onClick={handleRewriteSelected}
                 disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className="rounded-xl border border-black/10 bg-black px-4 py-2 text-sm font-extrabold text-black hover:opacity-90 disabled:opacity-50 dark:border-white/10"
+                className={`px-4 py-2 rounded-xl font-semibold transition-all
+                ${selectedCount === 0
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
+                  : "bg-black text-white hover:bg-gray-800 active:scale-95 shadow-md"}
+              `}
               >
                 {loadingBatchRewrite
                   ? "Rewriting…"

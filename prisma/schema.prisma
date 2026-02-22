@@ -1,33 +1,27 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-/**
- * ---------------- NextAuth Models ---------------- *
- */
-
 model User {
-  id               String    @id @default(cuid())
+  id               String          @id @default(cuid())
   name             String?
-  email            String?   @unique
+  email            String?         @unique
   emailVerified    DateTime?
   image            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   lastDailyBonusAt DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  accounts      Account[]
-  sessions      Session[]
-  creditsLedger CreditsLedger[]
-  documents     Document[]
-  events        Event[]
+  accounts         Account[]
+  creditsLedger    CreditsLedger[]
+  documents        Document[]
+  events           Event[]
+  sessions         Session[]
 }
 
 model Account {
@@ -43,8 +37,7 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -54,8 +47,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -66,28 +58,17 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-/**
- * ---------------- Credits / Documents / Events ---------------- *
- */
-
 model CreditsLedger {
   id        String   @id @default(cuid())
   userId    String
   delta     Int
   reason    String
-  ref       String? // idempotency key (stripe event id, request id, etc.)
+  ref       String?
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, ref])
   @@index([userId, createdAt])
-  @@index([userId, ref])
-}
-
-enum DocumentType {
-  resume
-  cover_letter
 }
 
 model Document {
@@ -99,20 +80,9 @@ model Document {
   html      String?
   text      String?
   createdAt DateTime     @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
-}
-
-enum EventType {
-  login
-  analyze
-  rewrite_bullet
-  rewrite_batch
-  resume_pdf
-  purchase
-  cover_letter
 }
 
 model Event {
@@ -121,45 +91,23 @@ model Event {
   type      EventType
   metaJson  Json?
   createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
 }
 
-/**
- * ---------------- Legacy snake_case tables ---------------- *
- * Keep these if they already exist in your DB; your webhook can use either system.
- * If you are not using them anymore, we can remove them later.
- */
-
-model credit_ledger {
-  id                BigInt   @id @default(autoincrement())
-  user_id           String
-  delta             Int
-  reason            String
-  stripe_session_id String?
-  stripe_event_id   String?  @unique(map: "credit_ledger_stripe_event_id_uniq")
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([user_id])
+enum DocumentType {
+  resume
+  cover_letter
 }
 
-model credit_purchases {
-  id                BigInt   @id @default(autoincrement())
-  user_id           String
-  stripe_session_id String   @unique
-  amount_cents      Int
-  currency          String
-  credits           Int
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
-
-  @@index([user_id])
-}
-
-model stripe_events {
-  id         String   @id
-  type       String
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+enum EventType {
+  login
+  analyze
+  rewrite_bullet
+  rewrite_batch
+  resume_pdf
+  cover_letter
+  purchase
 }
