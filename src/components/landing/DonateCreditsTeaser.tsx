@@ -32,7 +32,7 @@ export default function DonateCreditsTeaser() {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href="/account"
+            href="/account/donate"
             className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-black text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-emerald-800 hover:shadow-lg"
           >
             Donate Credits
