@@ -41,7 +41,8 @@ export default function ProblemSolution() {
             The fix
           </div>
           <h2 className="mt-2 text-2xl font-black text-black">
-            Git-a-Job focuses on outcomes, not fluff.
+            
+ focuses on outcomes, not fluff.
           </h2>
           <ul className="mt-4 space-y-2">
             {solutions.map((s) => (

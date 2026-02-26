@@ -9,19 +9,23 @@ datasource db {
 }
 
 model User {
-  id               String          @id @default(cuid())
+  id               String    @id @default(cuid())
   name             String?
-  email            String?         @unique
+  email            String?   @unique
   emailVerified    DateTime?
   image            String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   lastDailyBonusAt DateTime?
-  accounts         Account[]
-  creditsLedger    CreditsLedger[]
-  documents        Document[]
-  events           Event[]
-  sessions         Session[]
+
+  // Donation requests submitted by this user (asking for help)
+  donationRequests DonationRequest[]
+
+  accounts      Account[]
+  creditsLedger CreditsLedger[]
+  documents     Document[]
+  events        Event[]
+  sessions      Session[]
 }
 
 model Account {
@@ -37,7 +41,8 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -47,7 +52,8 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -65,7 +71,8 @@ model CreditsLedger {
   reason    String
   ref       String?
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, ref])
   @@index([userId, createdAt])
@@ -80,7 +87,8 @@ model Document {
   html      String?
   text      String?
   createdAt DateTime     @default(now())
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
 }
@@ -91,7 +99,8 @@ model Event {
   type      EventType
   metaJson  Json?
   createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
@@ -110,4 +119,45 @@ enum EventType {
   resume_pdf
   cover_letter
   purchase
+}
+
+enum DonationRequestStatus {
+  pending
+  approved
+  rejected
+  fulfilled
+}
+
+model DonationRequest {
+  id               String @id @default(cuid())
+  userId           String
+  requestedCredits Int
+  reason           String
+
+  // Workflow: user submits -> admin approves/rejects -> later admin fulfills (credits transfer)
+  status DonationRequestStatus @default(pending)
+
+  // Admin review (approval/rejection) – does NOT move credits
+  reviewNote      String?
+  reviewedAt      DateTime?
+  reviewedByEmail String? // simplest: store your admin email used during action
+
+  // Fulfillment – this is where credits are actually granted
+  fulfilledAt      DateTime?
+  fulfilledByEmail String?
+  fulfillRef       String? // idempotency key for the fulfill operation (set once)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Prevent double-fulfill: only one request can have a given fulfillRef
+  @@unique([fulfillRef])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@index([userId, status, createdAt])
+  // Helpful admin screens
+  @@index([reviewedAt])
+  @@index([fulfilledAt])
 }

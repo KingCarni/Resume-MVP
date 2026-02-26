@@ -2588,26 +2588,21 @@ export default function ResumeMvp() {
               Upload resume file
             </div>
 
-            <div>
-              <label
-                htmlFor="resume-upload"
-                className="inline-flex cursor-pointer items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors"
-              >
-                Choose File
-              </label>
-
-              <input
-                id="resume-upload"
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  resetDerivedState();
-                }}
-                className="hidden"
-              />
-            </div>
+           <input
+            id="resume-upload"
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              resetDerivedState();
+            }}
+            className="block w-full text-sm text-black
+              file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
+              file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
+              file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
+              dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+          />
 
             <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
               Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
