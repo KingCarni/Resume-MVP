@@ -6,10 +6,6 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return NextResponse.json({ ok: true, route: "stripe_webhook" });
-}
-
 function jsonOk(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
     ...init,
@@ -18,6 +14,15 @@ function jsonOk(payload: any, init?: ResponseInit) {
       ...(init?.headers || {}),
     },
   });
+}
+
+export async function GET() {
+  return jsonOk({ ok: true, route: "/api/stripe/webhook" });
+}
+
+function toInt(n: unknown) {
+  const x = typeof n === "number" ? n : Number(String(n ?? ""));
+  return Number.isFinite(x) ? Math.trunc(x) : NaN;
 }
 
 export async function POST(req: Request) {
@@ -41,7 +46,7 @@ export async function POST(req: Request) {
     return jsonOk({ ok: false, error: "Invalid signature" }, { status: 400 });
   }
 
-  // Only handle successful checkout completion
+  // We only credit on successful checkout completion
   if (event.type !== "checkout.session.completed") {
     return jsonOk({ ok: true, ignored: event.type });
   }
@@ -50,100 +55,87 @@ export async function POST(req: Request) {
 
   // Only credit if actually paid
   if (session.payment_status && session.payment_status !== "paid") {
+    console.log("[stripe-webhook] ignoring unpaid session", {
+      sessionId: session.id,
+      payment_status: session.payment_status,
+    });
     return jsonOk({ ok: true, ignored: `payment_status=${session.payment_status}` });
   }
 
-  // Optional environment guard: prevent mixing test/live
-  const expectedLivemode =
+  // Optional: prevent mixing test/live (leave unset if you don’t care)
+  const expectLive =
     process.env.STRIPE_EXPECT_LIVEMODE === "true"
       ? true
       : process.env.STRIPE_EXPECT_LIVEMODE === "false"
       ? false
       : undefined;
 
-  if (typeof expectedLivemode === "boolean" && event.livemode !== expectedLivemode) {
-    console.error("[stripe-webhook] livemode mismatch:", { expectedLivemode, got: event.livemode });
+  if (typeof expectLive === "boolean" && event.livemode !== expectLive) {
+    console.error("[stripe-webhook] livemode mismatch", { expectLive, got: event.livemode });
     return jsonOk({ ok: true, ignored: "livemode_mismatch" });
   }
 
+  // REQUIRED METADATA: your checkout session MUST set these
   const userId = String(session.metadata?.userId ?? "").trim();
-  const credits = Number(session.metadata?.credits ?? 0);
-  const pack = String(session.metadata?.pack ?? "").trim();
+  const credits = toInt(session.metadata?.credits);
+  const pack = String(session.metadata?.pack ?? "").trim() || null;
 
-  // Bad payload: return 200 so Stripe doesn't retry forever
   if (!userId || !Number.isFinite(credits) || credits <= 0) {
-    console.error("[stripe-webhook] missing metadata userId/credits:", {
-      metadata: session.metadata,
+    console.error("[stripe-webhook] missing metadata userId/credits — not crediting", {
       sessionId: session.id,
       eventId: event.id,
+      metadata: session.metadata,
     });
+    // Return 200 so Stripe doesn’t keep retrying forever
     return jsonOk({ ok: true, ignored: "missing_metadata_userId_or_credits" });
   }
 
-  const stripeEventId = event.id; // evt_...
   const stripeSessionId = session.id; // cs_...
-  const amountCents = session.amount_total ?? null;
-  const currency = session.currency ?? null;
-  const customerEmail = session.customer_details?.email ?? session.customer_email ?? null;
+  const ref = `stripe_checkout_session:${stripeSessionId}`; // best idempotency key
 
   try {
-    // Ensure the user exists
     const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!dbUser) {
-      console.error("[stripe-webhook] userId not found:", { userId, stripeEventId, stripeSessionId });
+      console.error("[stripe-webhook] user not found — not crediting", { userId, sessionId: stripeSessionId });
       return jsonOk({ ok: true, ignored: "user_not_found" });
     }
 
     await prisma.$transaction(async (tx) => {
-      // Idempotency via @@unique([userId, ref]) on CreditsLedger
-      // Stripe retries will hit P2002 and exit without double-crediting.
+      // Idempotency via @@unique([userId, ref])
       try {
         await tx.creditsLedger.create({
           data: {
             userId,
             delta: credits,
-            reason: "purchase_stripe",
-            ref: stripeEventId,
+            reason: "purchase", // ✅ standardize
+            ref,
           },
         });
       } catch (e: any) {
-        if (e?.code === "P2002") return; // already processed
+        if (e?.code === "P2002") {
+          console.log("[stripe-webhook] already processed", { userId, ref });
+          return;
+        }
         throw e;
       }
 
-      // NOTE: We intentionally do NOT write tx.event.create({ type: "purchase" })
-      // because your production DB enum "EventType" doesn't include "purchase" yet.
-      // Once you add it with:
-      //   ALTER TYPE "EventType" ADD VALUE IF NOT EXISTS 'purchase';
-      // you can re-enable analytics logging safely.
-
-      // (Optional) If you still want a breadcrumb without touching EventType,
-      // you can log to console here:
       console.log("[stripe-webhook] credited", {
         userId,
         credits,
-        pack: pack || null,
-        stripeEventId,
-        stripeSessionId,
-        amountCents,
-        currency,
-        customerEmail,
+        pack,
+        sessionId: stripeSessionId,
         livemode: event.livemode,
       });
     });
 
-    return jsonOk({ ok: true });
+    return jsonOk({ ok: true, credited: credits });
   } catch (err: any) {
     console.error("[stripe-webhook] DB error", {
       message: err?.message,
       code: err?.code,
       meta: err?.meta,
-      detail: err?.detail,
-      stack: err?.stack,
       userId,
-      stripeSessionId,
-      stripeEventId,
-      eventType: event.type,
+      sessionId: stripeSessionId,
       livemode: event.livemode,
     });
     return jsonOk({ ok: false, error: "DB error" }, { status: 500 });

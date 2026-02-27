@@ -36,14 +36,17 @@ async function resolveUserIdFromSession(session: any): Promise<string | null> {
 
 /**
  * Paid-only policy (no schema changes):
- * - "Purchased" credits = CreditsLedger rows with reason === "purchase"
- *   (If your purchase reason differs, add it to PURCHASE_REASONS.)
+ * - "Purchased" credits = CreditsLedger rows with reason in PURCHASE_REASONS AND delta > 0
  * - "Donated out" = negative rows with reason === "donate_credits"
  *
  * Donatable paid balance = min(totalCredits, (purchased - donatedOut))
  * so you can't donate more than you currently have, and can't donate free credits.
+ *
+ * IMPORTANT: make sure this matches your stripe webhook reason.
+ * Your webhook currently uses: reason: "purchase_stripe"
  */
 const PURCHASE_REASONS = new Set([
+  "purchase_stripe", // <-- matches your webhook
   "purchase",
   "credit_purchase",
   "credits_purchase",
@@ -68,16 +71,26 @@ async function computeBalances(userId: string) {
 
     const reason = String(r.reason ?? "").trim();
 
-    if (PURCHASE_REASONS.has(reason) && d > 0) purchased += d;
+    // Purchased credits are positive deltas with a purchase reason
+    if (PURCHASE_REASONS.has(reason) && d > 0) {
+      purchased += d;
+    }
 
-    // donatedOut should be a negative delta (we'll create it that way)
-    if (reason === "donate_credits" && d < 0) donatedOut += Math.abs(d);
+    // Donated out should be created as a negative delta
+    if (reason === "donate_credits" && d < 0) {
+      donatedOut += Math.abs(d);
+    }
   }
 
   const paidAvailable = Math.max(0, purchased - donatedOut);
   const paidCredits = Math.max(0, Math.min(total, paidAvailable));
 
-  return { totalCredits: total, paidCredits, purchasedCredits: purchased, donatedOutCredits: donatedOut };
+  return {
+    totalCredits: total,
+    paidCredits,
+    purchasedCredits: purchased,
+    donatedOutCredits: donatedOut,
+  };
 }
 
 export async function GET() {
