@@ -27,7 +27,7 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
             href="/resume"
             className="rounded-xl bg-black px-4 py-2 text-sm font-black text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
           >
-            Try it free
+            Sign in
           </Link>
         </div>
       </div>

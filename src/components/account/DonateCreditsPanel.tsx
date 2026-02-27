@@ -203,8 +203,7 @@ export default function DonateCreditsPanel() {
           </button>
 
           <div className="text-xs font-extrabold text-black/50 dark:text-black/70">
-            We’ll block donating free credits automatically.
-          </div>
+            </div>
         </div>
       </div>
     </section>

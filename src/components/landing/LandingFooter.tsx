@@ -11,10 +11,10 @@ export default function LandingFooter() {
 
         <div className="flex flex-wrap gap-2 text-sm font-extrabold">
           <Link
-            href="/donate"
-            className="rounded-xl bg-emerald-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] hover:shadow-lg"
+            href="/feedback"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:bg-blue-700 hover:scale-[1.02] hover:shadow-lg"
           >
-            Donate
+            Feedback
           </Link>
         </div>
       </div>

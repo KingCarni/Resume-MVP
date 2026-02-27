@@ -49,7 +49,7 @@ export default async function HomePage() {
           primaryLabel={primaryLabel}
           secondaryHref="#how-it-works"
           secondaryLabel="See how it works"
-          perkLine="New accounts start with 25 free credits."
+          perkLine="New accounts start with 25 free credits. Earn 10 bonus credits every day you sign in — no subscription required."
         />
 
         <div className="mt-10 grid gap-10">

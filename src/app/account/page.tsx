@@ -13,21 +13,20 @@ export default async function AccountPage() {
   const isAdmin = email === ADMIN_EMAIL;
 
   return (
-    <DashboardShell title="Account" subtitle="Manage your profile, credits, and settings.">
-      <div className="grid gap-6">
-        {/* Existing placeholder card */}
-        <div className="rounded-3xl border border-white/35 bg-white/45 backdrop-blur-xl p-6 shadow-lg">
-          <div className="text-black font-semibold">Account Page</div>
-          <p className="mt-2 text-sm text-black/70">
-            (Placeholder) We can add credit balance, purchase history, and plan status here.
-          </p>
-          <div className="mt-2 text-xs text-black/60">Signed in as: {email || "unknown"}</div>
-        </div>
+    <DashboardShell
+      title="Account"
+      subtitle="Manage your credits and requests."
+    >
+      {/* Subtle signed-in indicator */}
+      <div className="mb-6 text-right text-xs font-semibold text-black/60">
+        Signed in as: {email || "unknown"}
+      </div>
 
-        {/* Phase 1A: Users can request help */}
+      <div className="grid gap-6">
+        {/* User Donation Request Panel */}
         <DonationRequestPanel />
 
-        {/* Phase 1B: Admin-only review panel */}
+        {/* Admin Review Panel */}
         {isAdmin ? <AdminDonationRequestsPanel /> : null}
       </div>
     </DashboardShell>
