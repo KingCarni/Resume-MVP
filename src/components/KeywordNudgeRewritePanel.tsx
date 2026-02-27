@@ -211,7 +211,7 @@ console.log("[rewrite-bullet] bytes (KeywordNudgeRewritePanel):", bytes);
               value={targetCompany}
               onChange={(e) => setTargetCompany(e.target.value)}
               style={{ padding: 10, borderRadius: 8, border: "1px solid #444" }}
-              placeholder='e.g. "Scopely"'
+              placeholder='e.g. "Company Name"'
             />
           </label>
 
@@ -221,7 +221,7 @@ console.log("[rewrite-bullet] bytes (KeywordNudgeRewritePanel):", bytes);
               value={targetProducts}
               onChange={(e) => setTargetProducts(e.target.value)}
               style={{ padding: 10, borderRadius: 8, border: "1px solid #444" }}
-              placeholder='e.g. "Monopoly GO!, Monopoly"'
+              placeholder='e.g. "Target Product"'
             />
           </label>
         </div>

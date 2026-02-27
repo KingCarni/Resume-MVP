@@ -2573,9 +2573,8 @@ export default function ResumeMvp() {
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/60 dark:text-black/70">
-              <span className="hidden sm:inline">Theme ready</span>
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
-                next-themes
+                            <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
+                
               </span>
             </div>
           </div>

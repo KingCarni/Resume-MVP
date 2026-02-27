@@ -214,7 +214,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       pushCurrent();
       current = {
         id: `job_${jobs.length + 1}`,
-        // IMPORTANT: UI renders company first, so keep company/title correct
         company: pendingHeader.company,
         title: pendingHeader.title,
         dates: line.trim(),
@@ -278,9 +277,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     const isGlyphBullet = /^[•\u2022\u00B7o-]\s+/.test(line);
     const cleaned = isGlyphBullet ? cleanLeadingBulletGarbage(line) : line;
 
-    // In your PDF extraction, experience bullets are often plain sentences with no glyph.
-    // Capture them as bullets as long as they look like resume content.
-    // Avoid swallowing super-short fragments.
     const candidate = String(cleaned || "").trim();
     if (!candidate) continue;
     if (candidate.length < 12) continue;
@@ -321,7 +317,6 @@ function jobsLookPlaceholder(jobs: any[]) {
   const arr = Array.isArray(jobs) ? jobs : [];
   if (!arr.length) return true;
 
-  // if most jobs are missing key fields OR still defaults, treat as placeholder
   let placeholderCount = 0;
 
   for (const j of arr) {
@@ -335,7 +330,6 @@ function jobsLookPlaceholder(jobs: any[]) {
       company === "Company" ||
       title === "Role" ||
       dates === "Dates" ||
-      // empty dates happens with placeholder parsers too
       (dates.length === 0 && (company === "Company" || title === "Role"));
 
     if (isPlaceholder) placeholderCount++;
@@ -523,7 +517,7 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (match cover-letter behavior, preserve lines) ---------------- */
+/** ---------------- PDF extraction (FIXED: X/Y aware + column safe) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -551,11 +545,158 @@ async function ensurePdfJsPolyfills() {
   }
 }
 
-function normalizePdfLine(s: string) {
+function normalizePdfText(s: string) {
   return String(s || "")
     .replace(/\u00A0/g, " ")
+    // Fix common ligature splits like "e ff ective", "in fl uence"
+    .replace(/\b([a-z])\s+([a-z]{1,2})\s+([a-z])\b/gi, "$1$2$3")
     .replace(/[ \t]+/g, " ")
     .trim();
+}
+
+type PdfItem = {
+  str: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hasEOL: boolean;
+};
+
+type PdfLine = {
+  y: number;
+  xMin: number;
+  xMax: number;
+  parts: { x: number; text: string }[];
+};
+
+function buildItemsFromTextContentItems(items: any[]): PdfItem[] {
+  const out: PdfItem[] = [];
+  for (const it of items) {
+    const raw = String(it?.str ?? "");
+    const text = normalizePdfText(raw);
+    if (!text && !it?.hasEOL) continue;
+
+    const tr = Array.isArray(it?.transform) ? it.transform : null;
+    const x = tr ? Number(tr[4] ?? 0) : 0;
+    const y = tr ? Number(tr[5] ?? 0) : 0;
+
+    const w = Number(it?.width ?? 0);
+    const h = Number(it?.height ?? 0);
+    const hasEOL = Boolean(it?.hasEOL);
+
+    out.push({ str: text, x, y, w, h, hasEOL });
+  }
+  return out;
+}
+
+function groupItemsIntoLines(items: PdfItem[]) {
+  // Sort by y desc (PDF coords often increase upward; but pdfjs y is typically bottom-up)
+  // We’ll sort by y descending so it reads top-to-bottom when combined with page height behavior.
+  const sorted = [...items].sort((a, b) => {
+    // Higher y first
+    if (b.y !== a.y) return b.y - a.y;
+    return a.x - b.x;
+  });
+
+  const lines: PdfLine[] = [];
+  const Y_TOL = 2.25;
+
+  for (const it of sorted) {
+    if (!it.str && !it.hasEOL) continue;
+
+    // Find an existing line with similar y
+    let line = lines.find((l) => Math.abs(l.y - it.y) <= Y_TOL);
+    if (!line) {
+      line = { y: it.y, xMin: it.x, xMax: it.x + (it.w || 0), parts: [] };
+      lines.push(line);
+    }
+
+    if (it.str) {
+      line.parts.push({ x: it.x, text: it.str });
+      line.xMin = Math.min(line.xMin, it.x);
+      line.xMax = Math.max(line.xMax, it.x + (it.w || 0));
+    }
+  }
+
+  // Normalize each line: sort parts by x and insert spaces when gaps are big
+  const normalized: { y: number; xMin: number; xMax: number; text: string }[] = [];
+
+  for (const l of lines) {
+    const parts = [...l.parts].sort((a, b) => a.x - b.x);
+
+    let s = "";
+    let lastX: number | null = null;
+
+    for (const p of parts) {
+      const t = normalizePdfText(p.text);
+      if (!t) continue;
+
+      if (s.length === 0) {
+        s = t;
+        lastX = p.x;
+        continue;
+      }
+
+      // Add a space if there’s a noticeable x-gap (prevents “RoleCompany|Dates” gluing)
+      const gap = lastX == null ? 0 : p.x - lastX;
+      if (gap > 6) s += " ";
+
+      // Also add a space if needed between words
+      if (!s.endsWith(" ") && !/^[,.:;)\]]/.test(t) && !/[([/]\s*$/.test(s)) s += " ";
+
+      s += t;
+      lastX = p.x;
+    }
+
+    const text = normalizePdfText(s);
+    if (!text) continue;
+
+    normalized.push({ y: l.y, xMin: l.xMin, xMax: l.xMax, text });
+  }
+
+  // Sort final lines top-to-bottom
+  normalized.sort((a, b) => b.y - a.y);
+
+  return normalized;
+}
+
+function splitIntoColumnsIfNeeded(lines: { y: number; xMin: number; xMax: number; text: string }[]) {
+  if (lines.length < 8) return { mode: "single" as const, columns: [lines] };
+
+  // Heuristic: if many lines start far to the right, likely a second column (or right-aligned dates)
+  const xMins = lines.map((l) => l.xMin).sort((a, b) => a - b);
+  const medianXMin = xMins[Math.floor(xMins.length / 2)] ?? 0;
+
+  // Find a "right cluster" threshold
+  const maxXMin = xMins[xMins.length - 1] ?? 0;
+  const spread = maxXMin - medianXMin;
+
+  // If spread is small, treat as single column
+  if (spread < 140) return { mode: "single" as const, columns: [lines] };
+
+  // Choose split at ~ (median + 100) but not beyond max
+  const splitX = medianXMin + Math.min(180, Math.max(120, spread * 0.55));
+
+  const left: typeof lines = [];
+  const right: typeof lines = [];
+
+  for (const l of lines) {
+    // If most of the line is right of split, put it in right column.
+    // Otherwise left.
+    const mid = (l.xMin + l.xMax) / 2;
+    if (mid >= splitX) right.push(l);
+    else left.push(l);
+  }
+
+  // If right column is tiny, it’s probably just dates — don’t split.
+  if (right.length <= Math.max(3, Math.floor(lines.length * 0.12))) {
+    return { mode: "single" as const, columns: [lines] };
+  }
+
+  // Typical resumes: left column main content, right column might be sidebar.
+  // We output left then right to avoid interleaving unrelated blocks.
+  return { mode: "two-column" as const, columns: [left, right] };
 }
 
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
@@ -587,56 +728,26 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
 
-      const items: any[] = Array.isArray(content?.items) ? content.items : [];
-      if (!items.length) {
-        out += "\n";
+      const rawItems: any[] = Array.isArray(content?.items) ? content.items : [];
+      if (!rawItems.length) {
+        out += "\n\n";
         continue;
       }
 
-      type Line = { y: number; parts: string[] };
-      const lines: Line[] = [];
-      const Y_TOL = 2.0;
+      const items = buildItemsFromTextContentItems(rawItems);
+      const lines = groupItemsIntoLines(items);
 
-      let currentLine: Line | null = null;
+      const col = splitIntoColumnsIfNeeded(lines);
 
-      const flushCurrent = () => {
-        if (!currentLine) return;
-        const lineText = normalizePdfLine(currentLine.parts.join(" "));
-        if (lineText) lines.push({ y: currentLine.y, parts: [lineText] });
-        currentLine = null;
-      };
+      const pageText =
+        col.columns
+          .map((colLines) => colLines.map((l) => l.text).join("\n"))
+          .join("\n\n") + "\n\n";
 
-      for (const it of items) {
-        const str = String(it?.str ?? "");
-        const text = normalizePdfLine(str);
-        if (!text) {
-          if (it?.hasEOL) flushCurrent();
-          continue;
-        }
-
-        const y = Array.isArray(it?.transform) ? Number(it.transform[5] ?? 0) : 0;
-
-        if (!currentLine) {
-          currentLine = { y, parts: [text] };
-        } else {
-          const sameLine = Math.abs(currentLine.y - y) <= Y_TOL;
-          if (!sameLine) {
-            flushCurrent();
-            currentLine = { y, parts: [text] };
-          } else {
-            currentLine.parts.push(text);
-          }
-        }
-
-        if (it?.hasEOL) flushCurrent();
-      }
-      flushCurrent();
-
-      const pageLines = lines.map((l) => l.parts.join("")).filter(Boolean);
-      out += pageLines.join("\n") + "\n\n";
+      out += pageText;
     }
 
-    return out;
+    return normalizeResumeText(out);
   } catch (err: any) {
     const msg = err?.message ? String(err.message) : String(err);
     throw new Error(`PDF parse failed: ${msg}`);
