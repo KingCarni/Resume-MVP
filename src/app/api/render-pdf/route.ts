@@ -1,7 +1,5 @@
 // src/app/api/render-pdf/route.ts
 import { NextResponse } from "next/server";
-import puppeteer, { type Viewport } from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
 import fs from "fs";
 import path from "path";
 
@@ -27,6 +25,16 @@ type ReqBody = {
 
 const COST_PDF = 5;
 
+function okJson(payload: any, init?: ResponseInit) {
+  return NextResponse.json(payload, {
+    ...init,
+    headers: {
+      "Cache-Control": "no-store, max-age=0",
+      ...(init?.headers || {}),
+    },
+  });
+}
+
 function safePdfFilename(name: string) {
   const base = (name || "document.pdf").trim() || "document.pdf";
   const withExt = base.toLowerCase().endsWith(".pdf") ? base : `${base}.pdf`;
@@ -39,34 +47,93 @@ function toPureArrayBuffer(u8: Uint8Array): ArrayBuffer {
   return ab;
 }
 
-async function resolveExecutablePath(): Promise<string> {
-  const brotliDir = path.join(process.cwd(), "node_modules", "@sparticuz", "chromium", "bin");
-
-  if (fs.existsSync(brotliDir)) {
-    const p = await chromium.executablePath(brotliDir);
-    if (p) return p;
-  }
-
-  const p = await chromium.executablePath();
-  if (!p) {
-    throw new Error(
-      "Could not resolve chromium executablePath(). " +
-        'Ensure next.config.ts has outputFileTracingIncludes: {"*": ["node_modules/@sparticuz/chromium/**"]} and redeploy.'
-    );
-  }
-  return p;
+function isVercelLike() {
+  return !!process.env.VERCEL || process.env.NODE_ENV === "production";
 }
 
-async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
-  const executablePath = await resolveExecutablePath();
+function exists(p?: string) {
+  if (!p) return false;
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
 
-  const headless: boolean = true;
-  const defaultViewport: Viewport | null = null;
+async function loadBrowserDeps() {
+  if (isVercelLike()) {
+    // ✅ Production/Vercel: puppeteer-core + sparticuz chromium
+    const puppeteerImport = (await import("puppeteer-core")) as any;
+    const chromiumImport = (await import("@sparticuz/chromium")) as any;
 
-  const browser = await puppeteer.launch({
-    args: chromium.args,
+    const puppeteer = puppeteerImport.default ?? puppeteerImport;
+    const chromium = chromiumImport.default ?? chromiumImport;
+
+    // Prefer brotli dir when present (your original logic)
+    const brotliDir = path.join(process.cwd(), "node_modules", "@sparticuz", "chromium", "bin");
+    let executablePath: string | undefined;
+
+    if (exists(brotliDir)) {
+      const p = await chromium.executablePath(brotliDir);
+      if (p) executablePath = p;
+    }
+
+    if (!executablePath) {
+      const p = await chromium.executablePath();
+      if (p) executablePath = p;
+    }
+
+    if (!executablePath) {
+      throw new Error(
+        "Could not resolve chromium executablePath(). " +
+          'Ensure next.config.ts has outputFileTracingIncludes: {"*": ["node_modules/@sparticuz/chromium/**"]} and redeploy.'
+      );
+    }
+
+    return {
+      puppeteer,
+      chromiumArgs: chromium.args as string[],
+      headless: chromium.headless ?? true,
+      executablePath,
+      source: "sparticuz(production)",
+    };
+  }
+
+  // ✅ Local dev: use full puppeteer (bundled Chromium), OR allow overriding to local Chrome
+  const puppeteerImport = (await import("puppeteer")) as any;
+  const puppeteer = puppeteerImport.default ?? puppeteerImport;
+
+  const envPath =
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    process.env.CHROME_EXECUTABLE_PATH ||
+    process.env.PUPPETEER_EXEC_PATH;
+
+  const winChrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
+  const executablePath =
+    (envPath && exists(envPath) ? envPath : undefined) ||
+    (exists(winChrome) ? winChrome : undefined) ||
+    (typeof puppeteer.executablePath === "function" ? puppeteer.executablePath() : undefined);
+
+  return {
+    puppeteer,
+    chromiumArgs: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: true,
     executablePath,
-    headless,
+    source: executablePath && exists(executablePath) ? "local(dev):explicit-or-bundled" : "local(dev):unknown",
+  };
+}
+
+async function renderPdfFromHtml(html: string): Promise<{ bytes: Uint8Array; debug: any }> {
+  const deps = await loadBrowserDeps();
+
+  // defaultViewport null = let Chromium decide (keeps your prior behavior)
+  const defaultViewport: any = null;
+
+  const browser = await deps.puppeteer.launch({
+    args: deps.chromiumArgs,
+    executablePath: deps.executablePath,
+    headless: deps.headless,
     defaultViewport,
   });
 
@@ -77,7 +144,9 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
     await page.setContent(html, { waitUntil: "networkidle2" });
 
     // CRITICAL: render like iframe preview (screen), NOT print
-    await page.emulateMediaType("screen");
+    if (typeof page.emulateMediaType === "function") {
+      await page.emulateMediaType("screen");
+    }
 
     // Preserve backgrounds/colors
     await page.addStyleTag({
@@ -99,20 +168,16 @@ async function renderPdfFromHtml(html: string): Promise<Uint8Array> {
       },
     });
 
-    return new Uint8Array(pdfBuffer);
+    return {
+      bytes: new Uint8Array(pdfBuffer),
+      debug: {
+        browserSource: deps.source,
+        executablePath: deps.executablePath,
+      },
+    };
   } finally {
     await browser.close();
   }
-}
-
-function okJson(payload: any, init?: ResponseInit) {
-  return NextResponse.json(payload, {
-    ...init,
-    headers: {
-      "Cache-Control": "no-store, max-age=0",
-      ...(init?.headers || {}),
-    },
-  });
 }
 
 export async function POST(req: Request) {
@@ -152,8 +217,8 @@ export async function POST(req: Request) {
     chargedUserId = dbUser.id;
     charged = true;
 
-    const pdfBytes = await renderPdfFromHtml(html);
-    const ab = toPureArrayBuffer(pdfBytes);
+    const { bytes, debug } = await renderPdfFromHtml(html);
+    const ab = toPureArrayBuffer(bytes);
 
     return new NextResponse(ab, {
       status: 200,
@@ -161,6 +226,8 @@ export async function POST(req: Request) {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Cache-Control": "no-store, max-age=0",
+        // helpful if you ever want to inspect:
+        "X-PDF-Engine": String(debug?.browserSource ?? ""),
       },
     });
   } catch (e: any) {
@@ -178,7 +245,15 @@ export async function POST(req: Request) {
           meta: { cost: COST_PDF, error: msg },
         });
 
-        return okJson({ ok: false, error: msg, refunded: true, balance: refunded.balance }, { status: 500 });
+        return okJson(
+          {
+            ok: false,
+            error: msg,
+            refunded: true,
+            balance: refunded.balance,
+          },
+          { status: 500 }
+        );
       } catch (refundErr: any) {
         console.error("refundCredits failed:", refundErr);
         return okJson(

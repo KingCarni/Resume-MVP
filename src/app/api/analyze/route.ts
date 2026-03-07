@@ -10,6 +10,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chargeCredits, refundCredits } from "@/lib/credits";
 
+import { ocrPdfWithGoogleVision } from "@/lib/pdf_ocr_google";
+import { assessPdfTextQuality } from "@/lib/pdf_quality";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -18,6 +21,8 @@ const BOOT_TAG = "analyze_route_boot_ok";
 
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+
+const PDF_WEIRD_WARNING = "PDF looks weird; DOCX recommended — we’ll still try to extract.";
 
 type ResumeBullet = {
   id: string;
@@ -96,16 +101,13 @@ function looksLikeContactOrReferenceLine(line: string) {
   if (linkedinRegex.test(l)) return true;
   if (urlRegex.test(l)) return true;
 
-  // phone-ish
   if (digitsCount(l) >= 7) return true;
 
   if (/^references?$/i.test(l)) return true;
   if (/available\s+upon\s+request/i.test(l)) return true;
 
-  // name-only line
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}$/.test(l)) return true;
 
-  // old edge-case list from your project
   if (/^(massage therapist|production manager|2\s*nd\s*ad)\b/i.test(l)) return true;
 
   return false;
@@ -121,12 +123,12 @@ function filterBadBullets(arr: string[]) {
 /** ---------------- Common cleanup ---------------- */
 
 function cleanLeadingBulletGarbage(s: string) {
-  return String(s || "").replace(/^[\s•\u2022\u00B7o-]+/g, "").trim();
+  // ✅ Added ● (U+25CF) because many web/ATS PDFs use it
+  return String(s || "").replace(/^[\s•●\u2022\u00B7o-]+/g, "").trim();
 }
 
-/** ---------------- FIX: robust job parsing from experience text (PDFs often have NO bullet glyphs) ---------------- */
+/** ---------------- FIX: robust job parsing from experience text ---------------- */
 
-// e.g. "Feb 2025 - Jan 2026", "Oct 2023 – Apr 2024", "May 2019 - Sept 2022", "Jan 2020 - Present"
 function looksLikeDateRangeLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
@@ -138,21 +140,17 @@ function looksLikeDateRangeLine(lineRaw: string) {
   return re.test(line);
 }
 
-// Header variants from your extracted PDF:
-// 1) "QA Lead — Prodigy Education (Mass Layoff) | Feb 2025 - Jan 2026"
-// 2) "QA Lead — Prodigy Education (Mass Layoff) |" then next line "Feb 2025 - Jan 2026"
+/**
+ * Baseline header format you already had:
+ *   "Title — Company | Dates"
+ */
 function looksLikeJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
 
-  // must have divider between title and company
   if (!(line.includes("—") || line.includes("-"))) return false;
-
-  // must include a pipe somewhere (your format)
   if (!line.includes("|")) return false;
 
-  // keep constrained; avoid catching random sentences
-  // title — company | (optional dates)
   const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/;
   return headerRegex.test(line);
 }
@@ -165,24 +163,73 @@ function parseJobHeaderLine(lineRaw: string) {
 
   const title = String(m[1] || "").trim();
   const company = String(m[3] || "").trim();
-  const datesInline = String(m[4] || "").trim(); // may be empty if header ends with "|"
+  const datesInline = String(m[4] || "").trim();
 
   return { title, company, datesInline };
+}
+
+/**
+ * ✅ NEW (safe) header format for many web PDFs:
+ *   "Company, Location - Title"
+ *   "Company - Title"
+ *
+ * This is ONLY used for preview job headings (experienceJobs),
+ * NOT for bullet extraction, so it won't break bullets.
+ */
+function looksLikeCompanyDashTitleHeader(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+  if (!line) return false;
+
+  // Avoid bullets
+  if (/^[\s]*[•●\u2022\u00B7o-]\s+/.test(line)) return false;
+  // Avoid section headers
+  if (/^(highlights|experience|education|skills|projects|certifications|certificates|volunteer|interests)\b/i.test(line))
+    return false;
+
+  if (!line.includes(" - ") && !line.includes(" — ")) return false;
+  if (line.includes("|")) return false; // that's the other format
+
+  // Keep conservative length
+  if (line.length < 8 || line.length > 170) return false;
+
+  // Must look like "Something - Something"
+  const normalized = line.replace(/\s+—\s+/g, " - ");
+  const idx = normalized.indexOf(" - ");
+  if (idx <= 0) return false;
+
+  const left = normalized.slice(0, idx).trim();
+  const right = normalized.slice(idx + 3).trim();
+  if (!left || !right) return false;
+
+  // Right side should resemble a title-ish phrase
+  if (right.split(/\s+/).length < 2) return false;
+
+  return true;
+}
+
+function parseCompanyDashTitleHeader(lineRaw: string) {
+  const line = String(lineRaw || "").trim();
+  const normalized = line.replace(/\s+—\s+/g, " - ");
+  const idx = normalized.indexOf(" - ");
+  if (idx <= 0) return null;
+
+  const company = normalized.slice(0, idx).trim();
+  const title = normalized.slice(idx + 3).trim();
+  if (!company || !title) return null;
+
+  return { company, title };
 }
 
 function looksLikeMetaLine(s: string) {
   const t = String(s || "").trim();
   if (!t) return true;
 
-  // section headers / noise
   if (/^(highlights|experience|education|skills|projects|certifications|certificates|volunteer|interests)\b/i.test(t))
     return true;
 
-  // meta blocks that appear inside experience in your PDF extraction
   if (/^games shipped\s*:/i.test(t)) return true;
   if (/^tools\s*:/i.test(t)) return true;
 
-  // your weird "EXPERI E N CE" split heading
   if (/^experi\s*e\s*n\s*ce$/i.test(t.replace(/\s+/g, ""))) return true;
 
   return false;
@@ -196,7 +243,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   const jobs: any[] = [];
   let current: any | null = null;
 
-  // when header ends with "|" and dates are on the NEXT line
+  // pending header -> next line dates
   let pendingHeader: { title: string; company: string } | null = null;
 
   const pushCurrent = () => {
@@ -209,7 +256,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     const line = String(raw || "").trim();
     if (!line) continue;
 
-    // complete pending header if next line is date-range
+    // pending header gets dates from next line if present
     if (pendingHeader && looksLikeDateRangeLine(line)) {
       pushCurrent();
       current = {
@@ -224,19 +271,17 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       continue;
     }
 
-    // header?
+    // Format A: "Title — Company | Dates"
     if (looksLikeJobHeaderLine(line)) {
       const parsed = parseJobHeaderLine(line);
       if (parsed) {
         const dates = parsed.datesInline;
 
-        // header has no inline dates -> wait for next date line
         if (!dates) {
           pendingHeader = { title: parsed.title, company: parsed.company };
           continue;
         }
 
-        // normal header w inline dates
         pushCurrent();
         current = {
           id: `job_${jobs.length + 1}`,
@@ -251,8 +296,16 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       continue;
     }
 
-    // if we had a pending header but the next line wasn't dates,
-    // we still create the job block (dates unknown) and continue consuming bullets.
+    // Format B: "Company - Title" (dates usually next line)
+    if (looksLikeCompanyDashTitleHeader(line)) {
+      const parsed = parseCompanyDashTitleHeader(line);
+      if (parsed) {
+        pendingHeader = { title: parsed.title, company: parsed.company };
+        continue;
+      }
+    }
+
+    // if pending header but we didn't see a date-range line, start job anyway
     if (pendingHeader) {
       pushCurrent();
       current = {
@@ -264,17 +317,16 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
         bullets: [],
       };
       pendingHeader = null;
-      // fallthrough: treat this same line as bullet if it looks like one
+      // and then keep going to possibly treat this line as a bullet below
     }
 
     if (!current) continue;
 
-    // skip obvious meta lines within experience
     if (looksLikeMetaLine(line)) continue;
     if (looksLikeContactOrReferenceLine(line)) continue;
 
-    // Bullet glyphs (if present)
-    const isGlyphBullet = /^[•\u2022\u00B7o-]\s+/.test(line);
+    // ✅ include ● bullets too
+    const isGlyphBullet = /^[•●\u2022\u00B7o-]\s+/.test(line);
     const cleaned = isGlyphBullet ? cleanLeadingBulletGarbage(line) : line;
 
     const candidate = String(cleaned || "").trim();
@@ -284,7 +336,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     current.bullets.push(candidate);
   }
 
-  // flush
   if (pendingHeader) {
     pushCurrent();
     current = {
@@ -299,7 +350,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   }
   pushCurrent();
 
-  // Deduplicate bullets inside each job (preserve order)
   for (const j of jobs) {
     const seen = new Set<string>();
     j.bullets = (j.bullets || []).filter((b: string) => {
@@ -517,7 +567,7 @@ function extractMetaBlocks(fullText: string) {
   };
 }
 
-/** ---------------- PDF extraction (FIXED: X/Y aware + column safe) ---------------- */
+/** ---------------- PDF extraction (pdfjs baseline) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
@@ -548,7 +598,6 @@ async function ensurePdfJsPolyfills() {
 function normalizePdfText(s: string) {
   return String(s || "")
     .replace(/\u00A0/g, " ")
-    // Fix common ligature splits like "e ff ective", "in fl uence"
     .replace(/\b([a-z])\s+([a-z]{1,2})\s+([a-z])\b/gi, "$1$2$3")
     .replace(/[ \t]+/g, " ")
     .trim();
@@ -591,10 +640,7 @@ function buildItemsFromTextContentItems(items: any[]): PdfItem[] {
 }
 
 function groupItemsIntoLines(items: PdfItem[]) {
-  // Sort by y desc (PDF coords often increase upward; but pdfjs y is typically bottom-up)
-  // We’ll sort by y descending so it reads top-to-bottom when combined with page height behavior.
   const sorted = [...items].sort((a, b) => {
-    // Higher y first
     if (b.y !== a.y) return b.y - a.y;
     return a.x - b.x;
   });
@@ -605,7 +651,6 @@ function groupItemsIntoLines(items: PdfItem[]) {
   for (const it of sorted) {
     if (!it.str && !it.hasEOL) continue;
 
-    // Find an existing line with similar y
     let line = lines.find((l) => Math.abs(l.y - it.y) <= Y_TOL);
     if (!line) {
       line = { y: it.y, xMin: it.x, xMax: it.x + (it.w || 0), parts: [] };
@@ -619,7 +664,6 @@ function groupItemsIntoLines(items: PdfItem[]) {
     }
   }
 
-  // Normalize each line: sort parts by x and insert spaces when gaps are big
   const normalized: { y: number; xMin: number; xMax: number; text: string }[] = [];
 
   for (const l of lines) {
@@ -638,11 +682,9 @@ function groupItemsIntoLines(items: PdfItem[]) {
         continue;
       }
 
-      // Add a space if there’s a noticeable x-gap (prevents “RoleCompany|Dates” gluing)
       const gap = lastX == null ? 0 : p.x - lastX;
       if (gap > 6) s += " ";
 
-      // Also add a space if needed between words
       if (!s.endsWith(" ") && !/^[,.:;)\]]/.test(t) && !/[([/]\s*$/.test(s)) s += " ";
 
       s += t;
@@ -655,47 +697,36 @@ function groupItemsIntoLines(items: PdfItem[]) {
     normalized.push({ y: l.y, xMin: l.xMin, xMax: l.xMax, text });
   }
 
-  // Sort final lines top-to-bottom
   normalized.sort((a, b) => b.y - a.y);
-
   return normalized;
 }
 
 function splitIntoColumnsIfNeeded(lines: { y: number; xMin: number; xMax: number; text: string }[]) {
   if (lines.length < 8) return { mode: "single" as const, columns: [lines] };
 
-  // Heuristic: if many lines start far to the right, likely a second column (or right-aligned dates)
   const xMins = lines.map((l) => l.xMin).sort((a, b) => a - b);
   const medianXMin = xMins[Math.floor(xMins.length / 2)] ?? 0;
 
-  // Find a "right cluster" threshold
   const maxXMin = xMins[xMins.length - 1] ?? 0;
   const spread = maxXMin - medianXMin;
 
-  // If spread is small, treat as single column
   if (spread < 140) return { mode: "single" as const, columns: [lines] };
 
-  // Choose split at ~ (median + 100) but not beyond max
   const splitX = medianXMin + Math.min(180, Math.max(120, spread * 0.55));
 
   const left: typeof lines = [];
   const right: typeof lines = [];
 
   for (const l of lines) {
-    // If most of the line is right of split, put it in right column.
-    // Otherwise left.
     const mid = (l.xMin + l.xMax) / 2;
     if (mid >= splitX) right.push(l);
     else left.push(l);
   }
 
-  // If right column is tiny, it’s probably just dates — don’t split.
   if (right.length <= Math.max(3, Math.floor(lines.length * 0.12))) {
     return { mode: "single" as const, columns: [lines] };
   }
 
-  // Typical resumes: left column main content, right column might be sidebar.
-  // We output left then right to avoid interleaving unrelated blocks.
   return { mode: "two-column" as const, columns: [left, right] };
 }
 
@@ -754,25 +785,104 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   }
 }
 
+/** ---------------- PDF extraction (gated OCR fallback) ---------------- */
+
+type PdfExtractionResult = {
+  text: string;
+  parserUsed: "pdfjs" | "vision_ocr";
+  warnings: string[];
+  pdfInfo: {
+    pdfQuality?: ReturnType<typeof assessPdfTextQuality>;
+    pdfjsError?: string | null;
+    ocrPages?: number | null;
+    gcsInputUri?: string;
+    gcsOutputPrefix?: string;
+  };
+};
+
+async function extractResumeTextFromPdfWithOcrGate(buffer: Buffer): Promise<PdfExtractionResult> {
+  const warnings: string[] = [];
+  let pdfjsText = "";
+  let pdfjsError: string | null = null;
+
+  // Always TRY pdfjs first (cheap)
+  try {
+    pdfjsText = await extractTextFromPdfBuffer(buffer);
+  } catch (e: any) {
+    pdfjsError = e?.message ? String(e.message) : String(e);
+    warnings.push(PDF_WEIRD_WARNING);
+  }
+
+  // If pdfjs succeeded, assess quality
+  let quality = pdfjsText ? assessPdfTextQuality(pdfjsText) : null;
+
+  // If pdfjs failed OR quality is bad -> OCR
+  if (!pdfjsText || (quality && !quality.ok)) {
+    warnings.push(PDF_WEIRD_WARNING);
+
+    const ocr = await ocrPdfWithGoogleVision(buffer);
+    const ocrText = normalizeResumeText(ocr.text);
+
+    return {
+      text: ocrText,
+      parserUsed: "vision_ocr",
+      warnings: Array.from(new Set(warnings)),
+      pdfInfo: {
+        pdfQuality: quality ?? undefined,
+        pdfjsError,
+        ocrPages: ocr.pages ?? null,
+        gcsInputUri: ocr.gcsInputUri,
+        gcsOutputPrefix: ocr.gcsOutputPrefix,
+      },
+    };
+  }
+
+  // Good enough from pdfjs
+  return {
+    text: normalizeResumeText(pdfjsText),
+    parserUsed: "pdfjs",
+    warnings: [],
+    pdfInfo: {
+      pdfQuality: quality ?? undefined,
+      pdfjsError: null,
+      ocrPages: null,
+    },
+  };
+}
+
 /** ---------------- File extraction ---------------- */
 
-async function extractResumeFromFile(file: File): Promise<{ text: string; bulletsFromFile?: string[] }> {
+async function extractResumeFromFile(file: File): Promise<{
+  text: string;
+  bulletsFromFile?: string[];
+  detectedType: string;
+  parserUsed?: "pdfjs" | "vision_ocr";
+  warnings?: string[];
+  pdfInfo?: any;
+}> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const sniffed = sniffBufferType(buffer);
 
   if (sniffed === "pdf") {
-    const text = await extractTextFromPdfBuffer(buffer);
-    return { text, bulletsFromFile: undefined };
+    const gated = await extractResumeTextFromPdfWithOcrGate(buffer);
+    return {
+      text: gated.text,
+      bulletsFromFile: undefined,
+      detectedType: "pdf",
+      parserUsed: gated.parserUsed,
+      warnings: gated.warnings,
+      pdfInfo: gated.pdfInfo,
+    };
   }
 
   if (sniffed === "docx") {
     const { text, bullets } = await extractDocxTextAndBulletsFromBuffer(buffer);
-    return { text, bulletsFromFile: bullets };
+    return { text, bulletsFromFile: bullets, detectedType: "docx" };
   }
 
   if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
 
-  if (sniffed === "txt") return { text: buffer.toString("utf8"), bulletsFromFile: undefined };
+  if (sniffed === "txt") return { text: buffer.toString("utf8"), bulletsFromFile: undefined, detectedType: "txt" };
 
   const name = (file.name || "").toLowerCase();
   if (name.endsWith(".doc")) throw new Error(friendlyUnsupportedDocMsg("(It looks like a legacy Word .doc file.)"));
@@ -833,6 +943,9 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
   bulletsFromFile?: string[];
   sizeBytes: number;
   detectedType: string;
+  parserUsed?: "pdfjs" | "vision_ocr";
+  warnings?: string[];
+  pdfInfo?: any;
 }> {
   const { buffer, contentType } = await fetchBlobAsBuffer(resumeBlobUrl);
 
@@ -856,8 +969,16 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
   }
 
   if (detectedType === "pdf") {
-    const text = await extractTextFromPdfBuffer(buffer);
-    return { text, bulletsFromFile: undefined, sizeBytes: buffer.byteLength, detectedType };
+    const gated = await extractResumeTextFromPdfWithOcrGate(buffer);
+    return {
+      text: gated.text,
+      bulletsFromFile: undefined,
+      sizeBytes: buffer.byteLength,
+      detectedType,
+      parserUsed: gated.parserUsed,
+      warnings: gated.warnings,
+      pdfInfo: gated.pdfInfo,
+    };
   }
 
   if (detectedType === "doc") {
@@ -914,6 +1035,41 @@ function flattenFromJobs(jobsIn: any[]) {
   return { outBullets, outJobIds };
 }
 
+/**
+ * ✅ NEW: last-resort bullet scan for PDFs with weird glyph bullets (●)
+ * Only runs if all other extraction paths found zero bullets.
+ */
+function scanBulletsFromTextFallback(text: string) {
+  const lines = normalizeResumeText(text)
+    .split("\n")
+    .map((l) => String(l || "").trim())
+    .filter(Boolean);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  // bullet markers: • ● - o (very common in exported PDFs)
+  const bulletRe = /^[\s]*([•●\u2022\u00B7o-])\s+/;
+
+  for (const line of lines) {
+    if (!bulletRe.test(line)) continue;
+
+    const cleaned = cleanLeadingBulletGarbage(line);
+    const candidate = String(cleaned || "").trim();
+    if (!candidate) continue;
+    if (candidate.length < 12) continue;
+    if (looksLikeContactOrReferenceLine(candidate)) continue;
+    if (looksLikeMetaLine(candidate)) continue;
+
+    const k = normalizeForContains(candidate);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(candidate);
+  }
+
+  return out;
+}
+
 /** --------- Route --------- */
 
 export async function POST(req: Request) {
@@ -939,6 +1095,12 @@ export async function POST(req: Request) {
 
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
+
+    // OCR/pdf debug
+    const warnings: string[] = [];
+    let parserUsed: "pdfjs" | "vision_ocr" | "mammoth" | "txt" | "unknown" = "unknown";
+    let pdfInfo: any = null;
+    let detectedType: string = "unknown";
 
     // --- Parse inputs (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
@@ -966,12 +1128,24 @@ export async function POST(req: Request) {
         }
 
         const extracted = await extractResumeFromFile(file);
+        detectedType = extracted.detectedType;
+
         resumeText = sanitizeResumeInput(extracted.text);
+
+        if (extracted.parserUsed) parserUsed = extracted.parserUsed;
+        if (Array.isArray(extracted.warnings)) warnings.push(...extracted.warnings);
+        if (extracted.pdfInfo) pdfInfo = extracted.pdfInfo;
+
         bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
           ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
           : [];
+
+        if (!extracted.parserUsed) {
+          parserUsed = detectedType === "docx" ? "mammoth" : detectedType === "txt" ? "txt" : "unknown";
+        }
       } else {
         resumeText = sanitizeResumeInput(resumeTextFallback);
+        parserUsed = "unknown";
       }
     } else if (contentType.includes("application/json")) {
       const body = (await req.json().catch(() => ({}))) as any;
@@ -985,7 +1159,13 @@ export async function POST(req: Request) {
 
       if (resumeBlobUrl) {
         const extracted = await extractResumeFromUrl(resumeBlobUrl);
+        detectedType = extracted.detectedType;
+
         resumeText = sanitizeResumeInput(extracted.text);
+
+        if (extracted.parserUsed) parserUsed = extracted.parserUsed;
+        if (Array.isArray(extracted.warnings)) warnings.push(...extracted.warnings);
+        if (extracted.pdfInfo) pdfInfo = extracted.pdfInfo;
 
         bulletsFromFile = Array.isArray(extracted.bulletsFromFile)
           ? extracted.bulletsFromFile.map((b) => String(b || "").trim()).filter(Boolean)
@@ -996,6 +1176,7 @@ export async function POST(req: Request) {
           detectedType: extracted.detectedType,
           sizeBytes: extracted.sizeBytes,
           url: resumeBlobUrl,
+          parserUsed: extracted.parserUsed ?? null,
         };
 
         const extra = sanitizeResumeInput(body.resumeText);
@@ -1003,8 +1184,13 @@ export async function POST(req: Request) {
           resumeText = `${resumeText}\n\n${extra}`;
           blobDebug.appendedResumeText = true;
         }
+
+        if (!extracted.parserUsed) {
+          parserUsed = detectedType === "docx" ? "mammoth" : detectedType === "txt" ? "txt" : "unknown";
+        }
       } else {
         resumeText = sanitizeResumeInput(body.resumeText);
+        parserUsed = "unknown";
       }
     } else {
       return okJson(
@@ -1013,13 +1199,25 @@ export async function POST(req: Request) {
       );
     }
 
+    const warningsUnique = Array.from(new Set(warnings));
+
     if (!resumeText || !jobText) {
       return okJson({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" }, { status: 400 });
     }
 
     if (resumeText.length < 300) {
       return okJson(
-        { ok: false, error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text." },
+        {
+          ok: false,
+          error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text.",
+          warnings: warningsUnique,
+          debug: {
+            parserUsed,
+            detectedType,
+            pdfInfo,
+            blobDebug,
+          },
+        },
         { status: 400 }
       );
     }
@@ -1127,6 +1325,16 @@ export async function POST(req: Request) {
       }
     }
 
+    // ✅ 2.5) LAST RESORT for PDFs: scan for glyph bullets (●) directly from text
+    if (!bullets.length) {
+      const scanned = scanBulletsFromTextFallback(bulletSourceText);
+      if (scanned.length) {
+        bullets = scanned;
+        const fallbackJobId = experienceJobs[0]?.id || "job_default";
+        bulletJobIds = bullets.map(() => fallbackJobId);
+      }
+    }
+
     // 3) if still empty, fall back to DOCX list bullets (smart-gated)
     if (!bullets.length && seededFileBullets.length) {
       bullets = seededFileBullets;
@@ -1149,6 +1357,10 @@ export async function POST(req: Request) {
             bulletsFromFileCount: (bulletsFromFile || []).length,
             seededFileBulletsCount: seededFileBullets.length,
             blobDebug,
+            parserUsed,
+            detectedType,
+            warnings: warningsUnique,
+            pdfInfo,
           },
         });
 
@@ -1156,10 +1368,14 @@ export async function POST(req: Request) {
           {
             ok: false,
             error:
-              "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+              "No bullets detected. Your resume may not use bullet markers (•, -, ●, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: true,
             balance: refunded.balance,
+            warnings: warningsUnique,
             debug: {
+              parserUsed,
+              detectedType,
+              pdfInfo,
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
               experienceLen: experienceSlice.experienceText.length,
@@ -1175,26 +1391,26 @@ export async function POST(req: Request) {
           {
             ok: false,
             error:
-              "No bullets detected. Your resume may not use bullet markers (•, -, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+              "No bullets detected. Your resume may not use bullet markers (•, -, ●, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: false,
             refundError: refundErr?.message || String(refundErr),
+            warnings: warningsUnique,
           },
           { status: 400 }
         );
       }
     }
 
-    // ✅ REAL FIX: if extracted jobs are placeholders (common for PDFs), rebuild from experience text
-    // and also re-flatten bullets + job ids so things can't drift / shift.
+    // ✅ if extracted jobs are placeholders, rebuild from experience text for PREVIEW headings
     if (bullets.length && jobsLookPlaceholder(experienceJobs)) {
       const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
       if (previewJobs.length) {
         experienceJobs = previewJobs;
 
+        // keep bullets mapping when possible
         const flatPreview = flattenFromJobs(experienceJobs);
         const filteredPreviewBullets = filterBadBullets(flatPreview.outBullets);
 
-        // keep jobIds aligned with filtered bullets
         if (filteredPreviewBullets.length === flatPreview.outBullets.length) {
           bullets = filteredPreviewBullets;
           bulletJobIds = flatPreview.outJobIds;
@@ -1276,6 +1492,8 @@ export async function POST(req: Request) {
 
       highlights,
 
+      warnings: warningsUnique,
+
       debug: {
         contentType,
         resumeLen: resumeText.length,
@@ -1295,13 +1513,16 @@ export async function POST(req: Request) {
         maxFileMb: MAX_FILE_MB,
         blobDebug,
         jobsWerePlaceholder: jobsLookPlaceholder(normalizeJobs(strict1?.jobs || [])),
+
+        detectedType,
+        parserUsed,
+        pdfInfo,
       },
     });
   } catch (e: any) {
     const message = e?.message ? String(e.message) : String(e);
     console.error("analyze route error:", e);
 
-    // refund if we charged
     if (chargedUserId && chargedCost > 0) {
       try {
         const refunded = await refundCredits({

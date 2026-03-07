@@ -62,7 +62,32 @@ type ResumeTemplateId =
   | "ocean"
   | "sand"
   | "royal"
-  | "gold";
+  | "gold"
+  | "bubblegum"
+  | "limepop"
+  | "citrus"
+  | "electric"
+  | "confetti"
+  | "rainbow"
+  | "sunny"
+  | "watermelon"
+  | "grape"
+  | "tropical"
+  | "mint"
+  | "sky"
+  | "coral"
+  | "flamingo"
+  | "popart"
+  | "arcade2"
+  | "hologram"
+  | "galaxy"
+  | "synthwave"
+  | "lava"
+  | "lemonade"
+  | "cottoncandy"
+  | "sprinkles"
+  | "comic"
+  | "playground";
 
 type ResumeProfile = {
   fullName: string;
@@ -448,6 +473,7 @@ type ThemeArgs = {
 
   borderStyle?: "solid" | "dashed";
   headerAfterGrid?: boolean;
+  hasChips?: boolean;
 };
 
 function mkThemeCss(t: ThemeArgs) {
@@ -499,6 +525,10 @@ body{
   color: var(--ink);
   background: var(--bodybg);
   line-height: 1.35;
+
+  /* ✅ base resume size (fixes “large font”) */
+  font-size: 12.5px;
+  -webkit-text-size-adjust: 100%;
 }
 
 @page{
@@ -582,11 +612,13 @@ body{
   line-height: 1.5;
 }
 
+/* ✅ meta grid auto-fills space (no empty boxes) */
 .meta{
   display:grid;
-  grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.meta.two{ grid-template-columns: 1fr 1fr; }
+.meta.one{ grid-template-columns: 1fr; }
 
 .box{
   border: 1px var(--borderstyle) var(--line);
@@ -611,23 +643,46 @@ body{
   margin-top: 12px;
 }
 
+/* ✅ Resume-25 style: job header left, dates right */
 .jobhead{
   display:flex;
   justify-content:space-between;
+  align-items: baseline;
   gap: 10px;
   padding-bottom: 6px;
   border-bottom: 1px var(--borderstyle) var(--line);
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .jobtitle{
   font-weight: 800;
+  min-width: 240px;
 }
 
+.jobcompany{
+  font-weight: 900;
+}
+
+.jobmetaRight{
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Allow wrap on narrow / long locations */
+@media print{
+  .jobmetaRight{ white-space: normal; }
+}
+
+/* Keep jobmeta safe (some templates still use it elsewhere) */
 .jobmeta{
   color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
+  font-size: 11px;
+  white-space: normal;
 }
 
 ul{
@@ -637,6 +692,8 @@ ul{
 
 li{
   margin: 0 0 6px 0;
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 
 ${t.headerAfterGrid ? `.top:after{content:"";display:block;height:10px;margin-top:10px;border-top:1px dashed var(--line);width:100%;}` : ""}
@@ -722,6 +779,7 @@ body{
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
   line-height: 1.35;
+  font-size: 12.5px;
 }
 
 .page{
@@ -790,24 +848,26 @@ body{
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  align-items: baseline;
 }
 
 .jobtitle{ font-weight: 900; }
 
-.jobmeta{
+.jobmetaRight{
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 
 ul{ margin: 6px 0 0 18px; padding: 0; }
 li{ margin: 6px 0; line-height: 1.35; }
 
-.meta{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
+.meta{ display: grid; gap: 14px; }
+.meta.two{ grid-template-columns: 1fr 1fr; }
+.meta.one{ grid-template-columns: 1fr; }
 
 .box{
   border: 1px solid var(--line);
@@ -950,6 +1010,7 @@ body{
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
   padding: 18px;
+  font-size: 12.5px;
 }
 .page{
   width: 8.5in; min-height: 11in; margin: 0 auto;
@@ -990,7 +1051,9 @@ body{
   letter-spacing: .14em; font-size: 12px; margin: 0 0 8px 0;
 }
 .summary{ font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-.meta{ display:grid; grid-template-columns: 1fr; gap: 10px; }
+.meta{ display:grid; gap: 10px; }
+.meta.two{ grid-template-columns: 1fr; }
+.meta.one{ grid-template-columns: 1fr; }
 .box{
   border:1px var(--borderstyle) solid var(--line);
   border-radius: 14px;
@@ -1007,9 +1070,10 @@ body{
   border-bottom: 1px var(--borderstyle) solid var(--line);
   margin-bottom: 8px;
   flex-wrap:wrap;
+  align-items: baseline;
 }
-.jobtitle{ font-weight: 800; }
-.jobmeta{ color: var(--muted); font-size: 12px; white-space: nowrap; }
+.jobtitle{ font-weight: 800; min-width: 240px; }
+.jobmetaRight{ color: var(--muted); font-size: 11px; font-weight: 700; margin-left: auto; text-align: right; white-space: nowrap; }
 ul{ margin:0; padding-left: 18px; }
 li{ margin: 0 0 6px 0; }
 ${headerContactChipsCss()}
@@ -1018,6 +1082,7 @@ ${printLockCss()}
 @media print{
   body{ padding: 0 !important; background: var(--bodybg) !important; }
   .page{ background: var(--pagebg) !important; }
+  .jobmetaRight{ white-space: normal; }
 }
 `.trim();
   }
@@ -1409,7 +1474,486 @@ ${printLockCss()}
       borderStyle: "solid",
     });
   }
+  // ---------- FUN / BRIGHT THEMES (NEW x25) ----------
+  if (template === "bubblegum") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd1dc",
+      accent: "#ff3ea5",
+      accent2: "#8b5cf6",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(255,62,165,.18), rgba(255,255,255,0)), #fff5fb",
+      pageBg: "#fff5fb",
+      headerBg: "linear-gradient(135deg, rgba(255,62,165,.20), rgba(139,92,246,.12))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
 
+  if (template === "limepop") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1f17",
+      muted: "#255c45",
+      line: "#c9f7d6",
+      accent: "#22c55e",
+      accent2: "#84cc16",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.18), rgba(255,255,255,0)), #f3fff7",
+      pageBg: "#f3fff7",
+      headerBg: "linear-gradient(135deg, rgba(34,197,94,.18), rgba(132,204,22,.12))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(11,31,23,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "citrus") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1b12",
+      muted: "#6b3f2a",
+      line: "#ffe4c7",
+      accent: "#f97316",
+      accent2: "#f59e0b",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.18), rgba(255,255,255,0)), #fff8ed",
+      pageBg: "#fff8ed",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.20), rgba(245,158,11,.12))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,27,18,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "electric") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dde3ff",
+      accent: "#00e5ff",
+      accent2: "#7c3aed",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(0,229,255,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7fbff",
+      pageBg: "#eef7ff",
+      headerBg: "linear-gradient(135deg, rgba(0,229,255,.18), rgba(124,58,237,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(11,16,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "confetti") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#4b5563",
+      line: "#e5e7eb",
+      accent: "#fb7185",
+      accent2: "#60a5fa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fff7fb",
+      pageBg: "#fff7fb",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(96,165,250,.12))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "rainbow") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#475569",
+      line: "#e5e7eb",
+      accent: "#ef4444",
+      accent2: "#3b82f6",
+      bodyBg:
+        "radial-gradient(900px 520px at 15% 10%, rgba(239,68,68,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 20%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg:
+        "linear-gradient(135deg, rgba(239,68,68,.16), rgba(245,158,11,.12), rgba(34,197,94,.10), rgba(59,130,246,.14), rgba(124,58,237,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sunny") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#fff2b3",
+      accent: "#facc15",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
+      pageBg: "#fffdf0",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "watermelon") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd3d8",
+      accent: "#fb7185",
+      accent2: "#22c55e",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,197,94,.10), rgba(255,255,255,0)), #fff6f7",
+      pageBg: "#fff6f7",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(34,197,94,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "grape") {
+    return mkThemeCss({
+      font: "serif",
+      ink: "#1f1b2e",
+      muted: "#5b4f78",
+      line: "#e8defa",
+      accent: "#7c3aed",
+      accent2: "#a78bfa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      pageBg: "#fbf8ff",
+      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(167,139,250,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 16px 48px rgba(31,27,46,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "tropical") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#061a2a",
+      muted: "#21506f",
+      line: "#cfe7ff",
+      accent: "#06b6d4",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(6,182,212,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.12), rgba(255,255,255,0)), #f4fbff",
+      pageBg: "#f4fbff",
+      headerBg: "linear-gradient(135deg, rgba(6,182,212,.16), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(6,26,42,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "mint") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1324",
+      muted: "#44546a",
+      line: "#c6f6e6",
+      accent: "#14b8a6",
+      accent2: "#22c55e",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(20,184,166,.16), rgba(255,255,255,0)), #f0fffb",
+      pageBg: "#f0fffb",
+      headerBg: "linear-gradient(135deg, rgba(20,184,166,.18), rgba(34,197,94,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 16px 45px rgba(11,19,36,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sky") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#061a2a",
+      muted: "#21506f",
+      line: "#cfe7ff",
+      accent: "#3b82f6",
+      accent2: "#0ea5e9",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.16), rgba(255,255,255,0)), #f4fbff",
+      pageBg: "#f4fbff",
+      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(14,165,233,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(6,26,42,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "coral") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1b12",
+      muted: "#6b3f2a",
+      line: "#ffe4d6",
+      accent: "#fb7185",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), #fff7f5",
+      pageBg: "#fff7f5",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,27,18,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "flamingo") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd3ea",
+      accent: "#ec4899",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(236,72,153,.18), rgba(255,255,255,0)), #fff5fb",
+      pageBg: "#fff5fb",
+      headerBg: "linear-gradient(135deg, rgba(236,72,153,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "popart") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b0f18",
+      muted: "#111827",
+      line: "#0b0f18",
+      accent: "#f97316",
+      accent2: "#3b82f6",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(59,130,246,.12), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(59,130,246,.12))",
+      cardBg: "#ffffff",
+      borderStyle: "solid",
+      radius: 10,
+      shadow: "0 12px 30px rgba(0,0,0,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "arcade2") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#120a2a",
+      muted: "#3b2a66",
+      line: "#e7d7ff",
+      accent: "#7c3aed",
+      accent2: "#06b6d4",
+      bodyBg:
+        "radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), radial-gradient(1000px 600px at 90% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #fbf7ff",
+      pageBg: "#fbf7ff",
+      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(6,182,212,.12))",
+      cardBg: "linear-gradient(180deg, rgba(124,58,237,.05), rgba(255,255,255,0))",
+      radius: 20,
+      shadow: "0 16px 45px rgba(18,10,42,.12)",
+      headerAfterGrid: true,
+      hasChips: true,
+    });
+  }
+
+  if (template === "hologram") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dde3ff",
+      accent: "#22d3ee",
+      accent2: "#a78bfa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(34,211,238,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(167,139,250,.14), rgba(255,255,255,0)), #f7fbff",
+      pageBg: "#f2f6ff",
+      headerBg: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(167,139,250,.12))",
+      cardBg: "rgba(255,255,255,.92)",
+      borderStyle: "solid",
+      radius: 22,
+      shadow: "0 22px 70px rgba(11,16,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "galaxy") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dbeafe",
+      accent: "#a78bfa",
+      accent2: "#22d3ee",
+      bodyBg:
+        "radial-gradient(900px 520px at 25% 10%, rgba(167,139,250,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,211,238,.12), rgba(255,255,255,0)), #f7f9ff",
+      pageBg: "#f4f4ff",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(34,211,238,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(11,16,32,.12)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "synthwave") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#140a2a",
+      muted: "#3b2a66",
+      line: "#f5d0fe",
+      accent: "#ff00e5",
+      accent2: "#00e5ff",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(255,0,229,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(0,229,255,.12), rgba(255,255,255,0)), #fff5ff",
+      pageBg: "#fff5ff",
+      headerBg: "linear-gradient(135deg, rgba(255,0,229,.18), rgba(0,229,255,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(20,10,42,.12)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "lava") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b120f",
+      muted: "#6b2a24",
+      line: "#ffd1c7",
+      accent: "#ef4444",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(239,68,68,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f5",
+      pageBg: "#fff6f5",
+      headerBg: "linear-gradient(135deg, rgba(239,68,68,.16), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,18,15,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "lemonade") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#fff2b3",
+      accent: "#facc15",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
+      pageBg: "#fffdf0",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "cottoncandy") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#ffd7f5",
+      accent: "#a78bfa",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.14), rgba(255,255,255,0)), #fff7fd",
+      pageBg: "#fff7fd",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sprinkles") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#4b5563",
+      line: "#e5e7eb",
+      accent: "#60a5fa",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 15% 10%, rgba(96,165,250,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 15%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), #fff",
+      pageBg: "#ffffff",
+      headerBg:
+        "linear-gradient(135deg, rgba(96,165,250,.16), rgba(34,197,94,.12), rgba(249,115,22,.12))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "comic") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b0f18",
+      muted: "#111827",
+      line: "#0b0f18",
+      accent: "#facc15",
+      accent2: "#3b82f6",
+      bodyBg: "#ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.20), rgba(59,130,246,.12))",
+      cardBg: "#ffffff",
+      borderStyle: "solid",
+      radius: 10,
+      shadow: "0 12px 30px rgba(0,0,0,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "playground") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#475569",
+      line: "#e5e7eb",
+      accent: "#3b82f6",
+      accent2: "#ef4444",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(239,68,68,.12), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(239,68,68,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
   if (template === "classic") return classicCss;
 
   return classicCss;
@@ -1461,12 +2005,16 @@ function buildResumeHtml(args: {
     template === "gold" ||
     template === "terminal";
 
+  // ✅ Meta blocks: if only one exists, it fills the whole row (no blank placeholder box)
+  const metaCount = Number(metaGames.length > 0) + Number(metaMetrics.length > 0);
+  const metaClass = metaCount <= 1 ? "meta one" : "meta two";
+
   const metaHtml =
     includeMeta && (metaGames.length || metaMetrics.length)
       ? `
     <div class="section">
       <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Highlights</div>
-      <div class="meta">
+      <div class="${metaClass}">
         ${
           metaGames.length
             ? `<div class="box">
@@ -1476,7 +2024,7 @@ function buildResumeHtml(args: {
                   .map((x) => `• ${safe(String(x))}`)
                   .join("<br/>")}</div>
               </div>`
-            : `<div></div>`
+            : ""
         }
         ${
           metaMetrics.length
@@ -1487,31 +2035,40 @@ function buildResumeHtml(args: {
                   .map((x) => `• ${safe(String(x))}`)
                   .join("<br/>")}</div>
               </div>`
-            : `<div></div>`
+            : ""
         }
       </div>
     </div>`
       : "";
 
+  // ✅ Experience jobs:
+  // - Always render the job header (so it never “disappears”)
+  // - Dates/location go on the far right (Resume 25 style)
   const jobsHtml = sections
     .map((sec) => {
-      const list = bulletsBySection[sec.id] || [];
-      if (!list.length) return "";
+      const list = (bulletsBySection[sec.id] || []).map((x) => String(x ?? "").trim()).filter(Boolean);
 
-      const headerLeft = `${safe(sec.company || "Company")} — ${safe(sec.title || "Role")}`;
-      const headerRight = [sec.location?.trim() ? safe(sec.location) : "", safe(sec.dates || "")]
+      const company = safe(sec.company || "Company");
+      const role = safe(sec.title || "Role");
+
+      const metaRight = [sec.dates?.trim() ? safe(sec.dates) : "", sec.location?.trim() ? safe(sec.location) : ""]
         .filter(Boolean)
         .join(" • ");
+
+      const bulletsHtml =
+        list.length > 0
+          ? `<ul>${list.map((b) => `<li>${safe(b)}</li>`).join("")}</ul>`
+          : ``;
 
       return `
         <div class="job">
           <div class="jobhead">
-            <div class="jobtitle">${headerLeft}</div>
-            <div class="jobmeta">${headerRight}</div>
+            <div class="jobtitle">
+              <span class="jobcompany">${company}</span> — ${role}
+            </div>
+            ${metaRight ? `<div class="jobmetaRight">${metaRight}</div>` : ""}
           </div>
-          <ul>
-            ${list.map((b) => `<li>${safe(b)}</li>`).join("")}
-          </ul>
+          ${bulletsHtml}
         </div>
       `;
     })
@@ -1725,6 +2282,31 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
   { id: "sand", label: "Sand (golden)" },
   { id: "royal", label: "Royal (blue/purple)" },
   { id: "gold", label: "Gold (premium)" },
+  { id: "bubblegum", label: "Bubblegum (pink pop)" },
+  { id: "limepop", label: "Lime Pop (bright green)" },
+  { id: "citrus", label: "Citrus (orange/lemon)" },
+  { id: "electric", label: "Electric (cyan/purple)" },
+  { id: "confetti", label: "Confetti (party)" },
+  { id: "rainbow", label: "Rainbow (bold)" },
+  { id: "sunny", label: "Sunny (yellow)" },
+  { id: "watermelon", label: "Watermelon (pink/green)" },
+  { id: "grape", label: "Grape (purple)" },
+  { id: "tropical", label: "Tropical (teal/coral)" },
+  { id: "mint", label: "Mint (fresh)" },
+  { id: "sky", label: "Sky (bright blue)" },
+  { id: "coral", label: "Coral (warm)" },
+  { id: "flamingo", label: "Flamingo (hot pink)" },
+  { id: "popart", label: "Pop Art (comic)" },
+  { id: "arcade2", label: "Arcade+ (extra fun)" },
+  { id: "hologram", label: "Hologram (iridescent)" },
+  { id: "galaxy", label: "Galaxy (space neon)" },
+  { id: "synthwave", label: "Synthwave (80s)" },
+  { id: "lava", label: "Lava (red/orange)" },
+  { id: "lemonade", label: "Lemonade (summer)" },
+  { id: "cottoncandy", label: "Cotton Candy (pastel pop)" },
+  { id: "sprinkles", label: "Sprinkles (cute)" },
+  { id: "comic", label: "Comic (ink + color)" },
+  { id: "playground", label: "Playground (primary)" },
 ];
 
 export default function ResumeMvp() {
@@ -1982,7 +2564,8 @@ export default function ResumeMvp() {
               id: String(j.id),
               company: String(j.company || "Company"),
               title: String(j.title || "Role"),
-              dates: String(j.dates || "Dates"),
+              // ✅ IMPORTANT: no placeholder “Dates”
+              dates: String(j.dates || ""),
               location: j.location ? String(j.location) : "",
             }))
           : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
@@ -2423,9 +3006,7 @@ export default function ResumeMvp() {
   const metaGames = sanitizeMetaLines(
     Array.isArray(analysis?.metaBlocks?.gamesShipped) ? analysis!.metaBlocks!.gamesShipped! : []
   );
-  const metaMetrics = sanitizeMetaLines(
-    Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []
-  );
+  const metaMetrics = sanitizeMetaLines(Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []);
 
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
@@ -2453,9 +3034,12 @@ export default function ResumeMvp() {
     const fallback = sections[0]?.id || "default";
 
     for (let i = 0; i < appliedBulletText.length; i++) {
+      const text = String(appliedBulletText[i] ?? "").trim();
+      if (!text) continue;
+
       const sectionId = assignments[i]?.sectionId || fallback;
       if (!by[sectionId]) by[sectionId] = [];
-      by[sectionId].push(appliedBulletText[i]);
+      by[sectionId].push(text);
     }
 
     return by;
@@ -2472,7 +3056,17 @@ export default function ResumeMvp() {
       metaMetrics,
       includeMeta: includeMetaInResumeDoc,
     });
-  }, [analysis, effectivePlan.length, resumeTemplate, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMetaInResumeDoc]);
+  }, [
+    analysis,
+    effectivePlan.length,
+    resumeTemplate,
+    profile,
+    sections,
+    bulletsBySection,
+    metaGames,
+    metaMetrics,
+    includeMetaInResumeDoc,
+  ]);
 
   const effectiveResumeHtml = useMemo(() => {
     return (previewHtmlOverride || resumeHtml || "").trim();
@@ -2556,9 +3150,14 @@ export default function ResumeMvp() {
     return Array.from(new Set(hits));
   }, [effectivePlan, guardrailTerms]);
 
+  const fileIsPdf = useMemo(() => {
+    if (!file) return false;
+    const name = String(file.name || "").toLowerCase();
+    return name.endsWith(".pdf") || file.type === "application/pdf";
+  }, [file]);
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
-     
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -2573,56 +3172,59 @@ export default function ResumeMvp() {
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/60 dark:text-black/70">
-                            <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
-                
+              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
+                {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
               </span>
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
-           
-
             <div className="grid gap-1.5">
-            <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-              Upload resume file
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/70">Upload resume file</div>
+
+              <input
+                id="resume-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  resetDerivedState();
+                }}
+                className="block w-full text-sm text-black
+                  file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
+                  file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
+                  file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
+                  dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+              />
+
+              {/* ✅ Exact wording you asked for when PDFs are sketchy */}
+              {fileIsPdf ? (
+                <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">
+                  PDF looks weird; DOCX recommended (we’ll still try to extract).
+                </div>
+              ) : (
+                <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
+                  Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
+                </div>
+              )}
+
+              {file ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <Chip text={file.name} />
+                  <button
+                    type="button"
+                    onClick={clearFile}
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
             </div>
-
-           <input
-            id="resume-upload"
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.doc,.docx,.txt"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              resetDerivedState();
-            }}
-            className="block w-full text-sm text-black
-              file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
-              file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
-              file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-              dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
-          />
-
-            <div className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-800">
-              Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
-            </div>
-
-            {file ? (
-              <div className="mt-1 flex items-center gap-2">
-                <Chip text={file.name} />
-                <button
-                  type="button"
-                  onClick={clearFile}
-                  className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                >
-                  Clear
-                </button>
-              </div>
-            ) : null}
-          </div>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
@@ -2634,7 +3236,7 @@ export default function ResumeMvp() {
 
             {/* Template */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Template</div>
+              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/90">Template</div>
 
               <select
                 value={resumeTemplate}
@@ -2721,7 +3323,7 @@ export default function ResumeMvp() {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/70 dark:text-black/70">Only experience bullets</span>
+                <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Only experience bullets</span>
               </label>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2738,7 +3340,7 @@ export default function ResumeMvp() {
                   Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
                 </div>
 
-                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
+                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                   <input
                     type="checkbox"
                     checked={includeMetaInResumeDoc}
@@ -2748,7 +3350,7 @@ export default function ResumeMvp() {
                   Include meta blocks
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                   <input
                     type="checkbox"
                     checked={showDebugJson}
@@ -2758,7 +3360,7 @@ export default function ResumeMvp() {
                   Show debug
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                   <input
                     type="checkbox"
                     checked={logNetworkDebug}
@@ -2804,7 +3406,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleCopyOutput}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Copy
             </button>
@@ -2817,16 +3419,16 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleDownloadPdf}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
-              Download
+              Download (5 credits
             </button>
 
             <button
               type="button"
               onClick={handlePrintPdf}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Print
             </button>
@@ -2838,7 +3440,7 @@ export default function ResumeMvp() {
                 setShowPreviewEditor(true);
               }}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Edit Live Preview
             </button>
@@ -2847,7 +3449,7 @@ export default function ResumeMvp() {
               type="button"
               onClick={handleViewPreview}
               disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
             >
               Preview
             </button>
@@ -2868,7 +3470,7 @@ export default function ResumeMvp() {
           {showPreviewEditor ? (
             <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-black/70">
+                <div className="text-xs font-extrabold text-black/0 dark:text-black/70">
                   Edit resume HTML (live preview)
                 </div>
 
@@ -2876,7 +3478,7 @@ export default function ResumeMvp() {
                   <button
                     type="button"
                     onClick={() => setPreviewHtmlDraft(effectiveResumeHtml || "")}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                   >
                     Reset
                   </button>
@@ -2899,7 +3501,7 @@ export default function ResumeMvp() {
                 className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
               />
 
-              <div className="mt-2 text-xs text-black/60 dark:text-black/70">
+              <div className="mt-2 text-xs text-black/90 dark:text-black/90">
                 Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
               </div>
             </div>
@@ -2934,18 +3536,18 @@ export default function ResumeMvp() {
                 type="button"
                 onClick={handleRewriteSelected}
                 disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className={`px-4 py-2 rounded-xl font-semibold transition-all
-                ${selectedCount === 0
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
-                  : "bg-black text-white hover:bg-gray-800 active:scale-95 shadow-md"}
-              `}
+                className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+                  selectedCount === 0
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
+                    : "bg-black text-white hover:bg-gray-800 active:scale-95 shadow-md"
+                }`}
               >
                 {loadingBatchRewrite
                   ? "Rewriting…"
                   : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
               </button>
 
-              <div className="text-xs text-black/60 dark:text-black/70">
+              <div className="text-xs text-black/90 dark:text-black/90">
                 Selecting a bullet applies its rewrite (if available) to the compiled resume.
               </div>
             </div>
@@ -2959,10 +3561,10 @@ export default function ResumeMvp() {
               const selected = selectedBulletIdx.has(i);
 
               return (
-  <div
-    key={i}
-    className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
-  >
+                <div
+                  key={i}
+                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2">
                       <input
@@ -3003,19 +3605,19 @@ export default function ResumeMvp() {
                         </button>
                       ) : null}
 
-                    <button
-  type="button"
-  onClick={() => handleRewriteBullet(i)}
-  disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
->
-  {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
-</button>
+                      <button
+                        type="button"
+                        onClick={() => handleRewriteBullet(i)}
+                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                        className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                      >
+                        {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
+                      </button>
                     </div>
                   </div>
 
                   <div className="mt-2 grid gap-2">
-                    <div className="text-xs font-extrabold text-black/60 dark:text-black/70">Original</div>
+                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Original</div>
                     <div className="whitespace-pre-wrap text-sm">{original}</div>
 
                     {rewritten ? (

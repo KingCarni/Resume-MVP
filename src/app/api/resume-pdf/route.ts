@@ -1,5 +1,7 @@
 // src/app/api/resume-pdf/route.ts
 import { NextResponse } from "next/server";
+import fs from "fs";
+
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -18,52 +20,72 @@ function safeFilename(name: string) {
   return base.replace(/[^\w.-]+/g, "_");
 }
 
-type PuppeteerModule = {
-  launch: (opts: {
-    args?: string[];
-    executablePath?: string;
-    headless?: boolean;
-    defaultViewport?: { width: number; height: number; deviceScaleFactor?: number };
-  }) => Promise<{
-    newPage: () => Promise<{
-      emulateMediaType?: (t: "screen" | "print") => Promise<void>;
-      setContent: (
-        html: string,
-        opts?: { waitUntil?: "load" | "domcontentloaded" | "networkidle0" | "networkidle2" }
-      ) => Promise<void>;
-      evaluate: <T>(fn: () => Promise<T> | T) => Promise<T>;
-      pdf: (opts: {
-        format?: "Letter";
-        printBackground?: boolean;
-        preferCSSPageSize?: boolean;
-        margin?: { top: string; right: string; bottom: string; left: string };
-      }) => Promise<Uint8Array>;
-    }>;
-    close: () => Promise<void>;
-  }>;
-};
+function isVercelLike() {
+  return !!process.env.VERCEL || process.env.NODE_ENV === "production";
+}
 
-type ChromiumModule = {
-  args: string[];
-  headless?: boolean;
-  executablePath?: () => Promise<string> | string;
-  setHeadlessMode?: boolean;
-  setGraphicsMode?: boolean;
-};
+function exists(p?: string) {
+  if (!p) return false;
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
 
-async function loadPdfDeps(): Promise<{ puppeteer: PuppeteerModule; chromium: ChromiumModule }> {
-  const puppeteerImport = (await import("puppeteer-core")) as unknown as {
-    default?: PuppeteerModule;
-  } & PuppeteerModule;
+async function loadBrowserDeps() {
+  if (isVercelLike()) {
+    const puppeteerImport = (await import("puppeteer-core")) as any;
+    const chromiumImport = (await import("@sparticuz/chromium")) as any;
 
-  const chromiumImport = (await import("@sparticuz/chromium")) as unknown as {
-    default?: ChromiumModule;
-  } & ChromiumModule;
+    const puppeteer = puppeteerImport.default ?? puppeteerImport;
+    const chromium = chromiumImport.default ?? chromiumImport;
 
-  const puppeteer = (puppeteerImport.default ?? puppeteerImport) as PuppeteerModule;
-  const chromium = (chromiumImport.default ?? chromiumImport) as ChromiumModule;
+    if (typeof chromium.setHeadlessMode !== "undefined") chromium.setHeadlessMode = true;
+    if (typeof chromium.setGraphicsMode !== "undefined") chromium.setGraphicsMode = false;
 
-  return { puppeteer, chromium };
+    const executablePath =
+      (typeof chromium.executablePath === "function" ? await chromium.executablePath() : chromium.executablePath) ||
+      undefined;
+
+    if (!executablePath) {
+      throw new Error(
+        "Chromium executablePath() was not resolved. Ensure @sparticuz/chromium is installed and supported in this environment."
+      );
+    }
+
+    return {
+      puppeteer,
+      args: chromium.args as string[],
+      headless: chromium.headless ?? true,
+      executablePath,
+      source: "sparticuz(production)",
+    };
+  }
+
+  // ✅ Local dev: use full puppeteer (bundled Chromium), OR local Chrome via env
+  const puppeteerImport = (await import("puppeteer")) as any;
+  const puppeteer = puppeteerImport.default ?? puppeteerImport;
+
+  const envPath =
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    process.env.CHROME_EXECUTABLE_PATH ||
+    process.env.PUPPETEER_EXEC_PATH;
+
+  const winChrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
+  const executablePath =
+    (envPath && exists(envPath) ? envPath : undefined) ||
+    (exists(winChrome) ? winChrome : undefined) ||
+    (typeof puppeteer.executablePath === "function" ? puppeteer.executablePath() : undefined);
+
+  return {
+    puppeteer,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    headless: true,
+    executablePath,
+    source: executablePath && exists(executablePath) ? "local(dev):explicit-or-bundled" : "local(dev):unknown",
+  };
 }
 
 export async function POST(req: Request) {
@@ -115,22 +137,11 @@ export async function POST(req: Request) {
     chargedBalanceAfter = charged.balance;
 
     // --- Render PDF ---
-    let puppeteer: PuppeteerModule;
-    let chromium: ChromiumModule;
+    const deps = await loadBrowserDeps();
 
-    ({ puppeteer, chromium } = await loadPdfDeps());
-
-    if (typeof chromium.setHeadlessMode !== "undefined") chromium.setHeadlessMode = true;
-    if (typeof chromium.setGraphicsMode !== "undefined") chromium.setGraphicsMode = false;
-
-    const executablePath =
-      (typeof chromium.executablePath === "function" ? await chromium.executablePath() : chromium.executablePath) ||
-      process.env.CHROME_EXECUTABLE_PATH ||
-      undefined;
-
-    if (!executablePath) {
+    if (!deps.executablePath) {
       throw new Error(
-        "Chromium executablePath() was not resolved. Ensure @sparticuz/chromium is installed and supported in this environment."
+        "No executablePath for Chromium/Chrome was found. Set PUPPETEER_EXECUTABLE_PATH to your Chrome, or ensure puppeteer downloaded a browser."
       );
     }
 
@@ -138,10 +149,10 @@ export async function POST(req: Request) {
     const LETTER_W = 816;
     const LETTER_H = 1056;
 
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath,
-      headless: chromium.headless ?? true,
+    const browser = await deps.puppeteer.launch({
+      args: deps.args,
+      executablePath: deps.executablePath,
+      headless: deps.headless,
       defaultViewport: { width: LETTER_W, height: LETTER_H, deviceScaleFactor: 1 },
     });
 
@@ -182,8 +193,8 @@ export async function POST(req: Request) {
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="${filename}.pdf"`,
           "Cache-Control": "no-store",
-          // Optional: expose balance so client can refresh without extra request
           "X-Credits-Balance": String(chargedBalanceAfter),
+          "X-PDF-Engine": deps.source,
         },
       });
     } finally {
@@ -214,7 +225,6 @@ export async function POST(req: Request) {
         );
       } catch (refundErr: any) {
         console.error("refundCredits failed:", refundErr);
-        // If refund fails, still return the failure (but tell yourself in logs)
         return NextResponse.json(
           {
             ok: false,

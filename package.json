@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@google-cloud/storage": "^7.19.0",
+    "@google-cloud/vision": "^5.3.4",
     "@prisma/adapter-pg": "6.19.2",
     "@prisma/client": "6.19.2",
     "@sendgrid/mail": "^8.1.6",

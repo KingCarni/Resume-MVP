@@ -35,7 +35,32 @@ type ResumeTemplateId =
   | "ocean"
   | "sand"
   | "royal"
-  | "gold";
+  | "gold"
+  | "bubblegum"
+  | "limepop"
+  | "citrus"
+  | "electric"
+  | "confetti"
+  | "rainbow"
+  | "sunny"
+  | "watermelon"
+  | "grape"
+  | "tropical"
+  | "mint"
+  | "sky"
+  | "coral"
+  | "flamingo"
+  | "popart"
+  | "arcade2"
+  | "hologram"
+  | "galaxy"
+  | "synthwave"
+  | "lava"
+  | "lemonade"
+  | "cottoncandy"
+  | "sprinkles"
+  | "comic"
+  | "playground";
 
 type ResumeProfile = {
   fullName: string;
@@ -81,6 +106,31 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
   { id: "sand", label: "Sand (golden)" },
   { id: "royal", label: "Royal (blue/purple)" },
   { id: "gold", label: "Gold (premium)" },
+  { id: "bubblegum", label: "Bubblegum (pink pop)" },
+  { id: "limepop", label: "Lime Pop (bright green)" },
+  { id: "citrus", label: "Citrus (orange/lemon)" },
+  { id: "electric", label: "Electric (cyan/purple)" },
+  { id: "confetti", label: "Confetti (party)" },
+  { id: "rainbow", label: "Rainbow (bold)" },
+  { id: "sunny", label: "Sunny (yellow)" },
+  { id: "watermelon", label: "Watermelon (pink/green)" },
+  { id: "grape", label: "Grape (purple)" },
+  { id: "tropical", label: "Tropical (teal/coral)" },
+  { id: "mint", label: "Mint (fresh)" },
+  { id: "sky", label: "Sky (bright blue)" },
+  { id: "coral", label: "Coral (warm)" },
+  { id: "flamingo", label: "Flamingo (hot pink)" },
+  { id: "popart", label: "Pop Art (comic)" },
+  { id: "arcade2", label: "Arcade+ (extra fun)" },
+  { id: "hologram", label: "Hologram (iridescent)" },
+  { id: "galaxy", label: "Galaxy (space neon)" },
+  { id: "synthwave", label: "Synthwave (80s)" },
+  { id: "lava", label: "Lava (red/orange)" },
+  { id: "lemonade", label: "Lemonade (summer)" },
+  { id: "cottoncandy", label: "Cotton Candy (pastel pop)" },
+  { id: "sprinkles", label: "Sprinkles (cute)" },
+  { id: "comic", label: "Comic (ink + color)" },
+  { id: "playground", label: "Playground (primary)" },
 ];
 
 /** ---------------- UI bits ---------------- */
@@ -104,7 +154,7 @@ function Callout({
   return (
     <div className={`rounded-xl border p-3 ${toneClasses}`}>
       <div className="font-extrabold">{title}</div>
-      <div className="mt-1 opacity-90">{children}</div>
+      <div className="mt-1 opacity-50">{children}</div>
     </div>
   );
 }
@@ -147,30 +197,6 @@ function escapeHtml(s: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function templateStylesResume(template: ResumeTemplateId) {
-  return `
-${templateStyles(template)}
-
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
-@media print {
-  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  html, body{
-    background: var(--bodybg) !important;
-  }
-  body{
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .page{
-    background: var(--pagebg) !important;
-    box-shadow: none !important;
-    margin: 0 !important;
-  }
-  .top:after{ display:none !important; }
-}
-`.trim();
 }
 
 function mkThemeCss(opts: {
@@ -969,7 +995,486 @@ function templateStyles(template: ResumeTemplateId) {
       hasChips: true,
     });
   }
+  // ---------- FUN / BRIGHT THEMES (NEW x25) ----------
+  if (template === "bubblegum") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd1dc",
+      accent: "#ff3ea5",
+      accent2: "#8b5cf6",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(255,62,165,.18), rgba(255,255,255,0)), #fff5fb",
+      pageBg: "#fff5fb",
+      headerBg: "linear-gradient(135deg, rgba(255,62,165,.20), rgba(139,92,246,.12))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
 
+  if (template === "limepop") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1f17",
+      muted: "#255c45",
+      line: "#c9f7d6",
+      accent: "#22c55e",
+      accent2: "#84cc16",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.18), rgba(255,255,255,0)), #f3fff7",
+      pageBg: "#f3fff7",
+      headerBg: "linear-gradient(135deg, rgba(34,197,94,.18), rgba(132,204,22,.12))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(11,31,23,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "citrus") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1b12",
+      muted: "#6b3f2a",
+      line: "#ffe4c7",
+      accent: "#f97316",
+      accent2: "#f59e0b",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.18), rgba(255,255,255,0)), #fff8ed",
+      pageBg: "#fff8ed",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.20), rgba(245,158,11,.12))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,27,18,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "electric") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dde3ff",
+      accent: "#00e5ff",
+      accent2: "#7c3aed",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(0,229,255,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7fbff",
+      pageBg: "#eef7ff",
+      headerBg: "linear-gradient(135deg, rgba(0,229,255,.18), rgba(124,58,237,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(11,16,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "confetti") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#4b5563",
+      line: "#e5e7eb",
+      accent: "#fb7185",
+      accent2: "#60a5fa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fff7fb",
+      pageBg: "#fff7fb",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(96,165,250,.12))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "rainbow") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#475569",
+      line: "#e5e7eb",
+      accent: "#ef4444",
+      accent2: "#3b82f6",
+      bodyBg:
+        "radial-gradient(900px 520px at 15% 10%, rgba(239,68,68,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 20%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg:
+        "linear-gradient(135deg, rgba(239,68,68,.16), rgba(245,158,11,.12), rgba(34,197,94,.10), rgba(59,130,246,.14), rgba(124,58,237,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sunny") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#fff2b3",
+      accent: "#facc15",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
+      pageBg: "#fffdf0",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "watermelon") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd3d8",
+      accent: "#fb7185",
+      accent2: "#22c55e",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,197,94,.10), rgba(255,255,255,0)), #fff6f7",
+      pageBg: "#fff6f7",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(34,197,94,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "grape") {
+    return mkThemeCss({
+      font: "serif",
+      ink: "#1f1b2e",
+      muted: "#5b4f78",
+      line: "#e8defa",
+      accent: "#7c3aed",
+      accent2: "#a78bfa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
+      pageBg: "#fbf8ff",
+      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(167,139,250,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 16px 48px rgba(31,27,46,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "tropical") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#061a2a",
+      muted: "#21506f",
+      line: "#cfe7ff",
+      accent: "#06b6d4",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(6,182,212,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.12), rgba(255,255,255,0)), #f4fbff",
+      pageBg: "#f4fbff",
+      headerBg: "linear-gradient(135deg, rgba(6,182,212,.16), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(6,26,42,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "mint") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1324",
+      muted: "#44546a",
+      line: "#c6f6e6",
+      accent: "#14b8a6",
+      accent2: "#22c55e",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(20,184,166,.16), rgba(255,255,255,0)), #f0fffb",
+      pageBg: "#f0fffb",
+      headerBg: "linear-gradient(135deg, rgba(20,184,166,.18), rgba(34,197,94,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 16px 45px rgba(11,19,36,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sky") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#061a2a",
+      muted: "#21506f",
+      line: "#cfe7ff",
+      accent: "#3b82f6",
+      accent2: "#0ea5e9",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.16), rgba(255,255,255,0)), #f4fbff",
+      pageBg: "#f4fbff",
+      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(14,165,233,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(6,26,42,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "coral") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1b12",
+      muted: "#6b3f2a",
+      line: "#ffe4d6",
+      accent: "#fb7185",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), #fff7f5",
+      pageBg: "#fff7f5",
+      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,27,18,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "flamingo") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b1220",
+      muted: "#6b2a3a",
+      line: "#ffd3ea",
+      accent: "#ec4899",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(236,72,153,.18), rgba(255,255,255,0)), #fff5fb",
+      pageBg: "#fff5fb",
+      headerBg: "linear-gradient(135deg, rgba(236,72,153,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(43,18,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "popart") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b0f18",
+      muted: "#111827",
+      line: "#0b0f18",
+      accent: "#f97316",
+      accent2: "#3b82f6",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(59,130,246,.12), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(59,130,246,.12))",
+      cardBg: "#ffffff",
+      borderStyle: "solid",
+      radius: 10,
+      shadow: "0 12px 30px rgba(0,0,0,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "arcade2") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#120a2a",
+      muted: "#3b2a66",
+      line: "#e7d7ff",
+      accent: "#7c3aed",
+      accent2: "#06b6d4",
+      bodyBg:
+        "radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), radial-gradient(1000px 600px at 90% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #fbf7ff",
+      pageBg: "#fbf7ff",
+      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(6,182,212,.12))",
+      cardBg: "linear-gradient(180deg, rgba(124,58,237,.05), rgba(255,255,255,0))",
+      radius: 20,
+      shadow: "0 16px 45px rgba(18,10,42,.12)",
+      headerAfterGrid: true,
+      hasChips: true,
+    });
+  }
+
+  if (template === "hologram") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dde3ff",
+      accent: "#22d3ee",
+      accent2: "#a78bfa",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(34,211,238,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(167,139,250,.14), rgba(255,255,255,0)), #f7fbff",
+      pageBg: "#f2f6ff",
+      headerBg: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(167,139,250,.12))",
+      cardBg: "rgba(255,255,255,.92)",
+      borderStyle: "solid",
+      radius: 22,
+      shadow: "0 22px 70px rgba(11,16,32,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "galaxy") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b1020",
+      muted: "#2a3558",
+      line: "#dbeafe",
+      accent: "#a78bfa",
+      accent2: "#22d3ee",
+      bodyBg:
+        "radial-gradient(900px 520px at 25% 10%, rgba(167,139,250,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,211,238,.12), rgba(255,255,255,0)), #f7f9ff",
+      pageBg: "#f4f4ff",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(34,211,238,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 20px 60px rgba(11,16,32,.12)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "synthwave") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#140a2a",
+      muted: "#3b2a66",
+      line: "#f5d0fe",
+      accent: "#ff00e5",
+      accent2: "#00e5ff",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(255,0,229,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(0,229,255,.12), rgba(255,255,255,0)), #fff5ff",
+      pageBg: "#fff5ff",
+      headerBg: "linear-gradient(135deg, rgba(255,0,229,.18), rgba(0,229,255,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(20,10,42,.12)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "lava") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#2b120f",
+      muted: "#6b2a24",
+      line: "#ffd1c7",
+      accent: "#ef4444",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(239,68,68,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f5",
+      pageBg: "#fff6f5",
+      headerBg: "linear-gradient(135deg, rgba(239,68,68,.16), rgba(249,115,22,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(43,18,15,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "lemonade") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#fff2b3",
+      accent: "#facc15",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
+      pageBg: "#fffdf0",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 20,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "cottoncandy") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#1f2937",
+      muted: "#52607a",
+      line: "#ffd7f5",
+      accent: "#a78bfa",
+      accent2: "#fb7185",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.14), rgba(255,255,255,0)), #fff7fd",
+      pageBg: "#fff7fd",
+      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(251,113,133,.10))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(31,41,55,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "sprinkles") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#4b5563",
+      line: "#e5e7eb",
+      accent: "#60a5fa",
+      accent2: "#f97316",
+      bodyBg:
+        "radial-gradient(900px 520px at 15% 10%, rgba(96,165,250,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 15%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), #fff",
+      pageBg: "#ffffff",
+      headerBg:
+        "linear-gradient(135deg, rgba(96,165,250,.16), rgba(34,197,94,.12), rgba(249,115,22,.12))",
+      cardBg: "#ffffff",
+      radius: 22,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "comic") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#0b0f18",
+      muted: "#111827",
+      line: "#0b0f18",
+      accent: "#facc15",
+      accent2: "#3b82f6",
+      bodyBg: "#ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(250,204,21,.20), rgba(59,130,246,.12))",
+      cardBg: "#ffffff",
+      borderStyle: "solid",
+      radius: 10,
+      shadow: "0 12px 30px rgba(0,0,0,.10)",
+      hasChips: true,
+    });
+  }
+
+  if (template === "playground") {
+    return mkThemeCss({
+      font: "sans",
+      ink: "#111827",
+      muted: "#475569",
+      line: "#e5e7eb",
+      accent: "#3b82f6",
+      accent2: "#ef4444",
+      bodyBg:
+        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(239,68,68,.12), rgba(255,255,255,0)), #ffffff",
+      pageBg: "#ffffff",
+      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(239,68,68,.10))",
+      cardBg: "#ffffff",
+      radius: 18,
+      shadow: "0 18px 55px rgba(17,24,39,.08)",
+      hasChips: true,
+    });
+  }
   return templateStyles("classic");
 }
 
@@ -998,6 +1503,7 @@ ${templateStyles(template)}
 
 .sig { margin-top: 16px; }
 
+/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body{
@@ -1051,7 +1557,6 @@ function stripLegacyHeaderBlock(text: string) {
   };
 
   let i = 0;
-
   while (i < lines.length && !lines[i].trim()) i++;
 
   const start = i;
@@ -1074,7 +1579,14 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const { template, profile, bodyText, includeSignature, signatureClosing, signatureName } = args;
+  const {
+    template,
+    profile,
+    bodyText,
+    includeSignature,
+    signatureClosing,
+    signatureName,
+  } = args;
 
   const contactBits = [
     profile.email?.trim() ? safe(profile.email) : "",
@@ -1183,14 +1695,16 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   return (
     <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
+        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">
+          Document Preview (HTML)
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
         <iframe
           title="cover-letter-preview"
           className="h-[820px] w-full"
-          sandbox="allow-same-origin allow-scripts"
+          sandbox="allow-same-origin"
           srcDoc={html || "<!doctype html><html><body></body></html>"}
         />
       </div>
@@ -1409,7 +1923,11 @@ export default function CoverLetterGenerator() {
 
   async function copyToClipboard() {
     if (!coverLetterDraft) return;
-    await navigator.clipboard.writeText(coverLetterDraft);
+    try {
+      await navigator.clipboard.writeText(coverLetterDraft);
+    } catch {
+      setError("Copy failed (browser blocked clipboard).");
+    }
   }
 
   const coverLetterHtml = useMemo(() => {
@@ -1427,7 +1945,7 @@ export default function CoverLetterGenerator() {
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6">
+    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -1439,12 +1957,12 @@ export default function CoverLetterGenerator() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <h2 className="text-base font-extrabold text-black">Inputs</h2>
+          <h2 className="text-base font-extrabold text-black dark:text-black">Inputs</h2>
 
           <div className="mt-3 grid gap-3">
             {/* File input */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
                 Resume file (optional)
               </div>
               <input
@@ -1463,62 +1981,65 @@ export default function CoverLetterGenerator() {
                   setError(null);
                   setFile(f);
                 }}
-                className="block w-full text-sm text-black
+                className="block w-full text-sm text-black dark:text-black
                 file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
                 file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
                 file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
               />
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">{file.name}</div>
+                  <div className="text-xs font-extrabold text-black/90 dark:text-black/90">{file.name}</div>
                   <button
                     type="button"
                     onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100 text-black dark:text-black"
                   >
                     Clear
                   </button>
                 </div>
               ) : null}
-              <div className="text-xs text-black/60 dark:text-black/70">
+              <div className="text-xs text-black/60 dark:text-black/90">
                 If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT).
               </div>
             </label>
 
-            {/* Resume text */}
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">
-                Resume text (paste if not uploading)
-              </div>
-              <textarea
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-                rows={8}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
-            </label>
+                  {/* Resume text */}
+          <label className="grid gap-1.5">
+            <div className="text-xs font-extrabold text-black/90">
+              Resume text (paste if not uploading)
+            </div>
+
+            <textarea
+              value={resumeText}
+              onChange={(e) => setResumeText(e.target.value)}
+              rows={8}
+              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm text-black outline-none
+                        placeholder:text-black/80 focus:border-black/20
+                        dark:bg-white dark:text-black dark:placeholder:text-black/90"
+            />
+          </label>
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Job posting text</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Job posting text</div>
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={8}
                 placeholder="Paste job posting here"
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
             </label>
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Template</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Template</div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-black"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -1526,42 +2047,42 @@ export default function CoverLetterGenerator() {
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/60 dark:text-black/70">Selected: {templateLabel}</div>
+              <div className="text-xs text-black/90 dark:text-black/90">Selected: {templateLabel}</div>
             </label>
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">Header details</div>
+              <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">Header details</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.locationLine}
                   onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.email}
                   onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.phone}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
                 <input
                   value={profile.linkedin}
                   onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20 sm:col-span-2"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20 sm:col-span-2"
                 />
               </div>
             </div>
@@ -1570,12 +2091,12 @@ export default function CoverLetterGenerator() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Tone</div>
+                  <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Tone</div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
                     disabled={!jobText.trim() || toneLoading}
-                    className="rounded-lg border border-black/10 bg-white px-2 py-1 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-black/15"
+                    className="rounded-lg border border-black/10 bg-emerald-500 px-2 py-1 text-xs font-extrabold text-black hover:bg-green/25 disabled:opacity-90 dark:border-black/20 dark:bg-green/60 dark:text-black dark:hover:bg-white/15"
                     title="Uses /api/recommend-tone if available; otherwise a heuristic."
                   >
                     {toneLoading ? "Recommending…" : "Recommended tone"}
@@ -1584,16 +2105,16 @@ export default function CoverLetterGenerator() {
                 <input
                   value={tone}
                   onChange={(e) => setTone(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/70 dark:text-black/70">Length</div>
+                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Length</div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-black"
                 >
                   <option value="short">Short</option>
                   <option value="standard">Standard</option>
@@ -1602,21 +2123,23 @@ export default function CoverLetterGenerator() {
               </label>
             </div>
 
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-black dark:text-black">
               <input
                 type="checkbox"
                 checked={includeBullets}
                 onChange={(e) => setIncludeBullets(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-xs font-extrabold text-black/70 dark:text-black/70">Include 3 impact bullets</span>
+              <span className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                Include 3 impact bullets
+              </span>
             </label>
 
             {/* Signature */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/60 dark:text-black/70">Signature block</div>
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/70 dark:text-black/70">
+                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Signature block</div>
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                   <input
                     type="checkbox"
                     checked={includeSignature}
@@ -1632,19 +2155,19 @@ export default function CoverLetterGenerator() {
                   value={signatureClosing}
                   onChange={(e) => setSignatureClosing(e.target.value)}
                   placeholder='Closing (optional) e.g. "Sincerely,"'
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-60 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                   disabled={!includeSignature}
                 />
                 <input
                   value={signatureName}
                   onChange={(e) => setSignatureName(e.target.value)}
                   placeholder="Signature name (optional — defaults to Full name)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-60 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                   disabled={!includeSignature}
                 />
               </div>
 
-              <div className="mt-2 text-xs text-black/60 dark:text-black/70">
+              <div className="mt-2 text-xs text-black/90 dark:text-black/90">
                 Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate “Sincerely”).
               </div>
             </div>
@@ -1655,12 +2178,12 @@ export default function CoverLetterGenerator() {
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate || loading}
-                 className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-90"
               >
                 {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
               </button>
 
-              <div className="ml-auto text-xs font-extrabold text-black/50 dark:text-black/70">
+              <div className="ml-auto text-xs font-extrabold text-black/90 dark:text-black/90">
                 Preview is live-editable after generation.
               </div>
             </div>
@@ -1677,13 +2200,13 @@ export default function CoverLetterGenerator() {
                   type="button"
                   onClick={copyToClipboard}
                   disabled={!coverLetterDraft}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                 >
                   Copy
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
+                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black dark:border-white/10 dark:bg-black/20 dark:text-black">
                     .pdf
                   </div>
 
@@ -1698,7 +2221,7 @@ export default function CoverLetterGenerator() {
                         setError(e?.message || "Download failed");
                       }
                     }}
-                     className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                    className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-90"
                   >
                     Download PDF (5 credits)
                   </button>
@@ -1709,7 +2232,7 @@ export default function CoverLetterGenerator() {
 
           {/* Live editor */}
           <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/60 dark:text-black/70">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
               Edit cover letter (live preview)
             </div>
             <textarea
@@ -1717,7 +2240,7 @@ export default function CoverLetterGenerator() {
               onChange={(e) => setCoverLetterDraft(e.target.value)}
               rows={12}
               placeholder="Generate a cover letter, then edit it here…"
-              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
             />
           </div>
         </section>
