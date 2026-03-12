@@ -42,7 +42,7 @@ export default function ProblemSolution() {
           </div>
           <h2 className="mt-2 text-2xl font-black text-black">
             
- focuses on outcomes, not fluff.
+ Focuses on outcomes, not fluff.
           </h2>
           <ul className="mt-4 space-y-2">
             {solutions.map((s) => (

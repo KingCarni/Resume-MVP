@@ -89,6 +89,24 @@ async function ensureDailyLoginBonus(userId: string, email?: string) {
   });
 }
 
+async function ensureUserBonuses(user: any) {
+  const { userId, email } = await resolveUserId(user);
+
+  console.log("[auth][ensureUserBonuses:resolved]", {
+    rawUserId: user?.id,
+    resolvedUserId: userId,
+    email,
+  });
+
+  if (!userId) {
+    console.error("[auth] bonuses: missing userId", { email });
+    return;
+  }
+
+  await ensureSignupBonus(userId, email);
+  await ensureDailyLoginBonus(userId, email);
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
@@ -142,6 +160,22 @@ export const authOptions: NextAuthOptions = {
       if (session.user && uid) {
         (session.user as any).id = uid;
       }
+
+      // Re-check bonuses whenever session loads so signup/daily credits self-heal
+      // on page load, refresh, or after the first redirect.
+      try {
+        await ensureUserBonuses({
+          id: uid,
+          email: session.user?.email,
+          name: session.user?.name,
+        });
+      } catch (e: any) {
+        console.error("[auth] session bonus check error (ignored)", {
+          message: e?.message,
+          code: e?.code,
+        });
+      }
+
       return session;
     },
 
@@ -153,17 +187,9 @@ export const authOptions: NextAuthOptions = {
           name: user?.name,
         });
 
-        const { userId, email } = await resolveUserId(user);
-
-        console.log("[auth][callback.signIn:resolved]", {
-          rawUserId: user?.id,
-          resolvedUserId: userId,
-          email,
-        });
-
-        if (email) {
+        if (user?.email) {
           const dbUser = await prisma.user.findUnique({
-            where: { email },
+            where: { email: String(user.email).trim().toLowerCase() },
             select: {
               id: true,
               email: true,
@@ -175,13 +201,7 @@ export const authOptions: NextAuthOptions = {
           console.log("[auth][callback.signIn:dbUser]", dbUser);
         }
 
-        if (!userId) {
-          console.error("[auth] bonuses: missing userId", { email });
-          return true;
-        }
-
-        await ensureSignupBonus(userId, email);
-        await ensureDailyLoginBonus(userId, email);
+        await ensureUserBonuses(user);
       } catch (e: any) {
         console.error("[auth] bonuses error (ignored)", {
           message: e?.message,
