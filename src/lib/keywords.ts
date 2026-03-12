@@ -35,6 +35,16 @@ const ALIAS_MAP: Record<string, string> = {
   "apis": "api",
 };
 
+export type RankedKeyword = { term: string; score: number };
+
+export type AtsGapAnalysis = {
+  evaluated: string[];
+  present: string[];
+  missing: string[];
+  addedByRewrite: string[];
+  remainingAfterRewrite: string[];
+};
+
 function normalizeText(input: string): string {
   return input
     .toLowerCase()
@@ -70,15 +80,7 @@ function buildNgrams(tokens: string[], n: number): string[] {
   return out;
 }
 
-function countTerms(terms: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const term of terms) {
-    m.set(term, (m.get(term) ?? 0) + 1);
-  }
-  return m;
-}
-
-function scoreTerms(jobText: string): Array<{ term: string; score: number }> {
+function scoreTerms(jobText: string): RankedKeyword[] {
   const baseTokens = tokenize(jobText).filter(isUsefulToken);
 
   // Weight multi-words higher (they're usually real skills)
@@ -106,20 +108,18 @@ function scoreTerms(jobText: string): Array<{ term: string; score: number }> {
     weights.set(t, Math.max(weights.get(t) ?? 0, w));
   }
 
-  // Score = freq * weight, with light boost for uppercase-ish acronyms present in raw job text
   const raw = jobText;
-  const scored: Array<{ term: string; score: number }> = [];
+  const scored: RankedKeyword[] = [];
   for (const [term, freq] of counts.entries()) {
     const w = weights.get(term) ?? 1;
     let score = freq * w;
 
     // boost for "tool-like" tokens
-    if (/(jira|confluence|postman|playwright|selenium|cypress|jenkins|github|aws|gcp|azure)/.test(term)) {
+    if (/(jira|confluence|postman|playwright|selenium|cypress|jenkins|github|aws|gcp|azure|sql|etl)/.test(term)) {
       score *= 1.4;
     }
 
     // boost if term appears in a "Requirements/Qualifications" style area (rough heuristic)
-    // If the job text contains the term after the word "requirements" we boost a bit.
     const idxReq = raw.toLowerCase().indexOf("require");
     if (idxReq !== -1) {
       const tail = raw.slice(idxReq).toLowerCase();
@@ -132,7 +132,7 @@ function scoreTerms(jobText: string): Array<{ term: string; score: number }> {
   scored.sort((a, b) => b.score - a.score);
 
   // Deduplicate: if trigram exists, drop its component bigrams/unigrams when very overlapping
-  const selected: Array<{ term: string; score: number }> = [];
+  const selected: RankedKeyword[] = [];
   const blocked = new Set<string>();
 
   const blockParts = (term: string) => {
@@ -148,7 +148,6 @@ function scoreTerms(jobText: string): Array<{ term: string; score: number }> {
   for (const item of scored) {
     if (selected.length >= 40) break;
     const parts = item.term.split(" ");
-    // If unigram is already "covered" by a selected ngram, skip it
     if (parts.length === 1 && blocked.has(item.term)) continue;
 
     selected.push(item);
@@ -168,12 +167,35 @@ function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export function keywordPresentInText(text: string, keyword: string): boolean {
+  return termPresent(normalizeText(text), normalizeText(keyword));
+}
+
+export function buildAtsGapAnalysis(originalText: string, rewrittenText: string, suggestedKeywords: string[]): AtsGapAnalysis {
+  const evaluated = Array.from(
+    new Set((suggestedKeywords || []).map((k) => normalizeText(String(k))).filter(Boolean))
+  );
+
+  const present = evaluated.filter((term) => keywordPresentInText(originalText, term));
+  const missing = evaluated.filter((term) => !keywordPresentInText(originalText, term));
+  const remainingAfterRewrite = evaluated.filter((term) => !keywordPresentInText(rewrittenText, term));
+  const addedByRewrite = missing.filter((term) => keywordPresentInText(rewrittenText, term));
+
+  return {
+    evaluated,
+    present,
+    missing,
+    addedByRewrite,
+    remainingAfterRewrite,
+  };
+}
+
 export function analyzeKeywordFit(resumeText: string, jobText: string) {
   const jobKeywords = scoreTerms(jobText); // ranked
   const resumeNorm = normalizeText(resumeText);
 
-  const found: Array<{ term: string; score: number }> = [];
-  const missing: Array<{ term: string; score: number }> = [];
+  const found: RankedKeyword[] = [];
+  const missing: RankedKeyword[] = [];
 
   let foundScore = 0;
   let totalScore = 0;
@@ -196,5 +218,12 @@ export function analyzeKeywordFit(resumeText: string, jobText: string) {
     keywordsFoundInResume: found.map(k => k.term),
     missingKeywords: missing.map(k => k.term),
     highImpactMissing: missing.slice(0, 10).map(k => k.term),
+    debug: {
+      totalEvaluated: jobKeywords.length,
+      matchedCount: found.length,
+      missingCount: missing.length,
+      topWeightedKeywords: jobKeywords.slice(0, 12).map((k) => ({ term: k.term, score: Math.round(k.score * 100) / 100 })),
+      topWeightedMissing: missing.slice(0, 12).map((k) => ({ term: k.term, score: Math.round(k.score * 100) / 100 })),
+    },
   };
 }

@@ -23,7 +23,7 @@ export default function FeatureGrid() {
     <section className="rounded-3xl border border-white/30 bg-white/35 p-6 shadow-xl backdrop-blur-xl sm:p-10">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase tracking-widest text-black/60">
+          <div className="text-xs font-black uppercase tracking-widest text-black/90">
             What it does
           </div>
           <h2 className="mt-2 text-2xl font-black text-black">
@@ -39,7 +39,7 @@ export default function FeatureGrid() {
             className="rounded-3xl border border-white/35 bg-white/30 p-5 shadow-sm"
           >
             <div className="text-base font-black text-black">{f.title}</div>
-            <div className="mt-2 text-sm font-semibold text-black/70">{f.desc}</div>
+            <div className="mt-2 text-sm font-semibold text-black/90">{f.desc}</div>
           </div>
         ))}
       </div>

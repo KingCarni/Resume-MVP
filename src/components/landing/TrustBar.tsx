@@ -13,7 +13,7 @@ export default function TrustBar() {
         {items.map((t) => (
           <div
             key={t}
-            className="rounded-2xl border border-white/35 bg-white/35 px-4 py-3 text-sm font-extrabold text-black/80"
+            className="rounded-2xl border border-white/35 bg-white/35 px-4 py-3 text-sm font-extrabold text-black/90"
           >
             {t}
           </div>

@@ -7,7 +7,7 @@ export default function FinalCTA(props: { primaryHref: string; primaryLabel: str
       <h2 className="text-2xl font-black text-black sm:text-3xl">
         Ready to apply with confidence?
       </h2>
-      <p className="mt-3 text-sm font-semibold text-black/70">
+      <p className="mt-3 text-sm font-semibold text-black/90">
         No fluff. No subscription traps. Just tools that help you ship applications.
       </p>
 

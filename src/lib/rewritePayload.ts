@@ -7,13 +7,19 @@ const compact = (s: any, n: number) =>
   String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
 export function buildRewriteBulletPayload(raw: any) {
+  const sanitizedKeywords = (raw.suggestedKeywords ?? [])
+    .map(String)
+    .map((s: string) => compact(s, 80))
+    .filter(Boolean)
+    .slice(0, MAX_KEYWORDS);
+
   const payload = {
     originalBullet: compact(raw.originalBullet, MAX_ORIGINAL_BULLET),
     jobText: compact(raw.jobText, MAX_JOBTEXT),
 
-    suggestedKeywords: (raw.suggestedKeywords ?? [])
-      .map(String)
-      .slice(0, MAX_KEYWORDS),
+    suggestedKeywords: sanitizedKeywords,
+    keywordLimit: MAX_KEYWORDS,
+    keywordCount: sanitizedKeywords.length,
 
     role: raw.role ? compact(raw.role, 120) : undefined,
     tone: raw.tone ? compact(raw.tone, 120) : undefined,
@@ -28,14 +34,20 @@ export function buildRewriteBulletPayload(raw: any) {
 
     targetProducts: (raw.targetProducts ?? [])
       .map(String)
+      .map((s: string) => compact(s, 120))
+      .filter(Boolean)
       .slice(0, MAX_PRODUCTS),
 
     blockedTerms: (raw.blockedTerms ?? [])
       .map(String)
+      .map((s: string) => compact(s, 120))
+      .filter(Boolean)
       .slice(0, 50),
 
     constraints: (raw.constraints ?? [])
       .map(String)
+      .map((s: string) => compact(s, 220))
+      .filter(Boolean)
       .slice(0, 25),
 
     mustPreserveMeaning: !!raw.mustPreserveMeaning,

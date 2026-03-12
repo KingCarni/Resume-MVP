@@ -15,17 +15,17 @@ export default function LandingHero(props: {
           Land better roles — without paying monthly subscription fees.
         </h1>
 
-        <p className="mt-4 text-base font-semibold text-black/75">
+        <p className="mt-4 text-base font-semibold text-black/90">
           Git-a-Job helps you turn messy resumes into clear, impactful tools. It can also generate cover letters
           that match the role. Built to be affordable, transparent, and actually useful.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <div className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-xs font-extrabold text-black/70 shadow-sm backdrop-blur">
+          <div className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-xs font-extrabold text-black/90 shadow-sm backdrop-blur">
             {props.perkLine || "Start free. Upgrade only if you want."}
           </div>
 
-          <div className="text-xs font-extrabold text-black/55">
+          <div className="text-xs font-extrabold text-black/90">
             No subscription traps. Credits are clear and optional.
           </div>
         </div>

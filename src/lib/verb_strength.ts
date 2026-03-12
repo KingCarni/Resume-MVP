@@ -55,6 +55,26 @@ const STRONG_VERBS = new Set([
   "eliminated",
   "de-risked",
   "hardened",
+  "streamlined",
+  "accelerated",
+  "scaled",
+  "boosted",
+  "modernized",
+  "strengthened",
+  "stabilized",
+  "orchestrated",
+  "transformed",
+  "consolidated",
+  "expanded",
+  "advanced",
+  "upgraded",
+  "revamped",
+  "championed",
+  "initiated",
+  "founded",
+  "resolved",
+  "doubled",
+  "tripled",
 ]);
 
 const SOLID_VERBS = new Set([
@@ -73,10 +93,19 @@ const SOLID_VERBS = new Set([
   "integrated",
   "migrated",
   "standardized",
-  "streamlined",
   "analyzed",
   "measured",
   "instrumented",
+  "developed",
+  "maintained",
+  "reviewed",
+  "performed",
+  "facilitated",
+  "organized",
+  "supported",
+  "detailed",
+  "updated",
+  "trained",
 ]);
 
 const FILLER = new Set([
@@ -121,8 +150,8 @@ function normalizeBullet(bullet: string) {
 }
 
 function detectVerb(words: string[]): string | undefined {
-  // ✅ Only accept known verbs or common -ed verbs that are *actually* verbs you’d expect.
-  // This prevents random “-ed” words from becoming “strong verb”.
+  // ✅ Only accept known verbs or curated -ed verbs that are actually resume-friendly.
+  // This prevents random “-ed” words from becoming “strong verbs”.
   const allowedEdVerbs = new Set([
     "improved",
     "increased",
@@ -140,6 +169,18 @@ function detectVerb(words: string[]): string | undefined {
     "measured",
     "instrumented",
     "analyzed",
+    "accelerated",
+    "boosted",
+    "modernized",
+    "developed",
+    "maintained",
+    "coordinated",
+    "documented",
+    "updated",
+    "resolved",
+    "trained",
+    "reviewed",
+    "organized",
   ]);
 
   for (const w of words.slice(0, 10)) {
@@ -162,7 +203,7 @@ export function computeVerbStrength(
   const { raw, words, opener } = normalizeBullet(bullet);
 
   const reasons: string[] = [];
-  let score = 40; // ✅ lower baseline so “meh” bullets don’t start as OK
+  let score = 48; // fairer baseline so decent bullets do not look broken by default
 
   // Weak opener penalties
   const matchedWeak = WEAK_OPENERS.find((p) => opener.startsWith(p));
@@ -191,10 +232,10 @@ export function computeVerbStrength(
     score -= 10;
     reasons.push("No clear action verb early");
   } else if (STRONG_VERBS.has(detectedVerb)) {
-    score += 28;
+    score += 26;
     reasons.push(`Strong verb (“${detectedVerb}”)`);
   } else if (SOLID_VERBS.has(detectedVerb)) {
-    score += 18;
+    score += 16;
     reasons.push(`Solid verb (“${detectedVerb}”)`);
   } else {
     score += 10;
@@ -203,7 +244,7 @@ export function computeVerbStrength(
 
   // Scope / systems (QA/dev)
   const scopeSignals =
-    /\b(api|pipeline|ci\/cd|release|deployment|automation|framework|test plan|test strategy|coverage|regression|observability|monitoring|dashboards|kpi|experiment|a\/b|tracking|instrumentation|backend|frontend|mobile|vr|ue4|ue5|unreal|testrail|jira|confluence|postman)\b/i.test(
+    /\b(api|pipeline|ci\/cd|cicd|release|deployment|automation|framework|test plan|test strategy|coverage|regression|observability|monitoring|dashboards|kpi|experiment|a\/b|tracking|instrumentation|backend|frontend|mobile|vr|ue4|ue5|unreal|testrail|jira|confluence|postman|playwright|selenium|cypress|jenkins|github|sql|etl)\b/i.test(
       raw
     );
   if (scopeSignals) {
@@ -213,7 +254,7 @@ export function computeVerbStrength(
 
   // Outcome language
   const outcomeSignals =
-    /\b(increased|reduced|improved|cut|saved|prevented|boosted|grew|decreased|accelerated|shortened|eliminated|de-risked)\b/i.test(
+    /\b(increased|reduced|improved|cut|saved|prevented|boosted|grew|decreased|accelerated|shortened|eliminated|de-risked|streamlined|stabilized|modernized|strengthened)\b/i.test(
       raw
     );
   if (outcomeSignals) {

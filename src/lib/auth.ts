@@ -32,7 +32,6 @@ async function resolveUserId(user: any) {
 }
 
 async function ensureSignupBonus(userId: string, email?: string) {
-  // If any signup_bonus row exists for this user, don't re-grant.
   const alreadyGranted = await prisma.creditsLedger.findFirst({
     where: { userId, reason: "signup_bonus" },
     select: { id: true },
@@ -48,7 +47,11 @@ async function ensureSignupBonus(userId: string, email?: string) {
     },
   });
 
-  console.log("[auth] signup bonus granted", { userId, email, delta: SIGNUP_BONUS });
+  console.log("[auth] signup bonus granted", {
+    userId,
+    email,
+    delta: SIGNUP_BONUS,
+  });
 }
 
 async function ensureDailyLoginBonus(userId: string, email?: string) {
@@ -56,7 +59,6 @@ async function ensureDailyLoginBonus(userId: string, email?: string) {
   const todayStart = startOfTodayUtc(now);
   const tomorrowStart = startOfTomorrowUtc(now);
 
-  // If a daily bonus entry exists today (UTC), don't re-grant.
   const alreadyToday = await prisma.creditsLedger.findFirst({
     where: {
       userId,
@@ -71,7 +73,6 @@ async function ensureDailyLoginBonus(userId: string, email?: string) {
 
   if (alreadyToday) return;
 
-  // Grant daily bonus
   await prisma.creditsLedger.create({
     data: {
       userId,
@@ -101,32 +102,85 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
 
+  events: {
+    async createUser(message) {
+      console.log("[auth][event.createUser]", {
+        id: message.user.id,
+        email: message.user.email,
+        name: message.user.name,
+      });
+    },
+
+    async linkAccount(message) {
+      console.log("[auth][event.linkAccount]", {
+        userId: message.user.id,
+        email: message.user.email,
+        provider: message.account.provider,
+        providerAccountId: message.account.providerAccountId,
+      });
+    },
+
+    async signIn(message) {
+      console.log("[auth][event.signIn]", {
+        userId: message.user.id,
+        email: message.user.email,
+        isNewUser: message.isNewUser,
+      });
+    },
+  },
+
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.id) (token as any).uid = user.id;
+      if (user?.id) {
+        (token as any).uid = user.id;
+      }
       return token;
     },
 
     async session({ session, token }) {
       const uid = (token as any).uid as string | undefined;
-      if (session.user && uid) (session.user as any).id = uid;
+      if (session.user && uid) {
+        (session.user as any).id = uid;
+      }
       return session;
     },
 
     async signIn({ user }) {
       try {
+        console.log("[auth][callback.signIn:start]", {
+          userId: user?.id,
+          email: user?.email,
+          name: user?.name,
+        });
+
         const { userId, email } = await resolveUserId(user);
 
-        // Never block login if we can't resolve userId
+        console.log("[auth][callback.signIn:resolved]", {
+          rawUserId: user?.id,
+          resolvedUserId: userId,
+          email,
+        });
+
+        if (email) {
+          const dbUser = await prisma.user.findUnique({
+            where: { email },
+            select: {
+              id: true,
+              email: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+
+          console.log("[auth][callback.signIn:dbUser]", dbUser);
+        }
+
         if (!userId) {
           console.error("[auth] bonuses: missing userId", { email });
           return true;
         }
 
-        // 1) Signup bonus (once ever)
         await ensureSignupBonus(userId, email);
-
-        // 2) Daily login bonus (once per UTC day)
         await ensureDailyLoginBonus(userId, email);
       } catch (e: any) {
         console.error("[auth] bonuses error (ignored)", {

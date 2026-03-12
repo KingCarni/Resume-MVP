@@ -1,4 +1,3 @@
-// src/components/ResumeMvp/index.tsx
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
@@ -259,6 +258,31 @@ function normalizeSuggestedKeywordsForBullet(originalBullet: string, suggested: 
   return cleaned.slice(0, 5);
 }
 
+function pickGuaranteedAtsKeywordsForBullet(args: {
+  originalBullet: string;
+  suggestedKeywords: string[];
+  jobText: string;
+  maxGuaranteed?: number;
+}) {
+  const original = normalizeForMatch(args.originalBullet);
+  const jobTextNorm = normalizeForMatch(args.jobText);
+  const maxGuaranteed = Math.max(0, Math.min(args.maxGuaranteed ?? 2, 3));
+
+  const priorityTerms = (args.suggestedKeywords || [])
+    .map((k) => String(k).trim())
+    .filter(Boolean)
+    .filter((k) => {
+      const kk = normalizeForMatch(k);
+      if (!kk) return false;
+      if (!jobTextNorm.includes(kk)) return false;
+      if (original.includes(kk)) return false;
+      return true;
+    })
+    .sort((a, b) => b.length - a.length);
+
+  return priorityTerms.slice(0, maxGuaranteed);
+}
+
 function isTrainingLikeBullet(bullet: string) {
   const s = String(bullet || "");
   return /\b(training|trained|certif|certificate|certification|course|workshop|program|bootcamp|completed|graduated)\b/i.test(
@@ -361,8 +385,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60"
-          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-white/80",
+          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
+          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-black/90",
       ].join(" ")}
     >
       {text}
@@ -390,6 +414,28 @@ function Callout({
     <div className={`rounded-xl border p-3 ${toneClasses}`}>
       <div className="font-extrabold">{title}</div>
       <div className="mt-1 opacity-90">{children}</div>
+    </div>
+  );
+}
+
+
+function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+        <iframe
+          title="resume-preview"
+          className="h-[820px] w-full border-0"
+          sandbox="allow-same-origin"
+          srcDoc={html || "<!doctype html><html><body></body></html>"}
+        />
+      </div>
+
+      {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
     </div>
   );
 }
@@ -556,6 +602,38 @@ body{
   background: var(--headerbg);
   box-shadow: var(--shadow);
 }
+
+.top-main{
+  display:flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 14px;
+  align-items:flex-start;
+}
+
+.top-copy{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.top-photo{
+  flex: 0 0 auto;
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-end;
+}
+
+.profile-photo{
+  display:block;
+  object-fit: cover;
+  border: 1px var(--borderstyle) var(--line);
+  background: var(--cardbg);
+  box-shadow: 0 10px 25px rgba(2,6,23,.08);
+}
+
+.profile-photo.circle{ border-radius: 999px; }
+.profile-photo.rounded{ border-radius: 18px; }
+.profile-photo.square{ border-radius: 0; }
 
 .name{
   margin:0;
@@ -1966,11 +2044,67 @@ function buildResumeHtml(args: {
   bulletsBySection: Record<string, string[]>;
   metaGames: string[];
   metaMetrics: string[];
+  shippedLabel?: "Games" | "Apps";
   includeMeta: boolean;
+  showShippedBlock?: boolean;
+  showMetricsBlock?: boolean;
+  expertiseItems?: string[];
+  showExpertiseOnResume?: boolean;
+  profilePhotoDataUrl?: string;
+  showProfilePhoto?: boolean;
+  profilePhotoShape?: "circle" | "rounded" | "square";
+  profilePhotoSize?: number;
 }) {
-  const { template, profile, sections, bulletsBySection, metaGames, metaMetrics, includeMeta } = args;
+  const {
+    template,
+    profile,
+    sections,
+    bulletsBySection,
+    metaGames,
+    metaMetrics,
+    shippedLabel,
+    includeMeta,
+    showShippedBlock,
+    showMetricsBlock,
+    expertiseItems,
+    showExpertiseOnResume,
+    profilePhotoDataUrl,
+    showProfilePhoto,
+    profilePhotoShape,
+    profilePhotoSize,
+  } = args;
 
   const safe = (s: string) => escapeHtml(s || "");
+
+  const safePhotoUrl =
+    showProfilePhoto && profilePhotoDataUrl && /^data:image\//i.test(profilePhotoDataUrl.trim())
+      ? profilePhotoDataUrl.trim()
+      : "";
+
+  const photoSize = Math.max(72, Math.min(Number(profilePhotoSize || 112), 180));
+  const photoShape = profilePhotoShape || "circle";
+
+  const standardPhotoHtml = safePhotoUrl
+    ? `<div class="top-photo">
+        <img
+          src="${safePhotoUrl}"
+          alt="Profile photo"
+          class="profile-photo ${safe(photoShape)}"
+          style="width:${photoSize}px;height:${photoSize}px;"
+        />
+      </div>`
+    : "";
+
+  const sidebarPhotoHtml = safePhotoUrl
+    ? `<div style="margin-bottom:12px;">
+        <img
+          src="${safePhotoUrl}"
+          alt="Profile photo"
+          class="profile-photo ${safe(photoShape)}"
+          style="width:${photoSize}px;height:${photoSize}px;"
+        />
+      </div>`
+    : "";
 
   const contactBits = [
     profile.email?.trim() ? safe(profile.email) : "",
@@ -2006,20 +2140,22 @@ function buildResumeHtml(args: {
     template === "terminal";
 
   // ✅ Meta blocks: if only one exists, it fills the whole row (no blank placeholder box)
-  const metaCount = Number(metaGames.length > 0) + Number(metaMetrics.length > 0);
+  const visibleGames = showShippedBlock ? metaGames : [];
+  const visibleMetrics = showMetricsBlock ? metaMetrics : [];
+  const metaCount = Number(visibleGames.length > 0) + Number(visibleMetrics.length > 0);
   const metaClass = metaCount <= 1 ? "meta one" : "meta two";
 
   const metaHtml =
-    includeMeta && (metaGames.length || metaMetrics.length)
+    includeMeta && (visibleGames.length || visibleMetrics.length)
       ? `
     <div class="section">
       <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Highlights</div>
       <div class="${metaClass}">
         ${
-          metaGames.length
+          visibleGames.length
             ? `<div class="box">
-                <div class="boxtitle">Games Shipped</div>
-                <div class="small">${metaGames
+                <div class="boxtitle">${safe(shippedLabel || "Games")} Shipped</div>
+                <div class="small">${visibleGames
                   .slice(0, 14)
                   .map((x) => `• ${safe(String(x))}`)
                   .join("<br/>")}</div>
@@ -2027,10 +2163,10 @@ function buildResumeHtml(args: {
             : ""
         }
         ${
-          metaMetrics.length
+          visibleMetrics.length
             ? `<div class="box">
                 <div class="boxtitle">Key Metrics</div>
-                <div class="small">${metaMetrics
+                <div class="small">${visibleMetrics
                   .slice(0, 14)
                   .map((x) => `• ${safe(String(x))}`)
                   .join("<br/>")}</div>
@@ -2041,12 +2177,27 @@ function buildResumeHtml(args: {
     </div>`
       : "";
 
+
+  const expertiseHtml =
+    showExpertiseOnResume && Array.isArray(expertiseItems) && expertiseItems.length
+      ? `
+    <div class="section">
+      <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Areas of Expertise</div>
+      <div class="box">
+        <div class="small">${expertiseItems
+          .slice(0, 12)
+          .map((x) => `• ${safe(String(x))}`)
+          .join(" ")}</div>
+      </div>
+    </div>`
+      : "";
+
   // ✅ Experience jobs:
   // - Always render the job header (so it never “disappears”)
   // - Dates/location go on the far right (Resume 25 style)
   const jobsHtml = sections
     .map((sec) => {
-      const list = (bulletsBySection[sec.id] || []).map((x) => String(x ?? "").trim()).filter(Boolean);
+      const list = (bulletsBySection[sec.id] || []).map((x: string) => String(x ?? "").trim()).filter(Boolean);
 
       const company = safe(sec.company || "Company");
       const role = safe(sec.title || "Role");
@@ -2057,7 +2208,7 @@ function buildResumeHtml(args: {
 
       const bulletsHtml =
         list.length > 0
-          ? `<ul>${list.map((b) => `<li>${safe(b)}</li>`).join("")}</ul>`
+          ? `<ul>${list.map((b: string) => `<li>${safe(b)}</li>`).join("")}</ul>`
           : ``;
 
       return `
@@ -2091,6 +2242,7 @@ function buildResumeHtml(args: {
 <body>
   <div class="page">
     <div class="side">
+      ${sidebarPhotoHtml}
       <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
       <div class="title">${safe(profile.titleLine || "")}</div>
 
@@ -2104,6 +2256,7 @@ function buildResumeHtml(args: {
       </div>
 
       ${metaHtml}
+      ${expertiseHtml}
     </div>
 
     <div class="main">
@@ -2161,21 +2314,26 @@ function buildResumeHtml(args: {
 <body>
   <div class="page">
     <div class="top">
-      <div>
-        <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
-        <div class="title">${safe(profile.titleLine || "")}</div>
+      <div class="top-main">
+        <div class="top-copy">
+          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+          <div class="title">${safe(profile.titleLine || "")}</div>
 
-        <div class="contact">
-          ${topContact}
+          <div class="contact">
+            ${topContact}
+          </div>
+
+          ${inlineSummary}
         </div>
 
-        ${inlineSummary}
+        ${standardPhotoHtml}
       </div>
     </div>
 
     <div class="content">
       ${summaryBlock}
       ${metaHtml}
+      ${expertiseHtml}
 
       <div class="section">
         <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Experience</div>
@@ -2185,17 +2343,6 @@ function buildResumeHtml(args: {
   </div>
 </body>
 </html>`;
-}
-
-function openPreviewWindow(html: string) {
-  const w = window.open("", "_blank");
-  if (!w) {
-    alert("Popup blocked. Allow popups for this site to use Preview.");
-    return;
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
 }
 
 function openPrintWindow(html: string) {
@@ -2247,6 +2394,259 @@ function sanitizeMetaLines(lines: string[]) {
     .filter(Boolean)
     .filter((x) => !bad.some((re) => re.test(x)))
     .slice(0, 24);
+}
+
+
+function parseAreasOfExpertise(args: {
+  resumeText: string;
+  summary?: string;
+  bulletsBySection?: Record<string, string[]>;
+  analysisBullets?: string[];
+  maxItems?: number;
+}) {
+  const sourceParts = [
+    String(args.resumeText ?? ""),
+    String(args.summary ?? ""),
+    ...(args.analysisBullets ?? []).map((x) => String(x ?? "")),
+    ...Object.values(args.bulletsBySection ?? {}).flat().map((x) => String(x ?? "")),
+  ];
+
+  const source = sourceParts.join("\n").toLowerCase();
+  const maxItems = Math.max(6, Math.min(args.maxItems ?? 12, 16));
+
+  const catalog: Array<{ label: string; terms: string[]; weight?: number }> = [
+    { label: "Quality Assurance", terms: ["\\bquality assurance\\b", "\\bqa\\b"], weight: 4 },
+    { label: "Test Automation", terms: ["\\btest automation\\b", "\\bautomation testing\\b", "\\bautomation\\b"], weight: 4 },
+    { label: "Manual Testing", terms: ["\\bmanual testing\\b"], weight: 2 },
+    { label: "Regression Testing", terms: ["\\bregression testing\\b", "\\bregression\\b"], weight: 3 },
+    { label: "API Testing", terms: ["\\bapi testing\\b", "\\bapi\\b", "\\bpostman\\b"], weight: 4 },
+    { label: "UI Testing", terms: ["\\bui testing\\b", "\\bfrontend testing\\b", "\\buser interface testing\\b"], weight: 2 },
+    { label: "End-to-End Testing", terms: ["\\bend-to-end testing\\b", "\\be2e\\b", "\\bend to end\\b"], weight: 3 },
+    { label: "Performance Testing", terms: ["\\bperformance testing\\b", "\\bload testing\\b", "\\bstress testing\\b"], weight: 3 },
+    { label: "Mobile Testing", terms: ["\\bmobile testing\\b", "\\bios\\b", "\\bandroid\\b"], weight: 2 },
+    { label: "Web Testing", terms: ["\\bweb testing\\b", "\\bbrowser testing\\b"], weight: 2 },
+    { label: "Game Testing", terms: ["\\bgame testing\\b", "\\bgame qa\\b", "\\bgameplay testing\\b"], weight: 3 },
+    { label: "Playwright", terms: ["\\bplaywright\\b"], weight: 4 },
+    { label: "Selenium", terms: ["\\bselenium\\b"], weight: 4 },
+    { label: "Cypress", terms: ["\\bcypress\\b"], weight: 4 },
+    { label: "Postman", terms: ["\\bpostman\\b"], weight: 3 },
+    { label: "Jira", terms: ["\\bjira\\b"], weight: 3 },
+    { label: "TestRail", terms: ["\\btestrail\\b"], weight: 3 },
+    { label: "SQL", terms: ["\\bsql\\b", "\\bpostgres\\b", "\\bmysql\\b"], weight: 3 },
+    { label: "CI/CD", terms: ["\\bci/cd\\b", "\\bcontinuous integration\\b", "\\bcontinuous delivery\\b"], weight: 3 },
+    { label: "Jenkins", terms: ["\\bjenkins\\b"], weight: 3 },
+    { label: "Agile", terms: ["\\bagile\\b", "\\bscrum\\b", "\\bkanban\\b"], weight: 3 },
+    { label: "Cross-Functional Collaboration", terms: ["\\bcross-functional\\b", "\\bcross functional\\b", "\\bstakeholders\\b"], weight: 2 },
+    { label: "Defect Triage", terms: ["\\bdefect triage\\b", "\\bbug triage\\b", "\\btriage\\b"], weight: 3 },
+    { label: "Release Testing", terms: ["\\brelease testing\\b", "\\brelease validation\\b", "\\bgo-live\\b"], weight: 3 },
+    { label: "Test Planning", terms: ["\\btest planning\\b", "\\btest plans\\b", "\\btest strategy\\b"], weight: 3 },
+    { label: "Documentation", terms: ["\\bdocumentation\\b", "\\btest cases\\b", "\\btest scripts\\b"], weight: 2 },
+  ];
+
+  const scored = catalog
+    .map((item) => {
+      const hits = item.terms.reduce((n, term) => {
+        try {
+          const re = new RegExp(term, "i");
+          return n + (re.test(source) ? 1 : 0);
+        } catch {
+          return n + (source.includes(term.toLowerCase()) ? 1 : 0);
+        }
+      }, 0);
+      return { label: item.label, score: hits * (item.weight ?? 1) };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.label.localeCompare(b.label));
+
+  return scored.slice(0, maxItems).map((x) => x.label);
+}
+
+
+function tokenizeWords(s: string) {
+  return String(s ?? "").trim().split(/\s+/).filter(Boolean);
+}
+
+function countCommonPrefixWords(a: string[], b: string[]) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+  return i;
+}
+
+function countCommonSuffixWords(a: string[], b: string[], prefixLen: number) {
+  let i = 0;
+  while (
+    a.length - 1 - i >= prefixLen &&
+    b.length - 1 - i >= prefixLen &&
+    a[a.length - 1 - i] === b[b.length - 1 - i]
+  ) {
+    i += 1;
+  }
+  return i;
+}
+
+function diffRewriteWords(original: string, rewritten: string) {
+  const a = tokenizeWords(original);
+  const b = tokenizeWords(rewritten);
+
+  const prefixLen = countCommonPrefixWords(a, b);
+  const suffixLen = countCommonSuffixWords(a, b, prefixLen);
+
+  return {
+    prefix: b.slice(0, prefixLen).join(" "),
+    changed: b.slice(prefixLen, b.length - suffixLen).join(" "),
+    suffix: b.slice(b.length - suffixLen).join(" "),
+  };
+}
+
+function scoreVerbStrength(text: string) {
+  const first = tokenizeWords(text)[0]?.toLowerCase().replace(/[^a-z-]/g, "") || "";
+  const strong = new Set([
+    "led", "drove", "delivered", "built", "launched", "optimized", "improved", "increased",
+    "reduced", "streamlined", "owned", "implemented", "accelerated", "scaled", "boosted",
+    "designed", "created", "mentored", "shipped", "spearheaded", "modernized", "stabilized",
+    "strengthened", "transformed", "orchestrated", "resolved", "advanced", "upgraded"
+  ]);
+  const medium = new Set([
+    "managed", "supported", "coordinated", "tested", "analyzed", "reviewed", "developed",
+    "documented", "collaborated", "maintained", "executed", "organized", "facilitated",
+    "investigated", "validated", "monitored", "triaged", "integrated", "migrated", "updated"
+  ]);
+  if (strong.has(first)) return 3;
+  if (medium.has(first)) return 2;
+  return first ? 1 : 0;
+}
+
+function buildRewriteScorecard(args: {
+  original: string;
+  rewritten: string;
+  keywordHits?: string[];
+  suggestedKeywords?: string[];
+  needsMoreInfo?: boolean;
+}) {
+  const originalText = String(args.original ?? "").trim();
+  const rewrittenText = String(args.rewritten ?? "").trim();
+
+  const originalWords = tokenizeWords(originalText);
+  const rewrittenWords = tokenizeWords(rewrittenText);
+
+  const verbDelta = Math.max(0, scoreVerbStrength(rewrittenText) - scoreVerbStrength(originalText));
+  const keywordHits = Array.isArray(args.keywordHits) ? args.keywordHits.length : 0;
+  const keywordTotal = Array.isArray(args.suggestedKeywords) ? args.suggestedKeywords.length : 0;
+  const keywordCoverage = keywordTotal > 0 ? keywordHits / keywordTotal : 0;
+
+  const wordDelta = rewrittenWords.length - originalWords.length;
+
+  const numberLike = /\b(?:\d+(?:\.\d+)?%?|\$\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?x)\b/g;
+  const originalNums = (originalText.match(numberLike) || []).length;
+  const rewrittenNums = (rewrittenText.match(numberLike) || []).length;
+
+  const impactSignals = /\b(increased|reduced|improved|boosted|cut|saved|grew|raised|lowered|optimized|streamlined|accelerated|delivered|launched|resolved|stabilized|strengthened|enhanced|expanded)\b/i;
+  const impactDelta =
+    Math.max(0, rewrittenNums - originalNums) +
+    (impactSignals.test(rewrittenText) && !impactSignals.test(originalText) ? 1 : 0);
+
+  const normalizedOriginal = normalizeForMatch(originalText);
+  const normalizedRewritten = normalizeForMatch(rewrittenText);
+  const exactCopy = normalizedOriginal === normalizedRewritten;
+
+  const diff = diffRewriteWords(originalText, rewrittenText);
+  const changedWords = tokenizeWords(diff.changed).length;
+  const nearCopy = !exactCopy && changedWords <= 3;
+
+  const structureGain =
+    rewrittenWords.length > originalWords.length
+      ? Math.min(10, Math.max(4, Math.round((rewrittenWords.length - originalWords.length) * 1.1)))
+      : rewrittenWords.length < originalWords.length
+      ? 6
+      : 5;
+
+  const clarityGain =
+    rewrittenWords.length >= Math.max(4, Math.round(originalWords.length * 0.7)) ? 8 : 0;
+
+  const total = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        64 +
+          verbDelta * 8 +
+          impactDelta * 8 +
+          keywordCoverage * 6 +
+          structureGain +
+          clarityGain +
+          (args.needsMoreInfo ? -10 : 6) +
+          (wordDelta > 0 ? 4 : 2) -
+          (exactCopy ? 35 : 0) -
+          (nearCopy ? 12 : 0)
+      )
+    )
+  );
+
+  return {
+    total,
+    wordDelta,
+    impactDelta,
+    confidence:
+      args.needsMoreInfo
+        ? "Review"
+        : total >= 88
+        ? "Strong"
+        : total >= 72
+        ? "Good"
+        : total >= 58
+        ? "Fair"
+        : "Weak",
+  };
+}
+
+
+function shouldForceLowScoreRetry(args: {
+  original: string;
+  rewritten: string;
+  keywordHits?: string[];
+  suggestedKeywords?: string[];
+  needsMoreInfo?: boolean;
+}) {
+  const rewritten = String(args.rewritten ?? "").trim();
+  const original = String(args.original ?? "").trim();
+
+  if (!rewritten) return true;
+  if (normalizeForMatch(rewritten) === normalizeForMatch(original)) return true;
+
+  const score = buildRewriteScorecard(args);
+  return score.total < 80;
+}
+
+function RewriteDiff({
+  original,
+  rewritten,
+}: {
+  original: string;
+  rewritten: string;
+}) {
+  const diff = diffRewriteWords(original, rewritten);
+
+  if (!diff.changed) {
+    return <div className="whitespace-pre-wrap text-sm">{rewritten}</div>;
+  }
+
+  return (
+    <div className="whitespace-pre-wrap text-sm leading-6">
+      {diff.prefix ? <span>{diff.prefix} </span> : null}
+      <mark className="rounded bg-emerald-100 px-1 py-0.5 text-black">{diff.changed}</mark>
+      {diff.suffix ? <span> {diff.suffix}</span> : null}
+    </div>
+  );
+}
+
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 /** ---------------- Component ---------------- */
@@ -2362,11 +2762,15 @@ export default function ResumeMvp() {
   const [error, setError] = useState<string | null>(null);
   const [showDebugJson, setShowDebugJson] = useState(false);
   const [logNetworkDebug, setLogNetworkDebug] = useState(true);
+  const [showRewriteScorecard, setShowRewriteScorecard] = useState(true);
 
   // ✅ Selecting bullets = apply rewrite (if rewritten exists)
   const [selectedBulletIdx, setSelectedBulletIdx] = useState<Set<number>>(() => new Set());
   const [loadingBatchRewrite, setLoadingBatchRewrite] = useState(false);
   const [includeMetaInResumeDoc, setIncludeMetaInResumeDoc] = useState(true);
+  const [showShippedBlock, setShowShippedBlock] = useState(true);
+  const [showMetricsBlock, setShowMetricsBlock] = useState(true);
+  const [showExpertiseOnResume, setShowExpertiseOnResume] = useState(true);
 
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplateId>("modern");
   const [profile, setProfile] = useState<ResumeProfile>({
@@ -2385,9 +2789,11 @@ export default function ResumeMvp() {
   ]);
 
   const [assignments, setAssignments] = useState<Record<number, BulletAssignment>>({});
-  const [showPreviewEditor, setShowPreviewEditor] = useState(false);
-  const [previewHtmlDraft, setPreviewHtmlDraft] = useState("");
-  const [previewHtmlOverride, setPreviewHtmlOverride] = useState<string>("");
+  const [showProfilePhoto, setShowProfilePhoto] = useState(true);
+  const [profilePhotoDataUrl, setProfilePhotoDataUrl] = useState("");
+  const [profilePhotoShape, setProfilePhotoShape] = useState<"circle" | "rounded" | "square">("circle");
+  const [profilePhotoSize, setProfilePhotoSize] = useState(112);
+  const [resumeHtmlDraft, setResumeHtmlDraft] = useState("");
 
   const canAnalyze = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -2403,9 +2809,6 @@ export default function ResumeMvp() {
     setLoadingRewriteIndex(null);
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
-    setShowPreviewEditor(false);
-    setPreviewHtmlDraft("");
-    setPreviewHtmlOverride("");
     setResumeBlobUrl("");
   }, []);
 
@@ -2437,6 +2840,33 @@ export default function ResumeMvp() {
     if (fileInputRef.current) fileInputRef.current.value = "";
     resetDerivedState();
   }, [resetDerivedState]);
+
+  const handleProfilePhotoUpload = useCallback(async (incoming: File | null) => {
+    if (!incoming) return;
+
+    if (!incoming.type.startsWith("image/")) {
+      setError("Profile photo must be an image file.");
+      return;
+    }
+
+    if (incoming.size > 2 * 1024 * 1024) {
+      setError("Profile photo is too large. Keep it under 2MB.");
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(incoming);
+      setProfilePhotoDataUrl(dataUrl);
+      setShowProfilePhoto(true);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || "Could not load profile photo.");
+    }
+  }, []);
+
+  const clearProfilePhoto = useCallback(() => {
+    setProfilePhotoDataUrl("");
+  }, []);
 
   const toggleSelected = useCallback((i: number) => {
     setSelectedBulletIdx((prev) => {
@@ -2640,12 +3070,11 @@ export default function ResumeMvp() {
   async function handleRewriteBullet(index: number) {
     if (!analysis) return;
 
-    const bullets = Array.isArray(analysis.bullets) ? analysis.bullets : [];
-    const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
-    const planItem = rewritePlanLocal[index];
+    const row = liveBulletRows[index];
+    if (!row) return;
 
-    const originalBullet = (planItemToText(planItem) || bulletToText(bullets[index])).trim();
-    const suggestedKeywordsRaw = keywordsToArray(planItem?.suggestedKeywords);
+    const originalBullet = String(row.originalText ?? row.text ?? "").trim();
+    const suggestedKeywordsRaw = row.suggestedKeywords;
     const suggestedKeywords = normalizeSuggestedKeywordsForBullet(originalBullet, suggestedKeywordsRaw);
 
     if (!originalBullet) {
@@ -2708,6 +3137,12 @@ export default function ResumeMvp() {
         return { ...prev, rewritePlan: nextPlan };
       });
 
+      setEditorBulletsBySection((prev: Record<string, string[]>) => {
+        const next = [...(prev[row.sectionId] || [])];
+        next[row.bulletIndex] = rewrittenTraining;
+        return { ...prev, [row.sectionId]: next };
+      });
+
       refreshCredits();
       return;
     }
@@ -2716,6 +3151,7 @@ export default function ResumeMvp() {
     setError(null);
 
     try {
+      const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
       const jobTextCapped = String(jobText ?? "").slice(0, 6000);
@@ -2785,18 +3221,13 @@ export default function ResumeMvp() {
         return phrases;
       };
 
-      const otherTexts: string[] = [];
-      for (let i = 0; i < rewritePlanLocal.length; i++) {
-        if (i === index) continue;
-
-        const it = rewritePlanLocal[i];
-        const txt =
-          (it?.rewrittenBullet && String(it.rewrittenBullet).trim()) ||
-          planItemToText(it) ||
-          bulletToText(bullets[i] ?? "").trim();
-
-        if (txt) otherTexts.push(txt);
-      }
+      const otherTexts: string[] = liveBulletRows
+        .filter((_, rowIndex) => rowIndex !== index)
+        .map((liveRow) => {
+          const rewritten = String(liveRow.rewrittenBullet ?? "").trim();
+          return rewritten || String(liveRow.text ?? "").trim();
+        })
+        .filter(Boolean);
 
       const usedOpeners = Array.from(new Set(otherTexts.map(extractOpenerVerb).map(norm).filter(Boolean)));
 
@@ -2813,7 +3244,14 @@ export default function ResumeMvp() {
         .slice(0, 30)
         .map(([phrase]) => phrase);
 
-      const requestBody = {
+      const guaranteedAtsKeywords = pickGuaranteedAtsKeywordsForBullet({
+        originalBullet,
+        suggestedKeywords,
+        jobText: jobTextCapped,
+        maxGuaranteed: 2,
+      });
+
+      const baseRequestBody = {
         originalBullet,
         suggestedKeywords,
         jobText: jobTextCapped,
@@ -2824,6 +3262,12 @@ export default function ResumeMvp() {
           "Preserve the original meaning and scope; only improve clarity and impact.",
           "Avoid generic filler; keep it concise and specific.",
           "Do not start with the same opener verb used in other bullets; avoid repeating lead verbs.",
+          ...(guaranteedAtsKeywords.length
+            ? [
+                `When it fits naturally and truthfully, include these exact ATS keywords from the job posting: ${guaranteedAtsKeywords.join(", ")}.`,
+                "Do not force every keyword into the bullet. Only include keywords that match the original experience.",
+              ]
+            : []),
         ],
         mustPreserveMeaning: true,
 
@@ -2842,32 +3286,66 @@ export default function ResumeMvp() {
         tone: "",
       };
 
-      const { res, payload } = await postRewriteWithFallback(requestBody);
+      async function runRewriteAttempt(extraConstraints: string[] = []) {
+        const requestBody = {
+          ...baseRequestBody,
+          constraints: [...baseRequestBody.constraints, ...extraConstraints],
+        };
 
-      if (isHtmlDoc(payload)) {
-        throw new Error(`Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
-      }
+        const { res, payload } = await postRewriteWithFallback(requestBody);
 
-      if (!res.ok) {
-        const errMsg = typeof payload === "string" ? payload : payload?.error || "Rewrite failed";
-        if (payload?.error === "OUT_OF_CREDITS") {
-          const bal = payload?.balance;
-          throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
+        if (isHtmlDoc(payload)) {
+          throw new Error(`Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
         }
-        throw new Error(errMsg);
+
+        if (!res.ok) {
+          const errMsg = typeof payload === "string" ? payload : payload?.error || "Rewrite failed";
+          if (payload?.error === "OUT_OF_CREDITS") {
+            const bal = payload?.balance;
+            throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
+          }
+          throw new Error(errMsg);
+        }
+
+        if (typeof payload === "string") {
+          throw new Error("Rewrite returned unexpected non-JSON response.");
+        }
+
+        return payload;
       }
 
-      if (typeof payload === "string") {
-        throw new Error("Rewrite returned unexpected non-JSON response.");
-      }
+      let payload = await runRewriteAttempt();
 
-      const rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
-      const needsMoreInfo = !!payload?.needsMoreInfo;
-      const notes = Array.isArray(payload?.notes) ? payload.notes : [];
-      const keywordHits = Array.isArray(payload?.keywordHits) ? payload.keywordHits : [];
-      const blockedKeywords = Array.isArray(payload?.blockedKeywords) ? payload.blockedKeywords : [];
+      let rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
+      let needsMoreInfo = !!payload?.needsMoreInfo;
+      let notes = Array.isArray(payload?.notes) ? payload.notes : [];
+      let keywordHits = Array.isArray(payload?.keywordHits) ? payload.keywordHits : [];
+      let blockedKeywords = Array.isArray(payload?.blockedKeywords) ? payload.blockedKeywords : [];
+
+      if (
+        shouldForceLowScoreRetry({
+          original: originalBullet,
+          rewritten: rewrittenBullet,
+          keywordHits,
+          suggestedKeywords,
+          needsMoreInfo,
+        })
+      ) {
+        payload = await runRewriteAttempt([
+          "This bullet still needs a more noticeable rewrite. Keep it truthful, but strengthen the opener, tighten the structure, and make the improvement obvious.",
+          "Do not return a near-copy of the original. Make a clear wording upgrade while preserving the original facts.",
+        ]);
+
+        rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
+        needsMoreInfo = !!payload?.needsMoreInfo;
+        notes = Array.isArray(payload?.notes) ? payload.notes : [];
+        keywordHits = Array.isArray(payload?.keywordHits) ? payload.keywordHits : [];
+        blockedKeywords = Array.isArray(payload?.blockedKeywords) ? payload.blockedKeywords : [];
+      }
 
       if (!rewrittenBullet) throw new Error("AI returned empty rewrite");
+
+      let appendedPlanIndex: number | null = null;
 
       setAnalysis((prev) => {
         if (!prev) return prev;
@@ -2890,8 +3368,11 @@ export default function ResumeMvp() {
                 jobId: undefined,
               }));
 
-        if (!nextPlan[index]) {
-          nextPlan[index] = {
+        const targetPlanIndex = row.planIndex ?? nextPlan.length;
+        if (row.planIndex === null) appendedPlanIndex = targetPlanIndex;
+
+        if (!nextPlan[targetPlanIndex]) {
+          nextPlan[targetPlanIndex] = {
             originalBullet,
             suggestedKeywords,
             rewrittenBullet: "",
@@ -2900,23 +3381,38 @@ export default function ResumeMvp() {
             keywordHits: [],
             blockedKeywords: [],
             verbStrength: undefined,
-            jobId: undefined,
+            jobId: row.sectionId,
           };
         }
 
-        nextPlan[index] = {
-          ...nextPlan[index],
+        nextPlan[targetPlanIndex] = {
+          ...nextPlan[targetPlanIndex],
+          originalBullet: nextPlan[targetPlanIndex].originalBullet ?? originalBullet,
           suggestedKeywords,
           rewrittenBullet,
           needsMoreInfo,
           notes,
           keywordHits,
           blockedKeywords,
-          verbStrength: payload?.verbStrengthAfter ?? nextPlan[index].verbStrength,
+          jobId: row.sectionId,
+          verbStrength: payload?.verbStrengthAfter ?? nextPlan[targetPlanIndex].verbStrength,
         };
 
         return { ...prev, rewritePlan: nextPlan };
       });
+
+      setEditorBulletsBySection((prev: Record<string, string[]>) => {
+        const next = [...(prev[row.sectionId] || [])];
+        next[row.bulletIndex] = rewrittenBullet;
+        return { ...prev, [row.sectionId]: next };
+      });
+
+      if (appendedPlanIndex !== null) {
+        setAssignments((prev) => ({
+          ...prev,
+          [appendedPlanIndex as number]: { sectionId: row.sectionId },
+        }));
+      }
 
       refreshCredits();
     } catch (e: any) {
@@ -2928,22 +3424,41 @@ export default function ResumeMvp() {
   }
 
   function handleUndoRewrite(index: number) {
+    const row = liveBulletRows[index];
+    if (!row || row.planIndex === null) {
+      setSelectedBulletIdx((prev) => {
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+      return;
+    }
+
     setAnalysis((prev) => {
       if (!prev) return prev;
       const prevPlan = Array.isArray(prev.rewritePlan) ? prev.rewritePlan : [];
       if (!prevPlan.length) return prev;
 
       const nextPlan = [...prevPlan];
-      const cur = nextPlan[index];
+      const planIndex = row.planIndex;
+      const cur = planIndex === null ? undefined : nextPlan[planIndex];
       if (!cur) return prev;
 
-      nextPlan[index] = {
+      if (planIndex === null) return prev;
+
+      nextPlan[planIndex] = {
         ...cur,
         rewrittenBullet: "",
         needsMoreInfo: false,
       };
 
       return { ...prev, rewritePlan: nextPlan };
+    });
+
+    setEditorBulletsBySection((prev: Record<string, string[]>) => {
+      const next = [...(prev[row.sectionId] || [])];
+      next[row.bulletIndex] = row.originalText || next[row.bulletIndex] || "";
+      return { ...prev, [row.sectionId]: next };
     });
 
     setSelectedBulletIdx((prev) => {
@@ -2953,13 +3468,84 @@ export default function ResumeMvp() {
     });
   }
 
+
+  function commitEditorBulletUpdate(sectionId: string, index: number) {
+    const nextText = String(editorBulletsBySection[sectionId]?.[index] ?? "").trim();
+
+    if (!nextText) {
+      setError("Bullet cannot be empty.");
+      return;
+    }
+
+    const row = liveBulletRows.find((r) => r.sectionId === sectionId && r.bulletIndex === index);
+
+    const planIndex = row?.planIndex;
+if (typeof planIndex === "number") {
+  setAnalysis((prev) => {
+    if (!prev) return prev;
+
+    const idx: number = planIndex;
+    const nextPlan = Array.isArray(prev.rewritePlan) ? [...prev.rewritePlan] : [];
+    const nextBullets = Array.isArray(prev.bullets) ? [...prev.bullets] : [];
+
+    if (nextPlan[idx]) {
+      nextPlan[idx] = {
+        ...nextPlan[idx],
+        originalBullet: nextText,
+        rewrittenBullet: "",
+        needsMoreInfo: false,
+        notes: [],
+        keywordHits: [],
+        blockedKeywords: [],
+      };
+    }
+
+    if (nextBullets[idx] !== undefined) {
+      nextBullets[idx] = nextText;
+    }
+
+    return {
+      ...prev,
+      bullets: nextBullets,
+      rewritePlan: nextPlan,
+    };
+  });
+}
+
+    const rebuiltResumeText = sections
+      .map((section) => {
+        const bullets = (editorBulletsBySection[section.id] || [])
+          .map((bullet) => String(bullet ?? "").trim())
+          .filter(Boolean);
+
+        const headerParts = [
+          String(section.company || "").trim(),
+          String(section.title || "").trim(),
+          String(section.dates || "").trim(),
+          String(section.location || "").trim(),
+        ].filter(Boolean);
+
+        const header = headerParts.join(" | ");
+        const bulletLines = bullets.map((bullet) => `- ${bullet}`);
+        return [header, ...bulletLines].filter(Boolean).join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+
+    setResumeText(rebuiltResumeText);
+
+    setSelectedBulletIdx((prev) => {
+      const next = new Set(prev);
+      const liveIndex = liveBulletRows.findIndex((r) => r.sectionId === sectionId && r.bulletIndex === index);
+      if (liveIndex >= 0) next.delete(liveIndex);
+      return next;
+    });
+  }
+
   async function handleRewriteSelected() {
     if (!analysis) return;
 
-    const plan = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
-    const bullets = Array.isArray(analysis.bullets) ? analysis.bullets : [];
-
-    const effectiveLen = plan.length || bullets.length;
+    const effectiveLen = liveBulletRows.length;
     if (!effectiveLen) {
       setError("No bullets available. Run Analyze first.");
       return;
@@ -3008,6 +3594,10 @@ export default function ResumeMvp() {
   );
   const metaMetrics = sanitizeMetaLines(Array.isArray(analysis?.metaBlocks?.metrics) ? analysis!.metaBlocks!.metrics! : []);
 
+  const [editorMetaGames, setEditorMetaGames] = useState<string[]>([]);
+  const [editorMetaMetrics, setEditorMetaMetrics] = useState<string[]>([]);
+  const [shippedLabelMode, setShippedLabelMode] = useState<"Games" | "Apps">("Games");
+
   const guardrailTerms = useMemo(() => {
     const terms: string[] = [];
     if (targetCompany.trim()) terms.push(targetCompany.trim());
@@ -3016,7 +3606,7 @@ export default function ResumeMvp() {
     return terms.filter(Boolean);
   }, [targetCompany, targetProductsCsv, blockedTermsCsv]);
 
-  const selectedCount = selectedBulletIdx.size;
+  const selectedCount = [...selectedBulletIdx].filter((i) => i < effectivePlan.length).length;
 
   const appliedBulletText = useMemo(() => {
     if (!effectivePlan.length) return [];
@@ -3045,40 +3635,279 @@ export default function ResumeMvp() {
     return by;
   }, [appliedBulletText, assignments, sections]);
 
+  const [editorBulletsBySection, setEditorBulletsBySection] = useState<Record<string, string[]>>({});
+
+  
+  const autoParsedExpertise = useMemo(() => {
+    return parseAreasOfExpertise({
+      resumeText,
+      summary: profile.summary,
+      bulletsBySection: editorBulletsBySection,
+      analysisBullets: effectivePlan.map((item) => planItemToText(item)).filter(Boolean),
+      maxItems: 12,
+    });
+  }, [resumeText, profile.summary, editorBulletsBySection, effectivePlan]);
+
+  const [editorExpertiseItems, setEditorExpertiseItems] = useState<string[]>([]);
+
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
+  const editorBulletRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const goToEditorBullet = useCallback((sectionId: string, bulletIndex: number) => {
+    const key = `${sectionId}:${bulletIndex}`;
+    setCollapsedSections((prev) => ({ ...prev, [sectionId]: false }));
+
+    window.setTimeout(() => {
+      const node = editorBulletRefs.current[key];
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        const field = node.querySelector("textarea") as HTMLTextAreaElement | null;
+        field?.focus();
+      }
+    }, 80);
+  }, []);
+
+  useEffect(() => {
+    setEditorBulletsBySection((prev) => {
+      const hasExisting = Object.keys(prev).length > 0;
+      if (hasExisting) return prev;
+
+      const seeded: Record<string, string[]> = {};
+      Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
+        seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
+      });
+      return seeded;
+    });
+  }, [bulletsBySection]);
+
+  useEffect(() => {
+    setEditorMetaGames(metaGames);
+  }, [analysis?.metaBlocks?.gamesShipped]);
+
+  useEffect(() => {
+    setEditorMetaMetrics(metaMetrics);
+  }, [analysis?.metaBlocks?.metrics]);
+
+  useEffect(() => {
+    setCollapsedSections((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const s of sections) {
+        next[s.id] = prev[s.id] ?? true;
+      }
+      return next;
+    });
+  }, [sections]);
+
+  useEffect(() => {
+    setEditorExpertiseItems((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      const cleanedAuto = autoParsedExpertise.map((x) => String(x ?? "").trim()).filter(Boolean);
+
+      if (!cleanedPrev.length) return cleanedAuto;
+      return prev;
+    });
+  }, [autoParsedExpertise]);
+
+  function toggleSectionCollapsed(sectionId: string) {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  }
+
+  function updateEditorBullet(sectionId: string, index: number, value: string) {
+    setEditorBulletsBySection((prev: Record<string, string[]>) => {
+      const next = [...(prev[sectionId] || [])];
+      next[index] = value;
+      return { ...prev, [sectionId]: next };
+    });
+  }
+
+  function addEditorBullet(sectionId: string) {
+    setCollapsedSections((prev) => ({ ...prev, [sectionId]: false }));
+    setEditorBulletsBySection((prev: Record<string, string[]>) => ({
+      ...prev,
+      [sectionId]: [...(prev[sectionId] || []), ""],
+    }));
+  }
+
+  function deleteEditorBullet(sectionId: string, index: number) {
+    setEditorBulletsBySection((prev: Record<string, string[]>) => {
+      const next = [...(prev[sectionId] || [])];
+      next.splice(index, 1);
+      return { ...prev, [sectionId]: next };
+    });
+  }
+
+  function updateExpertiseItem(index: number, value: string) {
+    setEditorExpertiseItems((prev) => prev.map((item, idx) => (idx === index ? value : item)));
+  }
+
+  function addExpertiseItem() {
+    setEditorExpertiseItems((prev) => [...prev, ""]);
+  }
+
+  function deleteExpertiseItem(index: number) {
+    setEditorExpertiseItems((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
+  function moveEditorBullet(sectionId: string, fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    setEditorBulletsBySection((prev: Record<string, string[]>) => {
+      const next = [...(prev[sectionId] || [])];
+      if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= next.length ||
+        toIndex >= next.length
+      ) {
+        return prev;
+      }
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return { ...prev, [sectionId]: next };
+    });
+  }
+
+  type LiveBulletRow = {
+    key: string;
+    sectionId: string;
+    sectionLabel: string;
+    bulletIndex: number;
+    text: string;
+    originalText: string;
+    planIndex: number | null;
+    rewrittenBullet: string;
+    suggestedKeywords: string[];
+    needsMoreInfo: boolean;
+    notes: string[];
+    keywordHits: string[];
+    blockedKeywords: string[];
+  };
+
+  const planBucketsBySection = useMemo(() => {
+    const buckets: Record<string, Array<{ item: RewritePlanItem; planIndex: number }>> = {};
+    const fallback = sections[0]?.id || "default";
+
+    effectivePlan.forEach((item, planIndex) => {
+      const sectionId = assignments[planIndex]?.sectionId || fallback;
+      if (!buckets[sectionId]) buckets[sectionId] = [];
+      buckets[sectionId].push({ item, planIndex });
+    });
+
+    return buckets;
+  }, [effectivePlan, assignments, sections]);
+
+  const liveBulletRows = useMemo<LiveBulletRow[]>(() => {
+    const rows: LiveBulletRow[] = [];
+
+    sections.forEach((section) => {
+      const editedBullets = (editorBulletsBySection[section.id] || []).map((x) => String(x ?? ""));
+      const bucket = planBucketsBySection[section.id] || [];
+      const sectionLabel = `${section.company || "Untitled Company"} — ${section.title || "Untitled Role"}`;
+
+      editedBullets.forEach((text, bulletIndex) => {
+        const matched = bucket[bulletIndex];
+        const matchedItem = matched?.item;
+
+        rows.push({
+          key: `${section.id}:${bulletIndex}`,
+          sectionId: section.id,
+          sectionLabel,
+          bulletIndex,
+          text,
+          originalText: String(matchedItem?.originalBullet ?? text ?? "").trim(),
+          planIndex: typeof matched?.planIndex === "number" ? matched.planIndex : null,
+          rewrittenBullet: String(matchedItem?.rewrittenBullet ?? "").trim(),
+          suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords),
+          needsMoreInfo: !!matchedItem?.needsMoreInfo,
+          notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : [],
+          keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : [],
+          blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : [],
+        });
+      });
+    });
+
+    return rows;
+  }, [sections, editorBulletsBySection, planBucketsBySection]);
+
+  const compiledBulletsBySection = useMemo(() => {
+    const next: Record<string, string[]> = {};
+
+    liveBulletRows.forEach((row, liveIndex) => {
+      const outputText =
+        selectedBulletIdx.has(liveIndex) && row.rewrittenBullet
+          ? String(row.rewrittenBullet ?? "").trim()
+          : String(row.text ?? "").trim();
+
+      if (!next[row.sectionId]) next[row.sectionId] = [];
+      next[row.sectionId].push(outputText);
+    });
+
+    return next;
+  }, [liveBulletRows, selectedBulletIdx]);
+
+  useEffect(() => {
+    setSelectedBulletIdx((prev) => {
+      const filtered = [...prev].filter((i) => i < liveBulletRows.length);
+      return filtered.length === prev.size ? prev : new Set(filtered);
+    });
+  }, [liveBulletRows.length]);
+
   const resumeHtml = useMemo(() => {
-    if (!analysis || !effectivePlan.length) return "";
+    if (!analysis || !liveBulletRows.length) return "";
     return buildResumeHtml({
       template: resumeTemplate,
       profile,
       sections,
-      bulletsBySection,
-      metaGames,
-      metaMetrics,
+      bulletsBySection: compiledBulletsBySection,
+      metaGames: editorMetaGames,
+      metaMetrics: editorMetaMetrics,
+      shippedLabel: shippedLabelMode,
       includeMeta: includeMetaInResumeDoc,
+      showShippedBlock,
+      showMetricsBlock,
+      expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
+      showExpertiseOnResume,
+      profilePhotoDataUrl,
+      showProfilePhoto,
+      profilePhotoShape,
+      profilePhotoSize,
     });
   }, [
     analysis,
-    effectivePlan.length,
+    liveBulletRows.length,
     resumeTemplate,
     profile,
     sections,
-    bulletsBySection,
-    metaGames,
-    metaMetrics,
+    compiledBulletsBySection,
+    editorMetaGames,
+    editorMetaMetrics,
+    shippedLabelMode,
     includeMetaInResumeDoc,
+    showExpertiseOnResume,
+    editorExpertiseItems,
+    profilePhotoDataUrl,
+    showProfilePhoto,
+    profilePhotoShape,
+    profilePhotoSize,
   ]);
 
-  const effectiveResumeHtml = useMemo(() => {
-    return (previewHtmlOverride || resumeHtml || "").trim();
-  }, [previewHtmlOverride, resumeHtml]);
+  const compiledResumeHtml = useMemo(() => {
+    return (resumeHtml || "").trim();
+  }, [resumeHtml]);
 
-  const activeResumeHtml = useMemo(() => {
-    if (showPreviewEditor) return (previewHtmlDraft || effectiveResumeHtml || "").trim();
-    return (previewHtmlOverride || effectiveResumeHtml || "").trim();
-  }, [showPreviewEditor, previewHtmlDraft, previewHtmlOverride, effectiveResumeHtml]);
+  useEffect(() => {
+    setResumeHtmlDraft(compiledResumeHtml);
+  }, [compiledResumeHtml]);
+
+  const liveResumeHtml = useMemo(() => {
+    return (resumeHtmlDraft || compiledResumeHtml || "").trim();
+  }, [resumeHtmlDraft, compiledResumeHtml]);
 
   async function handleCopyOutput() {
-    const html = activeResumeHtml;
+    const html = liveResumeHtml;
     if (!html) return;
 
     const txt = htmlToPlainText(html);
@@ -3095,7 +3924,7 @@ export default function ResumeMvp() {
   }
 
   async function handleDownloadPdf() {
-    const html = activeResumeHtml;
+    const html = liveResumeHtml;
     if (!html) return;
 
     setError(null);
@@ -3132,16 +3961,11 @@ export default function ResumeMvp() {
   }
 
   function handlePrintPdf() {
-    const html = activeResumeHtml;
+    const html = liveResumeHtml;
     if (!html) return;
     openPrintWindow(html);
   }
 
-  function handleViewPreview() {
-    const html = activeResumeHtml;
-    if (!html) return;
-    openPreviewWindow(html);
-  }
 
   const debugInjected = useMemo(() => {
     const hits = effectivePlan
@@ -3306,6 +4130,103 @@ export default function ResumeMvp() {
                 />
               </div>
 
+              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Profile photo (Optional)</div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => {
+                        const img = e.target.files?.[0] ?? null;
+                        void handleProfilePhotoUpload(img);
+                        e.currentTarget.value = "";
+                      }}
+                      className="block w-full text-sm text-black
+                        file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
+                        file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
+                        file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
+                        dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                    />
+
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                      <input
+                        type="checkbox"
+                        checked={showProfilePhoto}
+                        onChange={(e) => setShowProfilePhoto(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Show profile photo on resume
+                    </label>
+
+                    {profilePhotoDataUrl ? (
+                      <button
+                        type="button"
+                        onClick={clearProfilePhoto}
+                        className="w-fit text-sm font-extrabold underline opacity-80 hover:opacity-100"
+                      >
+                        Remove photo
+                      </button>
+                    ) : (
+                      <div className="text-xs text-black/80 dark:text-black/860">
+                        Optional. Best results: square headshot, PNG/JPG/WEBP, under 2MB.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3">
+                    {profilePhotoDataUrl ? (
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={profilePhotoDataUrl}
+                          alt="Profile preview"
+                          className={[
+                            "h-20 w-20 border border-black/10 object-cover",
+                            profilePhotoShape === "circle"
+                              ? "rounded-full"
+                              : profilePhotoShape === "rounded"
+                              ? "rounded-2xl"
+                              : "rounded-none",
+                          ].join(" ")}
+                        />
+                        <div className="text-xs text-black/70 dark:text-black/70">
+                          Preview only. Final size/shape comes from the controls below.
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="grid gap-1">
+                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Shape</span>
+                        <select
+                          value={profilePhotoShape}
+                          onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
+                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                        >
+                          <option value="circle">Circle</option>
+                          <option value="rounded">Rounded</option>
+                          <option value="square">Square</option>
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Size</span>
+                        <select
+                          value={String(profilePhotoSize)}
+                          onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
+                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                        >
+                          <option value="88">Small</option>
+                          <option value="112">Medium</option>
+                          <option value="136">Large</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="mt-3">
                 <textarea
                   value={profile.summary}
@@ -3314,6 +4235,58 @@ export default function ResumeMvp() {
                   placeholder="Summary (optional)"
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                 />
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-extrabold text-black/80 dark:text-black/70">Areas of Expertise (Auto Parsed)</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-black/60 dark:text-black/70">
+                      {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addExpertiseItem}
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {editorExpertiseItems.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {editorExpertiseItems.map((item, i) => (
+                      <div
+                        key={`expertise-${i}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20"
+                      >
+                        <input
+                          value={item}
+                          onChange={(e) => updateExpertiseItem(i, e.target.value)}
+                          className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-black"
+                          placeholder="Expertise"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => deleteExpertiseItem(i)}
+                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                          aria-label={`Delete expertise ${i + 1}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-black/60 dark:text-black/70">
+                    No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
+                  </div>
+                )}
+
+                <div className="mt-2 text-xs text-black/60 dark:text-black/70">
+                  You can edit these bubbles directly. They are auto-parsed from your uploaded resume, pasted resume text, edited bullets, and summary.
+                </div>
               </div>
 
               <label className="mt-3 flex items-center gap-2">
@@ -3331,7 +4304,7 @@ export default function ResumeMvp() {
                   type="button"
                   onClick={handleAnalyze}
                   disabled={!canAnalyze || loadingAnalyze}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
                   {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
                 </button>
@@ -3348,6 +4321,16 @@ export default function ResumeMvp() {
                     className="h-4 w-4"
                   />
                   Include meta blocks
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                  <input
+                    type="checkbox"
+                    checked={showExpertiseOnResume}
+                    onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show Areas of Expertise on resume
                 </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
@@ -3393,124 +4376,189 @@ export default function ResumeMvp() {
         </section>
 
         {/* Preview */}
-        <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold">Preview</h2>
-            <div className="text-xs text-black/60 dark:text-black/70">
-              {effectiveResumeHtml ? "Ready" : "Waiting for analyze/rewrite"}
-            </div>
-          </div>
+        <section>
+          <HtmlDocPreview
+            html={liveResumeHtml}
+            footer={
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyOutput}
+                  disabled={!liveResumeHtml}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Copy
+                </button>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleCopyOutput}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-            >
-              Copy
-            </button>
-
-            <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold dark:border-white/10 dark:bg-black/20">
-              .pdf
-            </div>
-
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-            >
-              Download (5 credits
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrintPdf}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-            >
-              Print
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setPreviewHtmlDraft(activeResumeHtml || "");
-                setShowPreviewEditor(true);
-              }}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-            >
-              Edit Live Preview
-            </button>
-
-            <button
-              type="button"
-              onClick={handleViewPreview}
-              disabled={!effectiveResumeHtml}
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-            >
-              Preview
-            </button>
-          </div>
-
-          <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-transparent dark:border-white/10">
-            <iframe
-              title="resume-preview"
-              className="h-[820px] w-full border-0"
-              sandbox="allow-same-origin"
-              srcDoc={
-                (showPreviewEditor ? previewHtmlDraft : effectiveResumeHtml) ||
-                "<!doctype html><html><head><meta charset='utf-8' /></head><body></body></html>"
-              }
-            />
-          </div>
-
-          {showPreviewEditor ? (
-            <div className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/0 dark:text-black/70">
-                  Edit resume HTML (live preview)
+                <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black dark:border-white/10 dark:bg-black/20 dark:text-black">
+                  .pdf
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewHtmlDraft(effectiveResumeHtml || "")}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-black/50 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                  >
-                    Reset
-                  </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={!liveResumeHtml}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                >
+                  Download PDF (5 credits)
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowPreviewEditor(false)}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                  >
-                    Close
-                  </button>
+                <button
+                  type="button"
+                  onClick={handlePrintPdf}
+                  disabled={!liveResumeHtml}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Print
+                </button>
+              </div>
+            }
+          />
+
+          <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+            <div className="mb-2 text-xs font-extrabold text-black/80 dark:text-black/80">
+              Edit highlight blocks
+            </div>
+            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
+              Update the highlight cards shown in the resume preview. Toggle between Games and Apps for the shipped label.
+            </div>
+
+            <div className="grid gap-3">
+              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Highlight visibility</div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <input
+                      type="checkbox"
+                      checked={showShippedBlock}
+                      onChange={(e) => setShowShippedBlock(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Show {shippedLabelMode} Shipped on resume
+                  </label>
+
+                  <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <input
+                      type="checkbox"
+                      checked={showMetricsBlock}
+                      onChange={(e) => setShowMetricsBlock(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Show Key Metrics on resume
+                  </label>
                 </div>
               </div>
 
-              <textarea
-                value={previewHtmlDraft}
-                onChange={(e) => setPreviewHtmlDraft(e.target.value)}
-                rows={12}
-                spellCheck={false}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 font-mono text-xs outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-              />
+              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Shipped label</div>
+                  <div className="inline-flex rounded-xl border border-black/10 bg-white p-1 dark:border-white/10 dark:bg-black/20">
+                    {(["Games", "Apps"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setShippedLabelMode(mode)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+                          shippedLabelMode === mode
+                            ? "bg-emerald-600 text-black"
+                            : "text-black hover:bg-black/5 dark:text-black"
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-xs text-black/80 dark:text-black/80">
+                  Preview title: {shippedLabelMode} Shipped
+                </div>
+              </div>
 
-              <div className="mt-2 text-xs text-black/90 dark:text-black/90">
-                Tip: While this editor is open, Download/Print/Preview uses the edited HTML.
+              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">{shippedLabelMode} Shipped</div>
+                  <button
+                    type="button"
+                    onClick={() => setEditorMetaGames((prev) => [...prev, ""])}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    + Add item
+                  </button>
+                </div>
+                <div className="grid gap-2">
+                  {editorMetaGames.length ? (
+                    editorMetaGames.map((item, i) => (
+                      <div key={`meta-game-${i}`} className="flex items-start gap-2">
+                        <textarea
+                          value={item}
+                          onChange={(e) =>
+                            setEditorMetaGames((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
+                          }
+                                rows={2}
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditorMetaGames((prev) => prev.filter((_, idx) => idx !== i))}
+                                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-extrabold text-red-700 hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/80 dark:border-white/10 dark:bg-black/10 dark:text-black/80">
+                      No shipped items yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
+                  <button
+                    type="button"
+                    onClick={() => setEditorMetaMetrics((prev) => [...prev, ""])}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    + Add metric
+                  </button>
+                </div>
+                <div className="grid gap-2">
+                  {editorMetaMetrics.length ? (
+                    editorMetaMetrics.map((item, i) => (
+                      <div key={`meta-metric-${i}`} className="flex items-start gap-2">
+                        <textarea
+                          value={item}
+                          onChange={(e) =>
+                            setEditorMetaMetrics((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
+                          }
+                                rows={2}
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditorMetaMetrics((prev) => prev.filter((_, idx) => idx !== i))}
+                                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-extrabold text-red-700 hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/80 dark:border-white/10 dark:bg-black/10 dark:text-black/80">
+                      No key metrics yet.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          ) : null}
-        </section>
-      </div>
+          </div>
+        </section>      </div>
 
       {/* ✅ BULLETS PANEL */}
-      {analysis && effectivePlan.length ? (
+      {analysis && liveBulletRows.length ? (
         <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
@@ -3518,7 +4566,7 @@ export default function ResumeMvp() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => selectAll(effectivePlan.length)}
+                onClick={() => selectAll(liveBulletRows.length)}
                 className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
               >
                 Select all
@@ -3539,7 +4587,7 @@ export default function ResumeMvp() {
                 className={`px-4 py-2 rounded-xl font-semibold transition-all ${
                   selectedCount === 0
                     ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
-                    : "bg-black text-white hover:bg-gray-800 active:scale-95 shadow-md"
+                    : "bg-emerald-300 text-black hover:bg-gray-800 active:scale-95 shadow-md"
                 }`}
               >
                 {loadingBatchRewrite
@@ -3547,18 +4595,37 @@ export default function ResumeMvp() {
                   : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
               </button>
 
+              <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <input
+                  type="checkbox"
+                  checked={showRewriteScorecard}
+                  onChange={(e) => setShowRewriteScorecard(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Show scorecard
+              </label>
+
               <div className="text-xs text-black/90 dark:text-black/90">
-                Selecting a bullet applies its rewrite (if available) to the compiled resume.
+                Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
               </div>
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
-            {effectivePlan.map((item, i) => {
-              const original = planItemToText(item);
-              const rewritten = String(item?.rewrittenBullet ?? "").trim();
-              const assigned = assignments[i]?.sectionId || sections[0]?.id || "default";
+            {liveBulletRows.map((row, i) => {
+              const original = row.originalText || row.text;
+              const rewritten = row.rewrittenBullet;
+              const assigned = row.sectionId;
               const selected = selectedBulletIdx.has(i);
+              const scorecard = rewritten
+                ? buildRewriteScorecard({
+                    original,
+                    rewritten,
+                    keywordHits: row.keywordHits,
+                    suggestedKeywords: row.suggestedKeywords,
+                    needsMoreInfo: row.needsMoreInfo,
+                  })
+                : null;
 
               return (
                 <div
@@ -3580,13 +4647,15 @@ export default function ResumeMvp() {
                     <div className="flex flex-wrap items-center gap-2">
                       <select
                         value={assigned}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          if (row.planIndex === null) return;
                           setAssignments((prev) => ({
                             ...prev,
-                            [i]: { sectionId: e.target.value },
-                          }))
-                        }
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/30 dark:text-black"
+                            [row.planIndex as number]: { sectionId: e.target.value },
+                          }));
+                        }}
+                        disabled={row.planIndex === null}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
                       >
                         {sections.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -3604,6 +4673,14 @@ export default function ResumeMvp() {
                           Undo Rewrite
                         </button>
                       ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => goToEditorBullet(row.sectionId, row.bulletIndex)}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      >
+                        Go To Bullet
+                      </button>
 
                       <button
                         type="button"
@@ -3625,13 +4702,155 @@ export default function ResumeMvp() {
                         <div className="mt-2 text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
                           Rewritten {selected ? "(APPLIED)" : "(not applied)"}
                         </div>
-                        <div className="whitespace-pre-wrap text-sm">{rewritten}</div>
+
+                        {showRewriteScorecard && scorecard ? (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-400/20 dark:bg-emerald-400/10">
+                            <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                              AI Improvement Scorecard
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                              <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
+                                <div className="font-extrabold text-black/90 dark:text-black/90">Score</div>
+                                <div className="mt-1 text-sm font-black text-emerald-700 dark:text-emerald-300">
+                                  {scorecard.total}/100
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
+                                <div className="font-extrabold text-black/90 dark:text-black/90">Confidence</div>
+                                <div className="mt-1 text-sm font-black text-black/90 dark:text-black/90">
+                                  {scorecard.confidence}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="text-xs font-extrabold text-black/80 dark:text-black/80">
+                          What changed
+                        </div>
+                        <RewriteDiff original={original} rewritten={rewritten} />
                       </>
                     ) : null}
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+              Edit resume bullets (live preview)
+            </div>
+            <div className="mb-3 text-xs text-black/60 dark:text-black/90">
+              Drag bullets to reorder them, edit text inline, or add and remove bullets per section.
+            </div>
+
+            <div className="grid gap-3">
+              {sections.map((s) => {
+                const sectionBullets = editorBulletsBySection[s.id] || [];
+                const isCollapsed = collapsedSections[s.id] ?? true;
+
+                return (
+                  <div key={s.id} className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                    <div className="flex w-full items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleSectionCollapsed(s.id)}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-lg font-black text-black dark:text-black">
+                        {s.title || "Untitled Role"} — {s.company || "Untitled Company"} {s.dates ? `| ${s.dates}` : ""}
+                      </div>
+                      <div className="text-sm text-black/60 dark:text-black/70">
+                        {(editorBulletsBySection[s.id] || []).length} bullets
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-sm font-extrabold text-black/90 dark:text-black/90">
+                      {collapsedSections[s.id] ? "Expand" : "Collapse"}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditorBulletsBySection((prev: Record<string, string[]>) => ({
+                        ...prev,
+                        [s.id]: [...(prev[s.id] || []), ""],
+                      }));
+                      setCollapsedSections((prev) => ({ ...prev, [s.id]: false }));
+                    }}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    + Add bullet
+                  </button>
+                </div>
+
+                    {!isCollapsed ? (
+                      <div className="mt-3 grid gap-3">
+                        {sectionBullets.length ? (
+                          sectionBullets.map((b, i) => (
+                            <div
+                              key={`${s.id}-${i}`}
+                              ref={(node) => {
+                                editorBulletRefs.current[`${s.id}:${i}`] = node;
+                              }}
+                              draggable
+                              onDragStart={() => setDragState({ sectionId: s.id, index: i })}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={() => {
+                                if (!dragState || dragState.sectionId !== s.id) return;
+                                moveEditorBullet(s.id, dragState.index, i);
+                                setDragState(null);
+                              }}
+                              onDragEnd={() => setDragState(null)}
+                              className="rounded-xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/20"
+                            >
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                                  <span className="cursor-grab select-none">⋮⋮</span>
+                                  <span>Bullet {i + 1}</span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => commitEditorBulletUpdate(s.id, i)}
+                                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-800 hover:bg-emerald-100"
+                                  >
+                                    Update
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteEditorBullet(s.id, i)}
+                                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-extrabold text-red-700 hover:bg-red-100"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+
+                              <textarea
+                                value={b}
+                                onChange={(e) => updateEditorBullet(s.id, i, e.target.value)}
+                                rows={3}
+                                className="w-full rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                              />
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                            No bullets in this section yet.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       ) : null}
