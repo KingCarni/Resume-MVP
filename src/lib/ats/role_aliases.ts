@@ -1,0 +1,270 @@
+// Role aliases and normalization helpers
+
+export const ROLE_ALIASES = {
+  "canonicalRoles": {
+    "qa_tester": [
+      "qa tester",
+      "game tester",
+      "quality assurance tester",
+      "game qa tester",
+      "video game tester",
+      "gameplay tester",
+      "manual tester",
+      "functional tester",
+      "qa analyst",
+      "game qa analyst",
+      "compliance tester",
+      "certification tester"
+    ],
+    "qa_lead": [
+      "qa lead",
+      "lead qa",
+      "qa team lead",
+      "test lead",
+      "lead tester",
+      "quality assurance lead",
+      "qa supervisor",
+      "embedded qa lead",
+      "project qa lead",
+      "game qa lead"
+    ],
+    "qa_engineer": [
+      "qa engineer",
+      "quality engineer",
+      "software qa engineer",
+      "test engineer",
+      "sdet",
+      "software development engineer in test",
+      "test automation engineer",
+      "qa automation engineer",
+      "automation engineer",
+      "game qa engineer"
+    ],
+    "game_developer": [
+      "game developer",
+      "game programmer",
+      "game engineer",
+      "gameplay programmer",
+      "gameplay engineer",
+      "systems programmer",
+      "engine programmer",
+      "ai programmer",
+      "tools programmer",
+      "ui programmer"
+    ],
+    "software_engineer_game": [
+      "software engineer",
+      "backend engineer",
+      "services engineer",
+      "online systems engineer",
+      "game backend engineer",
+      "platform engineer",
+      "full stack engineer",
+      "server engineer",
+      "release engineer",
+      "sre",
+      "site reliability engineer"
+    ],
+    "producer": [
+      "producer",
+      "game producer",
+      "technical producer",
+      "development producer",
+      "associate producer",
+      "production manager",
+      "project manager",
+      "program manager",
+      "release producer",
+      "live producer"
+    ],
+    "product_owner": [
+      "product owner",
+      "product manager",
+      "game product manager",
+      "live product manager",
+      "feature owner",
+      "monetization product manager",
+      "growth product manager",
+      "technical product manager",
+      "product lead"
+    ],
+    "game_artist": [
+      "game artist",
+      "2d artist",
+      "3d artist",
+      "concept artist",
+      "character artist",
+      "environment artist",
+      "ui artist",
+      "vfx artist",
+      "technical artist",
+      "visual designer"
+    ],
+    "data_scientist_game": [
+      "data scientist",
+      "game data scientist",
+      "product data scientist",
+      "analytics scientist",
+      "decision scientist",
+      "ml scientist",
+      "machine learning scientist",
+      "player insights scientist",
+      "applied scientist"
+    ],
+    "data_engineer_game": [
+      "data engineer",
+      "game data engineer",
+      "analytics engineer",
+      "etl engineer",
+      "elt engineer",
+      "data platform engineer",
+      "streaming data engineer",
+      "warehouse engineer",
+      "cloud data engineer"
+    ]
+  },
+  "roleFamilies": {
+    "quality": [
+      "qa",
+      "quality assurance",
+      "testing",
+      "test automation",
+      "certification",
+      "compliance qa"
+    ],
+    "engineering": [
+      "engineering",
+      "gameplay",
+      "backend",
+      "services",
+      "platform",
+      "tools",
+      "online systems"
+    ],
+    "production": [
+      "production",
+      "producer",
+      "project management",
+      "program management",
+      "delivery"
+    ],
+    "product": [
+      "product",
+      "product management",
+      "feature ownership",
+      "roadmap",
+      "backlog"
+    ],
+    "art": [
+      "art",
+      "visual design",
+      "concept",
+      "3d",
+      "ui art",
+      "technical art",
+      "vfx"
+    ],
+    "data": [
+      "data",
+      "analytics",
+      "machine learning",
+      "experimentation",
+      "etl",
+      "data platform"
+    ]
+  },
+  "seniorityAliases": {
+    "entry": [
+      "intern",
+      "associate",
+      "junior",
+      "entry level",
+      "co-op",
+      "apprentice"
+    ],
+    "mid": [
+      "ii",
+      "intermediate",
+      "mid-level",
+      "mid level"
+    ],
+    "senior": [
+      "senior",
+      "sr",
+      "iii",
+      "staff"
+    ],
+    "lead": [
+      "lead",
+      "principal",
+      "owner"
+    ],
+    "manager": [
+      "manager",
+      "head",
+      "director",
+      "senior manager",
+      "group manager"
+    ]
+  },
+  "normalization": {
+    "qa": "quality assurance",
+    "uat": "user acceptance testing",
+    "f2p": "free-to-play",
+    "lqa": "localization quality assurance",
+    "e2e": "end-to-end",
+    "rca": "root cause analysis",
+    "sre": "site reliability engineer",
+    "pbr": "physically based rendering",
+    "trc": "technical requirements checklist",
+    "tcr": "technical certification requirements",
+    "xr": "xbox requirements",
+    "ml": "machine learning",
+    "etl": "extract transform load",
+    "elt": "extract load transform",
+    "ci/cd": "continuous integration continuous delivery",
+    "ltv": "lifetime value",
+    "arpu": "average revenue per user",
+    "arppu": "average revenue per paying user",
+    "arpdau": "average revenue per daily active user",
+    "dau": "daily active users",
+    "mau": "monthly active users",
+    "wau": "weekly active users",
+    "sdk": "software development kit",
+    "api": "application programming interface",
+    "kpi": "key performance indicator",
+    "okr": "objectives and key results",
+    "prd": "product requirements document"
+  },
+  "engineAliases": {
+    "unreal engine": [
+      "ue",
+      "ue4",
+      "ue5",
+      "unreal"
+    ],
+    "unity": [
+      "unity3d",
+      "u3d"
+    ],
+    "playstation": [
+      "ps",
+      "ps4",
+      "ps5"
+    ],
+    "xbox": [
+      "xb1",
+      "xsx",
+      "xss",
+      "xbox one",
+      "xbox series x",
+      "xbox series s"
+    ],
+    "nintendo switch": [
+      "switch",
+      "nsw"
+    ]
+  }
+} as const;
+
+export default ROLE_ALIASES;

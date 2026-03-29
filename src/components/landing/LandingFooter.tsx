@@ -4,23 +4,38 @@ import Link from "next/link";
 export default function LandingFooter() {
   return (
     <footer className="rounded-3xl border border-white/30 bg-white/25 p-6 shadow-sm backdrop-blur-xl">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-white text-black/90">
-          © {new Date().getFullYear()} Git-a-Job
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-sm font-black text-black/90">
+            © {new Date().getFullYear()} Git-a-Job
+          </div>
+          <div className="mt-1 text-xs font-semibold text-black/85">
+            Built to help tech &amp; gaming applicants write clearer, stronger applications.
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2 text-sm font-extrabold">
           <Link
             href="/feedback"
-            className="rounded-xl bg-blue-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:bg-blue-700 hover:scale-[1.02] hover:shadow-lg"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-blue-700 hover:shadow-lg"
           >
             Feedback
           </Link>
-        </div>
-      </div>
 
-      <div className="mt-3 text-xs font-semibold text-black/90">
-        Built to help tech &amp; gaming applicants write clearer, stronger applications.
+          <Link
+            href="/resume"
+            className="rounded-xl bg-black px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
+          >
+            Resume Tool
+          </Link>
+
+          <Link
+            href="/cover-letter"
+            className="rounded-xl bg-black px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
+          >
+            Cover Letter
+          </Link>
+        </div>
       </div>
     </footer>
   );

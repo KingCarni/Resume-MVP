@@ -17,6 +17,15 @@ type VerbStrength = {
   rewriteBonusApplied?: number;
 };
 
+type TruthRisk = {
+  score: number;
+  level: "safe" | "review" | "risky";
+  reasons: string[];
+  addedTerms: string[];
+  riskyPhrases: string[];
+  unsupportedClaims: string[];
+};
+
 type RewritePlanItem = {
   originalBullet?: any;
   suggestedKeywords?: any;
@@ -26,6 +35,7 @@ type RewritePlanItem = {
   notes?: string[];
   keywordHits?: string[];
   blockedKeywords?: string[];
+  truthRisk?: TruthRisk;
 
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
@@ -121,6 +131,62 @@ type ExperienceJobFromApi = {
   rawHeader?: string;
 };
 
+type AnalyzeAtsPayload = {
+  detectedResumeRole?: {
+    roleKey?: string | null;
+    roleName?: string | null;
+    secondaryRoleKey?: string | null;
+    secondaryRoleName?: string | null;
+    confidence?: "low" | "medium" | "high";
+    topRoles?: Array<{
+      roleKey: string;
+      roleName: string;
+      score: number;
+      matchedTerms: number;
+      categoryCoverage: Record<string, number>;
+    }>;
+  };
+  detectedJobRole?: {
+    roleKey?: string | null;
+    roleName?: string | null;
+    secondaryRoleKey?: string | null;
+    secondaryRoleName?: string | null;
+    confidence?: "low" | "medium" | "high";
+    topRoles?: Array<{
+      roleKey: string;
+      roleName: string;
+      score: number;
+      matchedTerms: number;
+      categoryCoverage: Record<string, number>;
+    }>;
+  };
+  targetRole?: {
+    roleKey?: string | null;
+    roleName?: string | null;
+  };
+  overallScore?: number;
+  categoryScores?: Record<string, number>;
+  matchedTerms?: string[];
+  matchedTermsDetailed?: Array<{
+    category: string;
+    term: string;
+    count: number;
+    score: number;
+  }>;
+  missingCriticalTerms?: string[];
+  missingImportantTerms?: string[];
+  missingNiceToHaveTerms?: string[];
+  matchedByCategory?: Record<string, string[]>;
+  missingByCategory?: Record<string, string[]>;
+  notes?: string[];
+  roleShift?: {
+    fromRoleKey?: string | null;
+    fromRoleName?: string | null;
+    toRoleKey?: string | null;
+    toRoleName?: string | null;
+  } | null;
+};
+
 type AnalyzeResponse = {
   ok: boolean;
   error?: string;
@@ -129,11 +195,13 @@ type AnalyzeResponse = {
   bullets?: any[];
   rewritePlan?: RewritePlanItem[];
   debug?: any;
+  ats?: AnalyzeAtsPayload;
 
   metaBlocks?: {
     gamesShipped?: string[];
     metrics?: string[];
   };
+
 
   experienceJobs?: ExperienceJobFromApi[];
   bulletJobIds?: string[];
@@ -385,8 +453,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
-          : "border-black/10 bg-black/10 text-black/80 dark:border-white/10 dark:bg-white/10 dark:text-black/90",
+          ? "border-black/10 bg-black/5 text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
+          : "border-black/10 bg-black/10 text-black/90 dark:border-white/10 dark:bg-white/10 dark:text-black/90",
       ].join(" ")}
     >
       {text}
@@ -419,17 +487,44 @@ function Callout({
 }
 
 
+
+function openHtmlPreviewInNewWindow(title: string, html: string) {
+  const docHtml =
+    html && String(html).trim()
+      ? String(html)
+      : "<!doctype html><html><head><title>Preview</title></head><body></body></html>";
+
+  const blob = new Blob([docHtml], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const win = window.open(url, "_blank");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    throw new Error("Preview popup was blocked by the browser.");
+  }
+
+  try {
+    win.focus();
+  } catch {}
+
+  window.setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 60000);
+}
+
 function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
+      <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
         <iframe
           title="resume-preview"
-          className="h-[820px] w-full border-0"
+          className="block h-[1180px] w-full min-w-0 border-0"
           sandbox="allow-same-origin"
           srcDoc={html || "<!doctype html><html><body></body></html>"}
         />
@@ -2185,7 +2280,7 @@ function buildResumeHtml(args: {
       <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Areas of Expertise</div>
       <div class="box">
         <div class="small">${expertiseItems
-          .slice(0, 12)
+          .slice(0, 24)
           .map((x) => `• ${safe(String(x))}`)
           .join(" ")}</div>
       </div>
@@ -2617,6 +2712,884 @@ function shouldForceLowScoreRetry(args: {
   return score.total < 80;
 }
 
+
+type AtsScoreResult = {
+  overall: number;
+  label: "Weak" | "Fair" | "Good" | "Strong";
+  keywordCoverage: number;
+  matchedKeywords: string[];
+  missingKeywords: string[];
+  metricsCount: number;
+  strongVerbCount: number;
+  bulletQualityAverage: number;
+  sectionCompleteness: number;
+  roleFocus: string[];
+  signature: string;
+  notes: string[];
+};
+
+function normalizeAtsText(s: string) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[’']/g, "")
+    .replace(/[^\w+.#/\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanupAtsKeyword(term: string) {
+  return normalizeAtsText(term)
+    .replace(/\b(and|or|with|for|the|a|an)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegex(s: string) {
+  return String(s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasWholeWord(text: string, term: string) {
+  const cleaned = cleanupAtsKeyword(term);
+  if (!cleaned) return false;
+  const pattern = `(^|\\s)${escapeRegex(cleaned)}(?=$|\\s)`;
+  return new RegExp(pattern, "i").test(text);
+}
+
+function countMetricSignals(text: string) {
+  const source = String(text ?? "");
+  const numberHits = source.match(/\b(?:\d+(?:\.\d+)?%?|\$\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?x)\b/g) || [];
+  return numberHits.length;
+}
+
+
+function uniqueTerms(values: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const clean = String(value ?? "").trim();
+    const key = cleanupAtsKeyword(clean);
+    if (!clean || !key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function combineBackendPrimaryMissingTerms(ats?: AnalyzeAtsPayload) {
+  return uniqueTerms([
+    ...(ats?.missingCriticalTerms ?? []),
+    ...(ats?.missingImportantTerms ?? []),
+  ]);
+}
+
+
+function combineBackendMissingTerms(ats?: AnalyzeAtsPayload) {
+  return uniqueTerms([
+    ...combineBackendPrimaryMissingTerms(ats),
+    ...(ats?.missingNiceToHaveTerms ?? []),
+  ]);
+}
+
+function capMissingTitleNoise(ats: AnalyzeAtsPayload | undefined, terms: string[], maxTitleTerms = 1) {
+  const titleTerms = new Set(
+    uniqueTerms(ats?.missingByCategory?.titles ?? []).map((term) => cleanupAtsKeyword(term))
+  );
+
+  let titleCount = 0;
+  const out: string[] = [];
+
+  for (const term of terms) {
+    const key = cleanupAtsKeyword(term);
+    const isTitle = titleTerms.has(key);
+    if (isTitle) {
+      if (titleCount >= maxTitleTerms) continue;
+      titleCount += 1;
+    }
+    out.push(term);
+  }
+
+  return out;
+}
+
+
+type AtsMissingCategoryKey = "titles" | "core" | "tools" | "methods" | "domain" | "outcomes";
+type AtsRoleFamily =
+  | "qa"
+  | "game_production"
+  | "event_production"
+  | "engineering"
+  | "art"
+  | "product"
+  | "data"
+  | "general";
+
+const ATS_EVIDENCE_STOPWORDS = new Set([
+  "and",
+  "or",
+  "the",
+  "a",
+  "an",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "with",
+  "by",
+  "from",
+  "at",
+  "into",
+  "across",
+  "through",
+  "plus",
+]);
+
+const ATS_ROLE_FAMILY_PATTERNS: Record<AtsRoleFamily, RegExp[]> = {
+  qa: [
+    /\bqa\b/i,
+    /\bquality assurance\b/i,
+    /\btest(?:ing| plans?| strategy| rail)?\b/i,
+    /\btestrail\b/i,
+    /\bbug\b/i,
+    /\bdefect\b/i,
+    /\btrc\b/i,
+    /\btcr\b/i,
+    /\bcertification\b/i,
+    /\bconsole certification\b/i,
+  ],
+  game_production: [
+    /\bproduction director\b/i,
+    /\bexecutive producer\b/i,
+    /\bsenior producer\b/i,
+    /\bproducer\b/i,
+    /\bproduction leadership\b/i,
+    /\bgame development\b/i,
+    /\bdevelopment lifecycle\b/i,
+    /\bconcept through launch\b/i,
+    /\blive support\b/i,
+    /\bexternal development\b/i,
+    /\bpartner management\b/i,
+    /\bstakeholder management\b/i,
+    /\bproduction culture\b/i,
+    /\bbest[- ]in[- ]class production\b/i,
+    /\bcreative leadership\b/i,
+    /\bcreative vision\b/i,
+    /\bplayer-first\b/i,
+    /\bfranchise\b/i,
+    /\baaa\b/i,
+    /\barpg\b/i,
+    /\brpg\b/i,
+    /\btradeoffs?\b/i,
+    /\brisk management\b/i,
+    /\bprogram management\b/i,
+    /\bschedule management\b/i,
+    /\bmilestones?\b/i,
+    /\bbacklog management\b/i,
+    /\bdependency management\b/i,
+    /\bissue tracking\b/i,
+    /\bescalation management\b/i,
+    /\bgantt\b/i,
+  ],
+  event_production: [
+    /\blive entertainment\b/i,
+    /\blive event\b/i,
+    /\bevent production\b/i,
+    /\bvenue\b/i,
+    /\bpermitting\b/i,
+    /\bcad drawings?\b/i,
+    /\blighting\b/i,
+    /\bsound\b/i,
+    /\bstage\b/i,
+    /\bvideo\b/i,
+    /\bproduction budgets?\b/i,
+    /\bv(?:endor|endors)\b/i,
+    /\bvendor\b/i,
+    /\bmsa contracts?\b/i,
+    /\bp&l\b/i,
+    /\binvoice management\b/i,
+    /\bsite visits?\b/i,
+  ],
+  engineering: [
+    /\bengineer(?:ing)?\b/i,
+    /\bdeveloper\b/i,
+    /\bsoftware\b/i,
+    /\bprogramming\b/i,
+    /\bsystem design\b/i,
+    /\barchitecture\b/i,
+    /\bapi\b/i,
+    /\bbackend\b/i,
+    /\bfrontend\b/i,
+    /\bc\+\+\b/i,
+    /\bc#\b/i,
+    /\bunity\b/i,
+    /\bunreal\b/i,
+    /\baws\b/i,
+    /\bdocker\b/i,
+    /\bkubernetes\b/i,
+    /\bsql\b/i,
+  ],
+  art: [
+    /\bart\b/i,
+    /\bartist\b/i,
+    /\bconcept art\b/i,
+    /\b3d\b/i,
+    /\b2d\b/i,
+    /\bmodeling\b/i,
+    /\banimation\b/i,
+    /\brigging\b/i,
+    /\bzbrush\b/i,
+    /\bmaya\b/i,
+    /\bblender\b/i,
+    /\bphotoshop\b/i,
+    /\billustration\b/i,
+  ],
+  product: [
+    /\bproduct\b/i,
+    /\bproduct owner\b/i,
+    /\bproduct manager\b/i,
+    /\broadmap\b/i,
+    /\broadmapping\b/i,
+    /\bprioritization\b/i,
+    /\bexperimentation\b/i,
+    /\ba\/b testing\b/i,
+    /\bfeature adoption\b/i,
+    /\brequirements\b/i,
+    /\bacceptance criteria\b/i,
+  ],
+  data: [
+    /\bdata\b/i,
+    /\banalytics\b/i,
+    /\bmachine learning\b/i,
+    /\bml\b/i,
+    /\btelemetry\b/i,
+    /\bsnowflake\b/i,
+    /\bbigquery\b/i,
+    /\bairflow\b/i,
+    /\bdbt\b/i,
+    /\bpython\b/i,
+    /\bpandas\b/i,
+    /\bforecast(?:ing)?\b/i,
+  ],
+  general: [],
+};
+
+const ATS_FAMILY_TERM_PATTERNS: Array<{ family: AtsRoleFamily; pattern: RegExp }> = [
+  { family: "qa", pattern: /\b(qa|quality assurance|game qa lead|qa lead|test plans?|test planning|test strategy|qa strategy|risk-based testing|testrail|trc|tcr|console certification|live ops qa|bug triage|defect tracking|regression testing|smoke testing)\b/i },
+  { family: "event_production", pattern: /\b(live entertainment|event production|venue|permitting|cad drawings?|lighting|sound|stage|video|production budget|vendor|msa contracts?|invoice management|p&l|site visits?)\b/i },
+  { family: "game_production", pattern: /\b(production director|executive producer|producer|game production|production leadership|production culture|program management|schedule management|milestones?|backlog management|dependency management|risk management|issue tracking|escalation management|external development|co-development|outsourcing|vertical slice|aaa development|aa development|franchise|live support|partner management|stakeholder management|tradeoffs?|gantt)\b/i },
+  { family: "engineering", pattern: /\b(engineer(?:ing)?|developer|software|system design|architecture|api|backend|frontend|c\+\+|c#|unity|unreal engine|aws|docker|kubernetes|sql|nintendo switch)\b/i },
+  { family: "art", pattern: /\b(art|artist|concept art|3d|2d|modeling|animation|rigging|maya|blender|zbrush|photoshop|illustration)\b/i },
+  { family: "product", pattern: /\b(product|product owner|product manager|roadmap|roadmapping|prioritization|experimentation|a\/b testing|requirements|acceptance criteria)\b/i },
+  { family: "data", pattern: /\b(data|analytics|machine learning|telemetry|snowflake|bigquery|airflow|dbt|forecast(?:ing)?)\b/i },
+];
+
+function stemAtsToken(token: string) {
+  const t = cleanupAtsKeyword(token);
+  if (!t) return "";
+  if (t.endsWith("ies") && t.length > 4) return `${t.slice(0, -3)}y`;
+  if (t.endsWith("ing") && t.length > 5) return t.slice(0, -3);
+  if (t.endsWith("ed") && t.length > 4) return t.slice(0, -2);
+  if (t.endsWith("es") && t.length > 4) return t.slice(0, -2);
+  if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
+  return t;
+}
+
+function tokenizeAtsEvidence(value: string) {
+  return cleanupAtsKeyword(value)
+    .split(/\s+/)
+    .map((token) => stemAtsToken(token))
+    .filter((token) => token && token.length >= 3 && !ATS_EVIDENCE_STOPWORDS.has(token));
+}
+
+function buildAtsTermVariants(term: string) {
+  const base = cleanupAtsKeyword(term);
+  if (!base) return [];
+
+  const variants = new Set<string>([
+    base,
+    base.replace(/-/g, " "),
+    base.replace(/\//g, " "),
+    base.replace(/\s+/g, "-"),
+    base.replace(/\s+/g, ""),
+  ]);
+
+  const tokens = base.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) {
+    variants.add(tokens.join(" "));
+    variants.add(tokens.join("-"));
+  }
+
+  if (base.endsWith("s")) {
+    variants.add(base.slice(0, -1));
+  } else {
+    variants.add(`${base}s`);
+  }
+
+  if (base.endsWith("ies")) {
+    variants.add(`${base.slice(0, -3)}y`);
+  } else if (base.endsWith("y")) {
+    variants.add(`${base.slice(0, -1)}ies`);
+  }
+
+  return Array.from(variants).filter(Boolean);
+}
+
+function getAtsMissingTermsByCategory(ats: AnalyzeAtsPayload | undefined, category: AtsMissingCategoryKey) {
+  return uniqueTerms(ats?.missingByCategory?.[category] ?? []);
+}
+
+function buildJobEvidenceIndex(jobText: string) {
+  const normalized = normalizeAtsText(jobText);
+  const tokens = tokenizeAtsEvidence(normalized);
+  const tokenSet = new Set(tokens);
+  return {
+    normalized,
+    tokenSet,
+  };
+}
+
+function detectJobRoleFamily(args: {
+  targetPosition?: string;
+  ats?: AnalyzeAtsPayload;
+  jobText?: string;
+}) : AtsRoleFamily {
+  const explicitTitle = String(args.targetPosition ?? "").trim();
+  const title = explicitTitle
+    ? explicitTitle
+    : [
+        String(args.ats?.detectedJobRole?.roleName ?? "").trim(),
+        String(args.ats?.targetRole?.roleName ?? "").trim(),
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+  const body = String(args.jobText ?? "");
+  const combined = `${title}
+${body}`;
+
+  const titleFirst: Array<{ family: AtsRoleFamily; pattern: RegExp }> = [
+    { family: "qa", pattern: /(qa|quality assurance|test lead|qa lead|qa manager|quality lead)/i },
+    { family: "game_production", pattern: /(production director|director of production|executive producer|senior producer|production lead|producer)/i },
+    { family: "event_production", pattern: /(event producer|live event producer|event production|venue production)/i },
+    { family: "engineering", pattern: /(engineer|developer|programmer|sdet|technical director)/i },
+    { family: "art", pattern: /(artist|art director|technical artist|animator)/i },
+    { family: "product", pattern: /(product owner|product manager|director of product)/i },
+    { family: "data", pattern: /(data scientist|data engineer|analytics engineer|machine learning)/i },
+  ];
+
+  if (explicitTitle) {
+    if (/(production director|director of production|executive producer|senior producer|production lead)/i.test(explicitTitle)) {
+      if (/(live entertainment|event production|venue|permitting|cad drawings?|lighting|sound|stage|video|p&l|msa contracts?)/i.test(combined)) {
+        return "event_production";
+      }
+      return "game_production";
+    }
+
+    for (const entry of titleFirst) {
+      if (entry.pattern.test(explicitTitle)) return entry.family;
+    }
+  }
+
+  const scored: Array<{ family: AtsRoleFamily; score: number }> = (Object.keys(ATS_ROLE_FAMILY_PATTERNS) as AtsRoleFamily[])
+    .filter((family) => family !== "general")
+    .map((family) => {
+      const score = ATS_ROLE_FAMILY_PATTERNS[family].reduce((sum, pattern) => sum + (pattern.test(combined) ? 1 : 0), 0);
+      return { family, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  if (scored[0]?.score) return scored[0].family;
+  return "general";
+}
+
+function classifyAtsTermFamily(term: string): AtsRoleFamily | "mixed" | "general" {
+  const families = ATS_FAMILY_TERM_PATTERNS
+    .filter((entry) => entry.pattern.test(term))
+    .map((entry) => entry.family);
+
+  const uniqueFamilies = Array.from(new Set(families));
+  if (!uniqueFamilies.length) return "general";
+  if (uniqueFamilies.length > 1) return "mixed";
+  return uniqueFamilies[0];
+}
+
+function familyAllowsFallback(family: AtsRoleFamily, category: AtsMissingCategoryKey) {
+  if (family === "general") return category === "core" || category === "methods" || category === "outcomes";
+  if (family === "qa") return category !== "domain";
+  if (family === "engineering") return category !== "titles";
+  if (family === "game_production" || family === "event_production") return category !== "tools";
+  return category === "core" || category === "methods" || category === "outcomes";
+}
+
+function familyMatchWeight(args: {
+  dominantFamily: AtsRoleFamily;
+  term: string;
+  category: AtsMissingCategoryKey;
+  evidence: ReturnType<typeof evaluateJobTermEvidence>;
+}) {
+  const termFamily = classifyAtsTermFamily(args.term);
+  if (args.dominantFamily === "general") return 0;
+  if (termFamily === "general" || termFamily === "mixed") return 0;
+  if (termFamily === args.dominantFamily) return 28;
+  if (args.evidence.exactVariant || args.evidence.strong) return -6;
+  if (!familyAllowsFallback(args.dominantFamily, args.category)) return -90;
+  if (args.evidence.moderate) return -28;
+  return -120;
+}
+
+function evaluateJobTermEvidence(
+  jobText: string,
+  term: string,
+  category: AtsMissingCategoryKey,
+  dominantFamily: AtsRoleFamily = "general"
+) {
+  const normalizedJob = normalizeAtsText(jobText);
+  const jobIndex = buildJobEvidenceIndex(jobText);
+  const variants = buildAtsTermVariants(term);
+  const termTokens = tokenizeAtsEvidence(term);
+
+  const exactVariant = variants.some((variant) => {
+    if (!variant) return false;
+    return hasWholeWord(normalizedJob, variant) || normalizedJob.includes(` ${variant} `);
+  });
+
+  const tokenHits = termTokens.filter((token) => jobIndex.tokenSet.has(token)).length;
+  const tokenRatio = termTokens.length ? tokenHits / termTokens.length : 0;
+
+  const multiWord = termTokens.length >= 2;
+  const singleWord = termTokens.length <= 1;
+
+  const categoryStrictness: Record<AtsMissingCategoryKey, { strong: number; moderate: number }> = {
+    titles: { strong: 1, moderate: 1 },
+    core: { strong: 0.67, moderate: 0.5 },
+    tools: { strong: 1, moderate: 0.75 },
+    methods: { strong: 0.67, moderate: 0.5 },
+    domain: { strong: 1, moderate: 0.67 },
+    outcomes: { strong: 0.67, moderate: 0.5 },
+  };
+
+  const thresholds = categoryStrictness[category];
+
+  const strong =
+    exactVariant ||
+    (multiWord && tokenRatio >= thresholds.strong) ||
+    (!singleWord && tokenHits >= 2 && tokenRatio >= thresholds.moderate);
+
+  const moderate =
+    strong ||
+    (multiWord && tokenRatio >= thresholds.moderate) ||
+    (singleWord && tokenHits >= 1 && (category === "core" || category === "methods" || category === "outcomes"));
+
+  const fallbackEligible = familyAllowsFallback(dominantFamily, category);
+
+  const familyWeight = familyMatchWeight({
+    dominantFamily,
+    term,
+    category,
+    evidence: {
+      exactVariant,
+      strong,
+      moderate,
+      fallbackEligible,
+      tokenHits,
+      tokenRatio,
+      score: 0,
+      familyWeight: 0,
+      blockedByFamily: false,
+    },
+  });
+
+  const blockedByFamily = familyWeight <= -100 && !exactVariant && !strong;
+
+  const score =
+    (exactVariant ? 140 : 0) +
+    tokenHits * 20 +
+    Math.round(tokenRatio * 30) +
+    (strong ? 25 : 0) +
+    (moderate ? 10 : 0) +
+    (fallbackEligible ? 4 : 0) +
+    familyWeight;
+
+  return {
+    exactVariant,
+    strong,
+    moderate,
+    fallbackEligible,
+    tokenHits,
+    tokenRatio,
+    score,
+    familyWeight,
+    blockedByFamily,
+  };
+}
+
+function rankTermsByJobPosting(
+  jobText: string,
+  terms: string[],
+  category: AtsMissingCategoryKey,
+  dominantFamily: AtsRoleFamily
+) {
+  return uniqueTerms(terms)
+    .map((term, index) => {
+      const evidence = evaluateJobTermEvidence(jobText, term, category, dominantFamily);
+      return {
+        term,
+        index,
+        evidence,
+      };
+    })
+    .filter((entry) => !entry.evidence.blockedByFamily)
+    .sort((a, b) => b.evidence.score - a.evidence.score || a.index - b.index)
+    .map((entry) => entry.term);
+}
+
+function buildCategoryAwareMissingTerms(args: {
+  ats?: AnalyzeAtsPayload;
+  jobText?: string;
+  targetPosition?: string;
+}) {
+  const ats = args.ats;
+  const jobText = String(args.jobText ?? "").trim();
+  const targetPosition = String(args.targetPosition ?? "").trim();
+  const dominantFamily = detectJobRoleFamily({
+    targetPosition,
+    ats,
+    jobText,
+  });
+
+  const criticalSet = new Set(uniqueTerms(ats?.missingCriticalTerms ?? []).map((term) => cleanupAtsKeyword(term)));
+  const importantSet = new Set(uniqueTerms(ats?.missingImportantTerms ?? []).map((term) => cleanupAtsKeyword(term)));
+
+  const quotaOrder: Array<{ category: AtsMissingCategoryKey; quota: number }> = [
+    { category: "core", quota: 4 },
+    { category: "methods", quota: 4 },
+    { category: "outcomes", quota: 2 },
+    { category: "tools", quota: dominantFamily === "engineering" ? 4 : dominantFamily === "qa" ? 4 : 2 },
+    { category: "domain", quota: dominantFamily === "qa" ? 3 : dominantFamily === "game_production" ? 2 : dominantFamily === "event_production" ? 2 : 1 },
+    { category: "titles", quota: 1 },
+  ];
+
+  const buckets = quotaOrder.map(({ category, quota }) => {
+    const baseTerms = getAtsMissingTermsByCategory(ats, category).filter((term) => {
+      const key = cleanupAtsKeyword(term);
+      return criticalSet.has(key) || importantSet.has(key);
+    });
+
+    const ranked = jobText ? rankTermsByJobPosting(jobText, baseTerms, category, dominantFamily) : baseTerms;
+
+    const exact = jobText ? ranked.filter((term) => evaluateJobTermEvidence(jobText, term, category, dominantFamily).exactVariant) : [];
+    const strong = jobText
+      ? ranked.filter((term) => {
+          const ev = evaluateJobTermEvidence(jobText, term, category, dominantFamily);
+          return !ev.exactVariant && ev.strong;
+        })
+      : [];
+    const moderate = jobText
+      ? ranked.filter((term) => {
+          const ev = evaluateJobTermEvidence(jobText, term, category, dominantFamily);
+          return !ev.exactVariant && !ev.strong && ev.moderate;
+        })
+      : [];
+
+    const fallback = ranked.filter((term) => {
+      const ev = jobText ? evaluateJobTermEvidence(jobText, term, category, dominantFamily) : null;
+      if (!jobText) return true;
+      if (!ev) return false;
+      if (ev.blockedByFamily) return false;
+
+      const isToolOrDomain = category === "tools" || category === "domain";
+      if (isToolOrDomain) {
+        return ev.exactVariant || ev.strong || (ev.moderate && ev.tokenHits >= 1);
+      }
+
+      if (!targetPosition) return false;
+
+      if (category === "core" || category === "methods" || category === "outcomes") {
+        return ev.fallbackEligible && ev.familyWeight >= 0;
+      }
+
+      return false;
+    });
+
+    return { category, quota, exact, strong, moderate, fallback };
+  });
+
+  const selected: string[] = [];
+  const seen = new Set<string>();
+
+  const pushTerm = (term: string) => {
+    const key = cleanupAtsKeyword(term);
+    if (!term || !key || seen.has(key)) return;
+    seen.add(key);
+    selected.push(term);
+  };
+
+  for (const bucket of buckets) {
+    for (const term of bucket.exact.slice(0, bucket.quota)) pushTerm(term);
+  }
+
+  for (const bucket of buckets) {
+    if ((bucket.exact.length || 0) >= bucket.quota) continue;
+    const needed = bucket.quota - bucket.exact.length;
+    for (const term of bucket.strong.slice(0, needed)) pushTerm(term);
+  }
+
+  for (const bucket of buckets) {
+    const already = selected.filter((term) => {
+      const key = cleanupAtsKeyword(term);
+      return getAtsMissingTermsByCategory(ats, bucket.category).some((candidate) => cleanupAtsKeyword(candidate) === key);
+    }).length;
+    if (already >= bucket.quota) continue;
+    const needed = bucket.quota - already;
+    for (const term of bucket.moderate.slice(0, needed)) pushTerm(term);
+  }
+
+  const selectedCountBeforeFallback = selected.length;
+  if (selectedCountBeforeFallback < 8) {
+    for (const bucket of buckets) {
+      const already = selected.filter((term) => {
+        const key = cleanupAtsKeyword(term);
+        return getAtsMissingTermsByCategory(ats, bucket.category).some((candidate) => cleanupAtsKeyword(candidate) === key);
+      }).length;
+      if (already >= bucket.quota) continue;
+      const needed = bucket.quota - already;
+      for (const term of bucket.fallback.slice(0, needed)) pushTerm(term);
+    }
+  }
+
+  const backendPrimary = uniqueTerms([
+    ...(ats?.missingCriticalTerms ?? []),
+    ...(ats?.missingImportantTerms ?? []),
+  ]);
+
+  const finalSelected = capMissingTitleNoise(ats, selected, 1).slice(0, 16);
+  if (finalSelected.length > 0) return finalSelected;
+
+  return capMissingTitleNoise(ats, backendPrimary, 1).slice(0, 16);
+}
+
+
+function buildDisplayedAtsKeywords(args: {
+  ats?: AnalyzeAtsPayload;
+  jobText?: string;
+  targetPosition?: string;
+  expertiseItems?: string[];
+  ignoredMissingKeywords?: string[];
+}) {
+  const ats = args.ats;
+  const jobText = String(args.jobText ?? "").trim();
+  const targetPosition = String(args.targetPosition ?? "").trim();
+  const dominantFamily = detectJobRoleFamily({
+    targetPosition,
+    ats,
+    jobText,
+  });
+
+  const expertiseSet = new Set(
+    uniqueTerms(args.expertiseItems ?? []).map((term) => cleanupAtsKeyword(term))
+  );
+  const ignoredSet = new Set(
+    uniqueTerms(args.ignoredMissingKeywords ?? []).map((term) => cleanupAtsKeyword(term))
+  );
+
+  const baseMatchedAll = uniqueTerms(ats?.matchedTerms ?? []);
+  const primaryMissingAll = combineBackendPrimaryMissingTerms(ats);
+
+  const jobAnchoredMatched = jobText
+    ? uniqueTerms(
+        baseMatchedAll
+          .map((term) => {
+            const category: AtsMissingCategoryKey =
+              getAtsMissingTermsByCategory(ats, "tools").some((candidate) => cleanupAtsKeyword(candidate) === cleanupAtsKeyword(term))
+                ? "tools"
+                : getAtsMissingTermsByCategory(ats, "domain").some((candidate) => cleanupAtsKeyword(candidate) === cleanupAtsKeyword(term))
+                  ? "domain"
+                  : getAtsMissingTermsByCategory(ats, "methods").some((candidate) => cleanupAtsKeyword(candidate) === cleanupAtsKeyword(term))
+                    ? "methods"
+                    : "core";
+
+            return {
+              term,
+              evidence: evaluateJobTermEvidence(jobText, term, category, dominantFamily),
+            };
+          })
+          .filter((entry) => !entry.evidence.blockedByFamily)
+          .filter((entry) => {
+            if (entry.evidence.exactVariant || entry.evidence.strong) return true;
+            return entry.evidence.moderate && entry.evidence.tokenHits >= 1;
+          })
+          .sort((a, b) => b.evidence.score - a.evidence.score)
+          .map((entry) => entry.term)
+      )
+    : baseMatchedAll.slice(0, 16);
+
+  const primaryMissing = buildCategoryAwareMissingTerms({
+    ats,
+    jobText,
+    targetPosition,
+  });
+
+  const jdExplicitToolDomainBoost = jobText
+    ? uniqueTerms([
+        ...getAtsMissingTermsByCategory(ats, "tools")
+          .filter((term) => {
+            const ev = evaluateJobTermEvidence(jobText, term, "tools", dominantFamily);
+            return !ev.blockedByFamily && (ev.exactVariant || ev.strong || (ev.moderate && ev.tokenHits >= 1));
+          })
+          .slice(0, 4),
+        ...getAtsMissingTermsByCategory(ats, "domain")
+          .filter((term) => {
+            const ev = evaluateJobTermEvidence(jobText, term, "domain", dominantFamily);
+            return !ev.blockedByFamily && (ev.exactVariant || ev.strong || (ev.moderate && ev.tokenHits >= 1));
+          })
+          .slice(0, 3),
+      ])
+    : [];
+
+  const expertiseSatisfied = primaryMissingAll.filter((term) => expertiseSet.has(cleanupAtsKeyword(term)));
+
+  const matchedKeywords = uniqueTerms([
+    ...jobAnchoredMatched,
+    ...expertiseSatisfied.filter((term) => !jobText || !evaluateJobTermEvidence(jobText, term, "core", dominantFamily).blockedByFamily),
+    ...baseMatchedAll.filter((term) => expertiseSet.has(cleanupAtsKeyword(term))),
+  ]).slice(0, 16);
+
+  const missingKeywords = uniqueTerms([
+    ...jdExplicitToolDomainBoost,
+    ...primaryMissing,
+  ]).filter((term) => {
+    const key = cleanupAtsKeyword(term);
+    return !ignoredSet.has(key) && !expertiseSet.has(key);
+  }).slice(0, 16);
+
+  const backendMatchedFallback = baseMatchedAll
+    .filter((term) => !expertiseSet.has(cleanupAtsKeyword(term)) || true)
+    .slice(0, 16);
+
+  const backendMissingFallback = primaryMissingAll.filter((term) => {
+    const key = cleanupAtsKeyword(term);
+    return !ignoredSet.has(key) && !expertiseSet.has(key);
+  }).slice(0, 16);
+
+  return {
+    matchedKeywords: matchedKeywords.length ? matchedKeywords : backendMatchedFallback,
+    missingKeywords: missingKeywords.length ? missingKeywords : backendMissingFallback,
+  };
+}
+
+function computeDisplayedKeywordCoverage(matchedKeywords: string[], missingKeywords: string[]) {
+  const total = matchedKeywords.length + missingKeywords.length;
+  if (!total) return 0;
+  return matchedKeywords.length / total;
+}
+
+function atsRoleDisplayLabel(ats?: AnalyzeAtsPayload, fallbackTargetPosition = "") {
+  const explicit = String(fallbackTargetPosition ?? "").trim();
+  if (explicit) return explicit;
+
+  const jobRole = String(ats?.detectedJobRole?.roleName ?? "").trim();
+  if (jobRole) return jobRole;
+
+  const targetRole = String(ats?.targetRole?.roleName ?? "").trim();
+  if (targetRole) return targetRole;
+
+  const resumeRole = String(ats?.detectedResumeRole?.roleName ?? "").trim();
+  if (resumeRole) return resumeRole;
+
+  return "General";
+}
+
+function computeOverallAtsScore(args: {
+  analysis: AnalyzeResponse | null;
+  jobText?: string;
+  targetPosition?: string;
+  bulletQualityAverage: number;
+  metricsCount: number;
+  strongVerbCount: number;
+  sectionCompleteness: number;
+  expertiseItems?: string[];
+  ignoredMissingKeywords?: string[];
+}) : AtsScoreResult {
+  const ats = args.analysis?.ats;
+  const { matchedKeywords, missingKeywords } = buildDisplayedAtsKeywords({
+    ats,
+    jobText: args.jobText,
+    targetPosition: args.targetPosition,
+    expertiseItems: args.expertiseItems,
+    ignoredMissingKeywords: args.ignoredMissingKeywords,
+  });
+  const keywordCoverage = computeDisplayedKeywordCoverage(matchedKeywords, missingKeywords);
+  const backendOverall = Number(ats?.overallScore ?? 0);
+
+  const bulletQualityScore = Math.max(0, Math.min(100, args.bulletQualityAverage)) / 100;
+  const metricsScore = Math.min(1, args.metricsCount / 8);
+  const strongVerbScore = Math.min(1, args.strongVerbCount / 6);
+
+  const overall = Number.isFinite(backendOverall) && backendOverall > 0
+    ? Math.max(0, Math.min(100, Math.round(backendOverall)))
+    : Math.max(
+        20,
+        Math.min(
+          99,
+          Math.round(
+            keywordCoverage * 55 +
+              bulletQualityScore * 30 +
+              metricsScore * 8 +
+              Math.max(0, Math.min(1, args.sectionCompleteness)) * 5 +
+              strongVerbScore * 2
+          )
+        )
+      );
+
+  const label: AtsScoreResult["label"] =
+    overall >= 85 ? "Strong" : overall >= 70 ? "Good" : overall >= 55 ? "Fair" : "Weak";
+
+  const roleFocusLabel = atsRoleDisplayLabel(ats, args.targetPosition ?? "");
+
+  const signature = JSON.stringify({
+    overall,
+    matchedKeywords,
+    missingKeywords,
+    metricsCount: args.metricsCount,
+    strongVerbCount: args.strongVerbCount,
+    bulletQualityAverage: args.bulletQualityAverage,
+    sectionCompleteness: args.sectionCompleteness,
+    roleFocusLabel,
+    expertiseItems: uniqueTerms(args.expertiseItems ?? []),
+    ignoredMissingKeywords: uniqueTerms(args.ignoredMissingKeywords ?? []),
+    jobText: normalizeAtsText(args.jobText ?? ""),
+    ats,
+  });
+
+  return {
+    overall,
+    label,
+    keywordCoverage,
+    matchedKeywords,
+    missingKeywords,
+    metricsCount: args.metricsCount,
+    strongVerbCount: args.strongVerbCount,
+    bulletQualityAverage: Math.max(0, Math.min(100, Math.round(args.bulletQualityAverage))),
+    sectionCompleteness: Math.max(0, Math.min(1, args.sectionCompleteness)),
+    roleFocus: [roleFocusLabel],
+    signature,
+    notes: uniqueTerms(ats?.notes ?? []),
+  };
+}
+
+
+function formatAtsUpdatedAt(ts: number | null) {
+
+  if (!ts) return "";
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return "";
+  }
+}
+
+
 function RewriteDiff({
   original,
   rewritten,
@@ -2743,6 +3716,7 @@ export default function ResumeMvp() {
 
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
+  const [targetPosition, setTargetPosition] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resumeBlobUrl, setResumeBlobUrl] = useState<string>("");
@@ -2794,22 +3768,54 @@ export default function ResumeMvp() {
   const [profilePhotoShape, setProfilePhotoShape] = useState<"circle" | "rounded" | "square">("circle");
   const [profilePhotoSize, setProfilePhotoSize] = useState(112);
   const [resumeHtmlDraft, setResumeHtmlDraft] = useState("");
+  const [confirmedAtsScore, setConfirmedAtsScore] = useState<AtsScoreResult | null>(null);
+  const [atsScoreUpdatedAt, setAtsScoreUpdatedAt] = useState<number | null>(null);
+  const [atsScoreInitialized, setAtsScoreInitialized] = useState(false);
+  const [ignoredMissingKeywords, setIgnoredMissingKeywords] = useState<string[]>([]);
+  const [showAtsKeywords, setShowAtsKeywords] = useState(false);
+  const [showExpertiseEditor, setShowExpertiseEditor] = useState(false);
+  const [rewriteSessions, setRewriteSessions] = useState<
+    Record<string, { sessionId: string; attemptNumber: number; maxAttempts: number }>
+  >({});
+
+
+  function createRewriteSessionId() {
+    try {
+      if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        return crypto.randomUUID();
+      }
+    } catch {}
+    return `rw_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function getRewriteSessionKey(row: { sectionId: string; bulletIndex: number }) {
+    return `${row.sectionId}:${row.bulletIndex}`;
+  }
 
   const canAnalyze = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
     const hasJob = jobText.trim().length > 0;
-    return hasResume && hasJob;
-  }, [file, resumeText, jobText]);
+    const hasTargetPosition = targetPosition.trim().length > 0;
+    return hasResume && hasJob && hasTargetPosition;
+  }, [file, resumeText, jobText, targetPosition]);
 
   const resetDerivedState = useCallback(() => {
     setAnalysis(null);
     setSelectedBulletIdx(new Set());
     setAssignments({});
+    setRewriteSessions({});
+    setConfirmedAtsScore(null);
+    setAtsScoreUpdatedAt(null);
+    setAtsScoreInitialized(false);
+    setIgnoredMissingKeywords([]);
     setError(null);
     setLoadingRewriteIndex(null);
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
     setResumeBlobUrl("");
+    setConfirmedAtsScore(null);
+    setAtsScoreUpdatedAt(null);
+    setAtsScoreInitialized(false);
   }, []);
 
   const ensureResumeUploadedToBlob = useCallback(
@@ -2917,6 +3923,11 @@ export default function ResumeMvp() {
   }
 
   async function handleAnalyze() {
+    if (!targetPosition.trim()) {
+      setError("Target position is required for ATS analysis.");
+      return;
+    }
+
     setLoadingAnalyze(true);
     setError(null);
     setAnalysis(null);
@@ -2939,6 +3950,7 @@ export default function ResumeMvp() {
           body: JSON.stringify({
             resumeBlobUrl: url,
             jobText,
+            targetPosition,
             onlyExperienceBullets,
             resumeText: resumeTextForApi || "",
           }),
@@ -2950,6 +3962,7 @@ export default function ResumeMvp() {
           body: JSON.stringify({
             resumeText: resumeTextForApi || resumePlain,
             jobText,
+            targetPosition,
             onlyExperienceBullets,
           }),
         });
@@ -3030,7 +4043,12 @@ export default function ResumeMvp() {
   }
 
   async function postRewriteWithFallback(body: any) {
-    const safeBody = buildRewriteBulletPayload(body);
+    const safeBody = {
+      ...buildRewriteBulletPayload(body),
+      rewriteSessionId: body?.rewriteSessionId,
+      attemptNumber: body?.attemptNumber,
+      maxAttempts: body?.maxAttempts,
+    };
 
     const json = JSON.stringify(safeBody);
     const bytes = new TextEncoder().encode(json).length;
@@ -3067,11 +4085,25 @@ export default function ResumeMvp() {
     return { res, payload };
   }
 
-  async function handleRewriteBullet(index: number) {
+  async function handleRewriteBullet(index: number, options?: { safer?: boolean }) {
     if (!analysis) return;
 
-    const row = liveBulletRows[index];
+    const rowsSnapshot = liveBulletRowsRef.current.length ? liveBulletRowsRef.current : liveBulletRows;
+    const row = rowsSnapshot[index];
     if (!row) return;
+
+    const sessionKey = getRewriteSessionKey(row);
+    const existingSession = rewriteSessions[sessionKey];
+    const activeSession = existingSession ?? {
+      sessionId: createRewriteSessionId(),
+      attemptNumber: 0,
+      maxAttempts: 5,
+    };
+
+    if (activeSession.attemptNumber >= activeSession.maxAttempts) {
+      setError(`Rewrite attempt limit reached for this bullet (${activeSession.maxAttempts}). Edit the bullet to start a new rewrite session.`);
+      return;
+    }
 
     const originalBullet = String(row.originalText ?? row.text ?? "").trim();
     const suggestedKeywordsRaw = row.suggestedKeywords;
@@ -3106,6 +4138,7 @@ export default function ResumeMvp() {
                 notes: [],
                 keywordHits: [],
                 blockedKeywords: [],
+                truthRisk: undefined,
                 verbStrength: undefined,
                 jobId: undefined,
               }));
@@ -3131,6 +4164,14 @@ export default function ResumeMvp() {
           notes: ["Training/education bullet detected; rewrite kept faithful (no invented duties)."],
           keywordHits: [],
           blockedKeywords: [],
+          truthRisk: {
+            score: 0,
+            level: "safe",
+            reasons: ["Training bullet rewrite kept close to the original claim."],
+            addedTerms: [],
+            riskyPhrases: [],
+            unsupportedClaims: [],
+          },
           suggestedKeywords,
         };
 
@@ -3221,7 +4262,21 @@ export default function ResumeMvp() {
         return phrases;
       };
 
-      const otherTexts: string[] = liveBulletRows
+      const buildTailPhrasesFromText = (text: string) => {
+        const tokens = norm(text)
+          .replace(/[^a-z0-9\s-]/g, " ")
+          .split(/\s+/)
+          .filter(Boolean);
+
+        const tails: string[] = [];
+        if (tokens.length >= 2) tails.push(`${tokens[tokens.length - 2]} ${tokens[tokens.length - 1]}`);
+        if (tokens.length >= 3) tails.push(`${tokens[tokens.length - 3]} ${tokens[tokens.length - 2]} ${tokens[tokens.length - 1]}`);
+        if (tokens.length >= 4) tails.push(`${tokens[tokens.length - 4]} ${tokens[tokens.length - 3]} ${tokens[tokens.length - 2]} ${tokens[tokens.length - 1]}`);
+
+        return tails;
+      };
+
+      const otherTexts: string[] = rowsSnapshot
         .filter((_, rowIndex) => rowIndex !== index)
         .map((liveRow) => {
           const rewritten = String(liveRow.rewrittenBullet ?? "").trim();
@@ -3244,16 +4299,102 @@ export default function ResumeMvp() {
         .slice(0, 30)
         .map(([phrase]) => phrase);
 
-      const guaranteedAtsKeywords = pickGuaranteedAtsKeywordsForBullet({
-        originalBullet,
-        suggestedKeywords,
-        jobText: jobTextCapped,
-        maxGuaranteed: 2,
-      });
+      const tailCounts = new Map<string, number>();
+      for (const t of otherTexts) {
+        for (const tail of buildTailPhrasesFromText(t)) {
+          tailCounts.set(tail, (tailCounts.get(tail) ?? 0) + 1);
+        }
+      }
+
+      const usedTailPhrases = Array.from(tailCounts.entries())
+        .filter(([, count]) => count >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([tail]) => tail);
+
+      const backendMatchedTerms = uniqueTerms(analysis?.ats?.matchedTerms ?? []);
+      const backendMissingTerms = combineBackendMissingTerms(analysis?.ats);
+      const roleKeywordPool = uniqueTerms([
+        ...backendMatchedTerms,
+        ...backendMissingTerms,
+      ]).map((term, index) => ({
+        term: cleanupAtsKeyword(term),
+        weight: Math.max(1, 10 - Math.min(index, 8)),
+      }));
+      const normalizedOriginalBullet = normalizeAtsText(originalBullet);
+      const atsSnapshot = liveAtsScoreRef.current ?? liveAtsScore;
+      const prioritizedMissingKeywords = atsSnapshot.missingKeywords
+        .filter((term) => !ignoredMissingKeywords.some((ignored) => cleanupAtsKeyword(ignored) === cleanupAtsKeyword(term)))
+        .filter((term) => !hasWholeWord(normalizedOriginalBullet, term))
+        .sort((a, b) => {
+          const aWeight = roleKeywordPool.find((entry) => entry.term === cleanupAtsKeyword(a))?.weight ?? 0;
+          const bWeight = roleKeywordPool.find((entry) => entry.term === cleanupAtsKeyword(b))?.weight ?? 0;
+          return bWeight - aWeight || a.localeCompare(b);
+        })
+        .slice(0, 4);
+
+      const reinforcingMatchedKeywords = atsSnapshot.matchedKeywords
+        .filter((term) => hasWholeWord(normalizedOriginalBullet, term))
+        .slice(0, 3);
+
+      const guaranteedAtsKeywords = Array.from(new Set([
+        ...pickGuaranteedAtsKeywordsForBullet({
+          originalBullet,
+          suggestedKeywords,
+          jobText: jobTextCapped,
+          maxGuaranteed: 2,
+        }),
+        ...prioritizedMissingKeywords,
+        ...reinforcingMatchedKeywords,
+      ])).slice(0, 5);
+
+      const enrichedSuggestedKeywords = Array.from(new Set([
+        ...suggestedKeywords,
+        ...prioritizedMissingKeywords,
+        ...reinforcingMatchedKeywords,
+      ])).slice(0, 10);
+
+      const resumeSkills = editorExpertiseItems
+        .map((x) => String(x ?? "").trim())
+        .filter(Boolean)
+        .slice(0, 24);
+
+      const currentSection = sections.find((s) => s.id === row.sectionId);
+
+      const sectionBullets = (editorBulletsBySection[row.sectionId] || [])
+        .map((x) => String(x ?? "").trim())
+        .filter(Boolean);
+
+      const sectionSkillCandidates = [
+        currentSection?.title || "",
+        currentSection?.company || "",
+        ...(sectionBullets.slice(0, 12)),
+        ...reinforcingMatchedKeywords,
+      ];
+
+      const sectionSkills = Array.from(
+        new Set(
+          sectionSkillCandidates
+            .map((x) => String(x ?? "").trim())
+            .filter(Boolean)
+        )
+      ).slice(0, 24);
+
+      const allowedTerms = Array.from(
+        new Set(
+          [
+            ...reinforcingMatchedKeywords,
+            ...guaranteedAtsKeywords.filter((term) => hasWholeWord(normalizedOriginalBullet, term)),
+            ...suggestedKeywords.filter((term) => hasWholeWord(normalizedOriginalBullet, term)),
+          ]
+            .map((x) => String(x ?? "").trim())
+            .filter(Boolean)
+        )
+      ).slice(0, 24);
 
       const baseRequestBody = {
         originalBullet,
-        suggestedKeywords,
+        suggestedKeywords: enrichedSuggestedKeywords,
         jobText: jobTextCapped,
 
         constraints: [
@@ -3264,9 +4405,13 @@ export default function ResumeMvp() {
           "Do not start with the same opener verb used in other bullets; avoid repeating lead verbs.",
           ...(guaranteedAtsKeywords.length
             ? [
-                `When it fits naturally and truthfully, include these exact ATS keywords from the job posting: ${guaranteedAtsKeywords.join(", ")}.`,
+                `When it fits naturally and truthfully, include these ATS keywords where appropriate: ${guaranteedAtsKeywords.join(", ")}.`,
+                "Prioritize missing ATS keywords first, then reinforce one already-matched keyword only when it improves clarity.",
                 "Do not force every keyword into the bullet. Only include keywords that match the original experience.",
               ]
+            : []),
+          ...(targetPosition.trim()
+            ? [`Write this as if it is being optimized for the target position: ${targetPosition.trim()}.`]
             : []),
         ],
         mustPreserveMeaning: true,
@@ -3276,20 +4421,49 @@ export default function ResumeMvp() {
 
         usedOpeners,
         usedPhrases,
+        usedTailPhrases,
 
         sourceCompany: sourceCompany.trim(),
         targetCompany: targetCompany.trim(),
         targetProducts,
         blockedTerms,
 
-        role: "",
+        role: targetPosition.trim() || (analysis?.ats?.targetRole?.roleName ?? analysis?.ats?.detectedJobRole?.roleName ?? analysis?.ats?.detectedResumeRole?.roleName ?? "General"),
+        targetPosition: targetPosition.trim(),
+        priorityMissingKeywords: prioritizedMissingKeywords,
+        matchedKeywords: reinforcingMatchedKeywords,
+        ignoredMissingKeywords,
         tone: "",
+
+        resumeSkills,
+        sectionSkills,
+        allowedTerms,
+        rewriteSessionId: activeSession.sessionId,
+        attemptNumber: activeSession.attemptNumber + 1,
+        maxAttempts: activeSession.maxAttempts,
       };
 
-      async function runRewriteAttempt(extraConstraints: string[] = []) {
+      async function runRewriteAttempt(extraConstraints: string[] = [], requestAttemptNumber?: number) {
+        const nextAttemptNumber =
+          typeof requestAttemptNumber === "number"
+            ? requestAttemptNumber
+            : activeSession.attemptNumber + 1;
+
         const requestBody = {
           ...baseRequestBody,
-          constraints: [...baseRequestBody.constraints, ...extraConstraints],
+          attemptNumber: nextAttemptNumber,
+          constraints: [
+            ...baseRequestBody.constraints,
+            ...(options?.safer
+              ? [
+                  "Safer rewrite mode: prefer conservative wording over impressive wording.",
+                  "Do not increase ownership, leadership, scale, or business impact beyond what the original bullet explicitly supports.",
+                  "Do not add revenue, engagement, retention, conversion, or growth claims unless they are explicitly stated in the original bullet.",
+                  "If uncertain, choose the less aggressive phrasing.",
+                ]
+              : []),
+            ...extraConstraints,
+          ],
         };
 
         const { res, payload } = await postRewriteWithFallback(requestBody);
@@ -3299,8 +4473,20 @@ export default function ResumeMvp() {
         }
 
         if (!res.ok) {
+          if (typeof payload !== "string" && payload?.error === "ATTEMPT_LIMIT_REACHED") {
+            setRewriteSessions((prev) => ({
+              ...prev,
+              [sessionKey]: {
+                sessionId: activeSession.sessionId,
+                attemptNumber: Number(payload?.maxAttempts ?? activeSession.maxAttempts),
+                maxAttempts: Number(payload?.maxAttempts ?? activeSession.maxAttempts),
+              },
+            }));
+            throw new Error(`Rewrite attempt limit reached for this bullet (${payload?.maxAttempts ?? activeSession.maxAttempts}). Edit the bullet to start a new rewrite session.`);
+          }
+
           const errMsg = typeof payload === "string" ? payload : payload?.error || "Rewrite failed";
-          if (payload?.error === "OUT_OF_CREDITS") {
+          if (typeof payload !== "string" && payload?.error === "OUT_OF_CREDITS") {
             const bal = payload?.balance;
             throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
           }
@@ -3310,6 +4496,19 @@ export default function ResumeMvp() {
         if (typeof payload === "string") {
           throw new Error("Rewrite returned unexpected non-JSON response.");
         }
+
+        const returnedSessionId = String(payload?.rewriteSessionId ?? activeSession.sessionId);
+        const returnedAttemptNumber = Number(payload?.attemptNumber ?? nextAttemptNumber);
+        const returnedMaxAttempts = Number(payload?.maxAttempts ?? activeSession.maxAttempts);
+
+        setRewriteSessions((prev) => ({
+          ...prev,
+          [sessionKey]: {
+            sessionId: returnedSessionId,
+            attemptNumber: returnedAttemptNumber,
+            maxAttempts: returnedMaxAttempts,
+          },
+        }));
 
         return payload;
       }
@@ -3321,6 +4520,16 @@ export default function ResumeMvp() {
       let notes = Array.isArray(payload?.notes) ? payload.notes : [];
       let keywordHits = Array.isArray(payload?.keywordHits) ? payload.keywordHits : [];
       let blockedKeywords = Array.isArray(payload?.blockedKeywords) ? payload.blockedKeywords : [];
+      let truthRisk: TruthRisk | null = payload?.truthRisk
+        ? {
+            score: Number(payload.truthRisk.score ?? 0),
+            level: payload.truthRisk.level === "risky" ? "risky" : payload.truthRisk.level === "review" ? "review" : "safe",
+            reasons: Array.isArray(payload.truthRisk.reasons) ? payload.truthRisk.reasons : [],
+            addedTerms: Array.isArray(payload.truthRisk.addedTerms) ? payload.truthRisk.addedTerms : [],
+            riskyPhrases: Array.isArray(payload.truthRisk.riskyPhrases) ? payload.truthRisk.riskyPhrases : [],
+            unsupportedClaims: Array.isArray(payload.truthRisk.unsupportedClaims) ? payload.truthRisk.unsupportedClaims : [],
+          }
+        : null;
 
       if (
         shouldForceLowScoreRetry({
@@ -3331,16 +4540,29 @@ export default function ResumeMvp() {
           needsMoreInfo,
         })
       ) {
-        payload = await runRewriteAttempt([
-          "This bullet still needs a more noticeable rewrite. Keep it truthful, but strengthen the opener, tighten the structure, and make the improvement obvious.",
-          "Do not return a near-copy of the original. Make a clear wording upgrade while preserving the original facts.",
-        ]);
+        payload = await runRewriteAttempt(
+          [
+            "This bullet still needs a more noticeable rewrite. Keep it truthful, but strengthen the opener, tighten the structure, and make the improvement obvious.",
+            "Do not return a near-copy of the original. Make a clear wording upgrade while preserving the original facts.",
+          ],
+          activeSession.attemptNumber + 2
+        );
 
         rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
         needsMoreInfo = !!payload?.needsMoreInfo;
         notes = Array.isArray(payload?.notes) ? payload.notes : [];
         keywordHits = Array.isArray(payload?.keywordHits) ? payload.keywordHits : [];
         blockedKeywords = Array.isArray(payload?.blockedKeywords) ? payload.blockedKeywords : [];
+        truthRisk = payload?.truthRisk
+          ? {
+              score: Number(payload.truthRisk.score ?? 0),
+              level: payload.truthRisk.level === "risky" ? "risky" : payload.truthRisk.level === "review" ? "review" : "safe",
+              reasons: Array.isArray(payload.truthRisk.reasons) ? payload.truthRisk.reasons : [],
+              addedTerms: Array.isArray(payload.truthRisk.addedTerms) ? payload.truthRisk.addedTerms : [],
+              riskyPhrases: Array.isArray(payload.truthRisk.riskyPhrases) ? payload.truthRisk.riskyPhrases : [],
+              unsupportedClaims: Array.isArray(payload.truthRisk.unsupportedClaims) ? payload.truthRisk.unsupportedClaims : [],
+            }
+          : truthRisk;
       }
 
       if (!rewrittenBullet) throw new Error("AI returned empty rewrite");
@@ -3364,6 +4586,7 @@ export default function ResumeMvp() {
                 notes: [],
                 keywordHits: [],
                 blockedKeywords: [],
+                truthRisk: undefined,
                 verbStrength: undefined,
                 jobId: undefined,
               }));
@@ -3380,6 +4603,7 @@ export default function ResumeMvp() {
             notes: [],
             keywordHits: [],
             blockedKeywords: [],
+            truthRisk: undefined,
             verbStrength: undefined,
             jobId: row.sectionId,
           };
@@ -3394,6 +4618,7 @@ export default function ResumeMvp() {
           notes,
           keywordHits,
           blockedKeywords,
+          truthRisk: truthRisk ?? undefined,
           jobId: row.sectionId,
           verbStrength: payload?.verbStrengthAfter ?? nextPlan[targetPlanIndex].verbStrength,
         };
@@ -3450,6 +4675,7 @@ export default function ResumeMvp() {
         ...cur,
         rewrittenBullet: "",
         needsMoreInfo: false,
+        truthRisk: undefined,
       };
 
       return { ...prev, rewritePlan: nextPlan };
@@ -3497,6 +4723,7 @@ if (typeof planIndex === "number") {
         notes: [],
         keywordHits: [],
         blockedKeywords: [],
+        truthRisk: undefined,
       };
     }
 
@@ -3533,6 +4760,14 @@ if (typeof planIndex === "number") {
       .join("\n\n");
 
     setResumeText(rebuiltResumeText);
+
+    const rewriteSessionKey = `${sectionId}:${index}`;
+    setRewriteSessions((prev) => {
+      if (!(rewriteSessionKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[rewriteSessionKey];
+      return next;
+    });
 
     setSelectedBulletIdx((prev) => {
       const next = new Set(prev);
@@ -3652,6 +4887,7 @@ if (typeof planIndex === "number") {
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
+  const [highlightedNavTarget, setHighlightedNavTarget] = useState<string | null>(null);
   const editorBulletRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const goToEditorBullet = useCallback((sectionId: string, bulletIndex: number) => {
@@ -3662,10 +4898,22 @@ if (typeof planIndex === "number") {
       const node = editorBulletRefs.current[key];
       if (node) {
         node.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedNavTarget(`editor:${key}`);
+        window.setTimeout(() => setHighlightedNavTarget((prev) => (prev === `editor:${key}` ? null : prev)), 1800);
         const field = node.querySelector("textarea") as HTMLTextAreaElement | null;
         field?.focus();
       }
     }, 80);
+  }, []);
+
+  const goToRewrite = useCallback((sectionId: string, bulletIndex: number) => {
+    const key = `${sectionId}:${bulletIndex}`;
+    const node = document.getElementById(`rewrite-bullet-${key}`);
+    if (!node) return;
+
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedNavTarget(`rewrite:${key}`);
+    window.setTimeout(() => setHighlightedNavTarget((prev) => (prev === `rewrite:${key}` ? null : prev)), 1800);
   }, []);
 
   useEffect(() => {
@@ -3732,11 +4980,235 @@ if (typeof planIndex === "number") {
     }));
   }
 
+  function getSectionById(sectionId: string) {
+    return sections.find((section) => section.id === sectionId);
+  }
+
+  function getSectionDisplayHeader(section: ExperienceSection) {
+    const left = [section.company?.trim(), section.location?.trim()].filter(Boolean).join(", ");
+    const right = String(section.title ?? "").trim() || "Untitled Role";
+    return left ? `${left} — ${right}` : right;
+  }
+
+  function editSectionHeader(sectionId: string) {
+    const current = getSectionById(sectionId);
+    if (!current) return;
+
+    const nextHeader = window.prompt("Edit full job header line", getSectionDisplayHeader(current));
+    if (nextHeader === null) return;
+
+    const cleaned = String(nextHeader ?? "").trim();
+    if (!cleaned) return;
+
+    const [leftPart, ...rightParts] = cleaned.split("—");
+    const right = rightParts.join("—").trim();
+
+    let company = "";
+    let location = "";
+    if (leftPart) {
+      const leftBits = leftPart
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+      company = leftBits.shift() ?? "";
+      location = leftBits.join(", ");
+    }
+
+    const title = right || cleaned;
+
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              title,
+              company,
+              location,
+            }
+          : section
+      )
+    );
+  }
+
+
+  function editSectionMeta(sectionId: string) {
+    const current = sections.find((section) => section.id === sectionId);
+    if (!current) return;
+
+    const nextTitle = window.prompt("Edit job title", String(current.title ?? ""));
+    if (nextTitle === null) return;
+
+    const nextCompany = window.prompt("Edit company", String(current.company ?? ""));
+    if (nextCompany === null) return;
+
+    const nextLocation = window.prompt("Edit location", String(current.location ?? ""));
+    if (nextLocation === null) return;
+
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              title: String(nextTitle ?? "").trim(),
+              company: String(nextCompany ?? "").trim(),
+              location: String(nextLocation ?? "").trim(),
+            }
+          : section
+      )
+    );
+  }
+
+  function deleteEditorSection(sectionId: string) {
+    const sectionLiveRows = liveBulletRows.filter((r) => r.sectionId === sectionId);
+    const removedPlanIndices = sectionLiveRows
+      .map((r) => r.planIndex)
+      .filter((idx): idx is number => typeof idx === "number")
+      .sort((a, b) => a - b);
+    const removedLiveIndexes = liveBulletRows
+      .map((row, liveIndex) => ({ row, liveIndex }))
+      .filter(({ row }) => row.sectionId === sectionId)
+      .map(({ liveIndex }) => liveIndex)
+      .sort((a, b) => a - b);
+
+    setSections((prev) => {
+      const next = prev.filter((section) => section.id !== sectionId);
+      return next.length
+        ? next
+        : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
+    });
+
+    setEditorBulletsBySection((prev: Record<string, string[]>) => {
+      const next = { ...prev };
+      delete next[sectionId];
+      return next;
+    });
+
+    setCollapsedSections((prev) => {
+      const next = { ...prev };
+      delete next[sectionId];
+      return next;
+    });
+
+    Object.keys(editorBulletRefs.current).forEach((key) => {
+      if (key.startsWith(`${sectionId}:`)) delete editorBulletRefs.current[key];
+    });
+
+    setDragState((prev) => (prev?.sectionId === sectionId ? null : prev));
+
+    setRewriteSessions((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(`${sectionId}:`)) delete next[key];
+      });
+      return next;
+    });
+
+    if (removedPlanIndices.length) {
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+
+        const nextPlan = Array.isArray(prev.rewritePlan) ? [...prev.rewritePlan] : [];
+        const nextBullets = Array.isArray(prev.bullets) ? [...prev.bullets] : [];
+
+        for (const idx of [...removedPlanIndices].sort((a, b) => b - a)) {
+          if (idx >= 0 && idx < nextPlan.length) nextPlan.splice(idx, 1);
+          if (idx >= 0 && idx < nextBullets.length) nextBullets.splice(idx, 1);
+        }
+
+        return {
+          ...prev,
+          rewritePlan: nextPlan,
+          bullets: nextBullets,
+        };
+      });
+
+      setAssignments((prev) => {
+        const removedSet = new Set(removedPlanIndices);
+        const next: Record<number, BulletAssignment> = {};
+
+        Object.entries(prev).forEach(([rawKey, value]) => {
+          const key = Number(rawKey);
+          if (Number.isNaN(key) || removedSet.has(key)) return;
+
+          const shift = removedPlanIndices.filter((idx) => idx < key).length;
+          next[key - shift] = value;
+        });
+
+        return next;
+      });
+    }
+
+    if (removedLiveIndexes.length) {
+      const removedSet = new Set(removedLiveIndexes);
+      setSelectedBulletIdx((prev) => {
+        const next = new Set<number>();
+        Array.from(prev).forEach((selectedIndex) => {
+          if (removedSet.has(selectedIndex)) return;
+          const shift = removedLiveIndexes.filter((idx) => idx < selectedIndex).length;
+          next.add(selectedIndex - shift);
+        });
+        return next;
+      });
+    }
+  }
+
   function deleteEditorBullet(sectionId: string, index: number) {
+    const row = liveBulletRows.find((r) => r.sectionId === sectionId && r.bulletIndex === index);
+    const removedLiveIndex = liveBulletRows.findIndex((r) => r.sectionId === sectionId && r.bulletIndex === index);
+    const removedPlanIndex = row?.planIndex;
+
     setEditorBulletsBySection((prev: Record<string, string[]>) => {
       const next = [...(prev[sectionId] || [])];
       next.splice(index, 1);
       return { ...prev, [sectionId]: next };
+    });
+
+    setRewriteSessions((prev) => {
+      const next = { ...prev };
+      delete next[`${sectionId}:${index}`];
+      return next;
+    });
+
+    if (typeof removedPlanIndex === "number") {
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+
+        const nextPlan = Array.isArray(prev.rewritePlan) ? [...prev.rewritePlan] : [];
+        const nextBullets = Array.isArray(prev.bullets) ? [...prev.bullets] : [];
+
+        if (removedPlanIndex >= 0 && removedPlanIndex < nextPlan.length) nextPlan.splice(removedPlanIndex, 1);
+        if (removedPlanIndex >= 0 && removedPlanIndex < nextBullets.length) nextBullets.splice(removedPlanIndex, 1);
+
+        return {
+          ...prev,
+          rewritePlan: nextPlan,
+          bullets: nextBullets,
+        };
+      });
+
+      setAssignments((prev) => {
+        const next: Record<number, BulletAssignment> = {};
+        Object.entries(prev).forEach(([rawKey, value]) => {
+          const key = Number(rawKey);
+          if (Number.isNaN(key) || key === removedPlanIndex) return;
+          next[key > removedPlanIndex ? key - 1 : key] = value;
+        });
+        return next;
+      });
+    }
+
+    setSelectedBulletIdx((prev) => {
+      const next = new Set<number>();
+      Array.from(prev).forEach((selectedIndex) => {
+        if (removedLiveIndex === -1) {
+          next.add(selectedIndex);
+          return;
+        }
+        if (selectedIndex === removedLiveIndex) return;
+        next.add(selectedIndex > removedLiveIndex ? selectedIndex - 1 : selectedIndex);
+      });
+      return next;
     });
   }
 
@@ -3750,6 +5222,20 @@ if (typeof planIndex === "number") {
 
   function deleteExpertiseItem(index: number) {
     setEditorExpertiseItems((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
+  function addKeywordToExpertise(term: string) {
+    const cleaned = String(term ?? "").trim();
+    if (!cleaned) return;
+    setEditorExpertiseItems((prev) => {
+      const exists = prev.some((item) => cleanupAtsKeyword(item) === cleanupAtsKeyword(cleaned));
+      if (exists) return prev;
+      return [...prev, cleaned];
+    });
+    setIgnoredMissingKeywords((prev) =>
+      prev.filter((item) => cleanupAtsKeyword(item) !== cleanupAtsKeyword(cleaned))
+    );
+    setShowExpertiseEditor(true);
   }
 
   function moveEditorBullet(sectionId: string, fromIndex: number, toIndex: number) {
@@ -3784,6 +5270,7 @@ if (typeof planIndex === "number") {
     notes: string[];
     keywordHits: string[];
     blockedKeywords: string[];
+    truthRisk: TruthRisk | null;
   };
 
   const planBucketsBySection = useMemo(() => {
@@ -3825,12 +5312,29 @@ if (typeof planIndex === "number") {
           notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : [],
           keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : [],
           blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : [],
+          truthRisk: matchedItem?.truthRisk
+            ? {
+                score: Number(matchedItem.truthRisk.score ?? 0),
+                level: matchedItem.truthRisk.level === "risky" ? "risky" : matchedItem.truthRisk.level === "review" ? "review" : "safe",
+                reasons: Array.isArray(matchedItem.truthRisk.reasons) ? matchedItem.truthRisk.reasons : [],
+                addedTerms: Array.isArray(matchedItem.truthRisk.addedTerms) ? matchedItem.truthRisk.addedTerms : [],
+                riskyPhrases: Array.isArray(matchedItem.truthRisk.riskyPhrases) ? matchedItem.truthRisk.riskyPhrases : [],
+                unsupportedClaims: Array.isArray(matchedItem.truthRisk.unsupportedClaims) ? matchedItem.truthRisk.unsupportedClaims : [],
+              }
+            : null,
         });
       });
     });
 
     return rows;
   }, [sections, editorBulletsBySection, planBucketsBySection]);
+
+  const liveBulletRowsRef = useRef<LiveBulletRow[]>([]);
+  const liveAtsScoreRef = useRef<AtsScoreResult | null>(null);
+
+  useEffect(() => {
+    liveBulletRowsRef.current = liveBulletRows;
+  }, [liveBulletRows]);
 
   const compiledBulletsBySection = useMemo(() => {
     const next: Record<string, string[]> = {};
@@ -3847,6 +5351,138 @@ if (typeof planIndex === "number") {
 
     return next;
   }, [liveBulletRows, selectedBulletIdx]);
+
+  const liveBulletQualityAverage = useMemo(() => {
+    if (!liveBulletRows.length) return 0;
+
+    const scores = liveBulletRows
+      .map((row, liveIndex) => {
+        const appliedRewrite = selectedBulletIdx.has(liveIndex) && String(row.rewrittenBullet ?? "").trim();
+
+        if (appliedRewrite) {
+          return buildRewriteScorecard({
+            original: String(row.originalText ?? row.text ?? "").trim(),
+            rewritten: String(row.rewrittenBullet ?? "").trim(),
+            keywordHits: row.keywordHits,
+            suggestedKeywords: row.suggestedKeywords,
+            needsMoreInfo: row.needsMoreInfo,
+          }).total;
+        }
+
+        const currentText = String(row.text ?? "").trim();
+        if (!currentText) return null;
+
+        const wordCount = tokenizeWords(currentText).length;
+        const verbScore = scoreVerbStrength(currentText);
+        const metrics = (currentText.match(/\b(?:\d+(?:\.\d+)?%?|\$\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?x)\b/g) || []).length;
+        const score =
+          Math.max(
+            35,
+            Math.min(
+              92,
+              Math.round(
+                (verbScore / 3) * 32 +
+                  Math.min(1, metrics / 2) * 28 +
+                  (wordCount >= 10 && wordCount <= 28 ? 1 : wordCount >= 7 ? 0.78 : 0.48) * 40
+              )
+            )
+          );
+
+        return score;
+      })
+      .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+
+    return scores.length
+      ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+      : 0;
+  }, [liveBulletRows, selectedBulletIdx]);
+
+  const liveMetricsCount = useMemo(() => {
+    const source = [...editorMetaGames, ...editorMetaMetrics, ...liveBulletRows.map((row) => String(row.text ?? ""))].join(" ");
+    const hits = source.match(/\b(?:\d+(?:\.\d+)?%?|\$\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?x)\b/g) || [];
+    return hits.length;
+  }, [editorMetaGames, editorMetaMetrics, liveBulletRows]);
+
+  const liveStrongVerbCount = useMemo(() => {
+    return liveBulletRows.reduce((sum, row) => {
+      const rowText = String(row.text ?? "").trim();
+      return sum + (scoreVerbStrength(rowText) >= 2 ? 1 : 0);
+    }, 0);
+  }, [liveBulletRows]);
+
+  const liveSectionCompleteness = useMemo(() => {
+    let completenessPoints = 0;
+    if (String(profile.fullName ?? "").trim()) completenessPoints += 2;
+    if (String(profile.titleLine ?? "").trim()) completenessPoints += 1;
+    if (String(profile.summary ?? "").trim()) completenessPoints += 2;
+    if (liveBulletRows.length >= 3) completenessPoints += 3;
+    if (liveBulletRows.length >= 6) completenessPoints += 1;
+    if (sections.some((s) => String(s.company ?? "").trim() && String(s.title ?? "").trim())) completenessPoints += 2;
+    if (editorExpertiseItems.filter((x) => String(x ?? "").trim()).length) completenessPoints += 1;
+    if (editorMetaGames.length || editorMetaMetrics.length) completenessPoints += 1;
+    return Math.min(1, completenessPoints / 13);
+  }, [profile.fullName, profile.titleLine, profile.summary, liveBulletRows.length, sections, editorExpertiseItems, editorMetaGames.length, editorMetaMetrics.length]);
+
+  const liveAtsScore = useMemo(() => {
+    return computeOverallAtsScore({
+      analysis,
+      jobText,
+      targetPosition,
+      bulletQualityAverage: liveBulletQualityAverage,
+      metricsCount: liveMetricsCount,
+      strongVerbCount: liveStrongVerbCount,
+      sectionCompleteness: liveSectionCompleteness,
+      expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
+      ignoredMissingKeywords,
+    });
+  }, [
+    analysis,
+    jobText,
+    targetPosition,
+    liveBulletQualityAverage,
+    liveMetricsCount,
+    liveStrongVerbCount,
+    liveSectionCompleteness,
+    editorExpertiseItems,
+    ignoredMissingKeywords,
+  ]);
+
+
+  useEffect(() => {
+    liveAtsScoreRef.current = liveAtsScore;
+  }, [liveAtsScore]);
+
+  const atsScoreDirty = useMemo(() => {
+    if (!confirmedAtsScore) return false;
+    return confirmedAtsScore.signature !== liveAtsScore.signature;
+  }, [confirmedAtsScore, liveAtsScore]);
+
+  const toggleIgnoreMissingKeyword = useCallback((term: string) => {
+    const cleaned = cleanupAtsKeyword(term);
+    if (!cleaned) return;
+    setIgnoredMissingKeywords((prev) =>
+      prev.some((item) => cleanupAtsKeyword(item) === cleaned)
+        ? prev.filter((item) => cleanupAtsKeyword(item) !== cleaned)
+        : [...prev, term]
+    );
+  }, []);
+
+  const clearIgnoredMissingKeywords = useCallback(() => {
+    setIgnoredMissingKeywords([]);
+  }, []);
+
+  useEffect(() => {
+    if (!analysis || !liveBulletRows.length || atsScoreInitialized) return;
+    setConfirmedAtsScore(liveAtsScore);
+    setAtsScoreUpdatedAt(Date.now());
+    setAtsScoreInitialized(true);
+  }, [analysis, liveBulletRows.length, liveAtsScore, atsScoreInitialized]);
+
+  const handleRefreshAtsScore = useCallback(() => {
+    setConfirmedAtsScore(liveAtsScore);
+    setAtsScoreUpdatedAt(Date.now());
+    setAtsScoreInitialized(true);
+  }, [liveAtsScore]);
 
   useEffect(() => {
     setSelectedBulletIdx((prev) => {
@@ -3903,8 +5539,8 @@ if (typeof planIndex === "number") {
   }, [compiledResumeHtml]);
 
   const liveResumeHtml = useMemo(() => {
-    return (resumeHtmlDraft || compiledResumeHtml || "").trim();
-  }, [resumeHtmlDraft, compiledResumeHtml]);
+    return (compiledResumeHtml || "").trim();
+  }, [compiledResumeHtml]);
 
   async function handleCopyOutput() {
     const html = liveResumeHtml;
@@ -3981,7 +5617,7 @@ if (typeof planIndex === "number") {
   }, [file]);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
+    <main className="mx-auto max-w-[1900px] px-2 py-6 md:px-3 xl:px-4 2xl:px-5 text-black dark:text-black">
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -3990,12 +5626,12 @@ if (typeof planIndex === "number") {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
-            <div className="flex items-center gap-2 text-xs text-black/60 dark:text-black/70">
+            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-black/90">
               <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
                 {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
               </span>
@@ -4004,7 +5640,7 @@ if (typeof planIndex === "number") {
 
           <div className="mt-3 grid gap-3">
             <div className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/70">Upload resume file</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Upload resume file</div>
 
               <input
                 id="resume-upload"
@@ -4058,14 +5694,24 @@ if (typeof planIndex === "number") {
               />
             </label>
 
+            <label className="grid gap-1.5">
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Target position (required)</div>
+              <input
+                value={targetPosition}
+                onChange={(e) => setTargetPosition(e.target.value)}
+                placeholder="Production Director, QA Engineer, Product Owner..."
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+              />
+            </label>
+
             {/* Template */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/90">Template</div>
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Template</div>
 
               <select
                 value={resumeTemplate}
                 onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -4077,7 +5723,7 @@ if (typeof planIndex === "number") {
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Header details</div>
+              <div className="mb-2 text-sm font-extrabold text-black//0 dark:text-black/90">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
@@ -4131,24 +5777,40 @@ if (typeof planIndex === "number") {
               </div>
 
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 text-sm font-extrabold text-black/80 dark:text-black/70">Profile photo (Optional)</div>
+                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Profile photo (Optional)</div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      onChange={(e) => {
-                        const img = e.target.files?.[0] ?? null;
-                        void handleProfilePhotoUpload(img);
-                        e.currentTarget.value = "";
-                      }}
-                      className="block w-full text-sm text-black
-                        file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
-                        file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
-                        file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                        dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label
+                        htmlFor="profile-photo-upload"
+                        className="inline-flex cursor-pointer items-center rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                      >
+                        Choose File
+                      </label>
+
+                      <input
+                        id="profile-photo-upload"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => {
+                          const img = e.currentTarget.files?.[0] ?? null;
+                          void handleProfilePhotoUpload(img);
+                          e.currentTarget.value = "";
+                        }}
+                        className="hidden"
+                      />
+
+                      {profilePhotoDataUrl ? (
+                        <button
+                          type="button"
+                          onClick={clearProfilePhoto}
+                          className="text-xs font-extrabold underline opacity-80 hover:opacity-100"
+                        >
+                          Remove photo
+                        </button>
+                      ) : null}
+                    </div>
 
                     <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                       <input
@@ -4159,20 +5821,6 @@ if (typeof planIndex === "number") {
                       />
                       Show profile photo on resume
                     </label>
-
-                    {profilePhotoDataUrl ? (
-                      <button
-                        type="button"
-                        onClick={clearProfilePhoto}
-                        className="w-fit text-sm font-extrabold underline opacity-80 hover:opacity-100"
-                      >
-                        Remove photo
-                      </button>
-                    ) : (
-                      <div className="text-xs text-black/80 dark:text-black/860">
-                        Optional. Best results: square headshot, PNG/JPG/WEBP, under 2MB.
-                      </div>
-                    )}
                   </div>
 
                   <div className="grid gap-3">
@@ -4182,7 +5830,7 @@ if (typeof planIndex === "number") {
                           src={profilePhotoDataUrl}
                           alt="Profile preview"
                           className={[
-                            "h-20 w-20 border border-black/10 object-cover",
+                            "h-14 w-14 border border-black/10 object-cover",
                             profilePhotoShape === "circle"
                               ? "rounded-full"
                               : profilePhotoShape === "rounded"
@@ -4190,7 +5838,7 @@ if (typeof planIndex === "number") {
                               : "rounded-none",
                           ].join(" ")}
                         />
-                        <div className="text-xs text-black/70 dark:text-black/70">
+                        <div className="text-xs text-black/90 dark:text-black/90">
                           Preview only. Final size/shape comes from the controls below.
                         </div>
                       </div>
@@ -4202,7 +5850,7 @@ if (typeof planIndex === "number") {
                         <select
                           value={profilePhotoShape}
                           onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
-                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                         >
                           <option value="circle">Circle</option>
                           <option value="rounded">Rounded</option>
@@ -4237,25 +5885,76 @@ if (typeof planIndex === "number") {
                 />
               </div>
 
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAnalyze}
+                  disabled={!canAnalyze || loadingAnalyze}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+                >
+                  {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
+                </button>
+
+                
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                  <input
+                    type="checkbox"
+                    checked={showExpertiseOnResume}
+                    onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show Areas of Expertise on resume
+                </label>
+
+                <label className="mt-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={onlyExperienceBullets}
+                  onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Only experience bullets</span>
+              </label>
+                                
+              </div>
+
+
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-extrabold text-black/80 dark:text-black/70">Areas of Expertise (Auto Parsed)</div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs text-black/60 dark:text-black/70">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Areas of Expertise (Editable)</div>
+                    <div className="text-xs text-black/90 dark:text-black/90">
                       {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={addExpertiseItem}
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      onClick={() => setShowExpertiseEditor((prev) => !prev)}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                     >
-                      + Add
+                      {showExpertiseEditor ? "Hide Expertise" : "Show Expertise"}
                     </button>
+
+                    {showExpertiseEditor ? (
+                      <button
+                        type="button"
+                        onClick={addExpertiseItem}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      >
+                        + Add
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
-                {editorExpertiseItems.length ? (
-                  <div className="flex flex-wrap gap-2">
+                {!showExpertiseEditor ? (
+                  <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                    Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
+                  </div>
+                ) : editorExpertiseItems.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {editorExpertiseItems.map((item, i) => (
                       <div
                         key={`expertise-${i}`}
@@ -4279,79 +5978,10 @@ if (typeof planIndex === "number") {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-black/60 dark:text-black/70">
+                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
                     No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
                   </div>
                 )}
-
-                <div className="mt-2 text-xs text-black/60 dark:text-black/70">
-                  You can edit these bubbles directly. They are auto-parsed from your uploaded resume, pasted resume text, edited bullets, and summary.
-                </div>
-              </div>
-
-              <label className="mt-3 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={onlyExperienceBullets}
-                  onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Only experience bullets</span>
-              </label>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAnalyze}
-                  disabled={!canAnalyze || loadingAnalyze}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                >
-                  {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
-                </button>
-
-                <div className="ml-1 text-xs text-black/60 dark:text-black/60">
-                  Costs: Analyze {CREDIT_COSTS.analyze} • Rewrite {CREDIT_COSTS.rewriteBullet} each
-                </div>
-
-                <label className="ml-1 flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                  <input
-                    type="checkbox"
-                    checked={includeMetaInResumeDoc}
-                    onChange={(e) => setIncludeMetaInResumeDoc(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Include meta blocks
-                </label>
-
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                  <input
-                    type="checkbox"
-                    checked={showExpertiseOnResume}
-                    onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show Areas of Expertise on resume
-                </label>
-
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                  <input
-                    type="checkbox"
-                    checked={showDebugJson}
-                    onChange={(e) => setShowDebugJson(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show debug
-                </label>
-
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                  <input
-                    type="checkbox"
-                    checked={logNetworkDebug}
-                    onChange={(e) => setLogNetworkDebug(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Console logs
-                </label>
               </div>
 
               {debugInjected.length ? (
@@ -4367,7 +5997,7 @@ if (typeof planIndex === "number") {
               ) : null}
 
               {showDebugJson && analysis ? (
-                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-black/80">
+                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-black/90">
                   {JSON.stringify(analysis, null, 2)}
                 </pre>
               ) : null}
@@ -4376,24 +6006,11 @@ if (typeof planIndex === "number") {
         </section>
 
         {/* Preview */}
-        <section>
+        <section className="min-w-0">
           <HtmlDocPreview
             html={liveResumeHtml}
             footer={
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyOutput}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                >
-                  Copy
-                </button>
-
-                <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black dark:border-white/10 dark:bg-black/20 dark:text-black">
-                  .pdf
-                </div>
-
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
@@ -4401,6 +6018,21 @@ if (typeof planIndex === "number") {
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                 >
                   Download PDF (5 credits)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
+                    } catch (e: any) {
+                      setError(e?.message || "Preview failed");
+                    }
+                  }}
+                  disabled={!liveResumeHtml}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Preview
                 </button>
 
                 <button
@@ -4415,8 +6047,199 @@ if (typeof planIndex === "number") {
             }
           />
 
+
+          {analysis ? (
+            <div className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
+                    ATS Score
+                  </div>
+                  <div className="mt-1 flex items-end gap-3">
+                    <div className="text-3xl font-black text-black dark:text-black">
+                      {confirmedAtsScore?.overall ?? liveAtsScore.overall}
+                    </div>
+                    <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-black/90">
+                      {confirmedAtsScore?.label ?? liveAtsScore.label}
+                    </div>
+                    {atsScoreDirty ? (
+                      <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
+                        Changes pending review
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">
+                        Up to date
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
+                    Live estimate: {liveAtsScore.overall} · Last updated: {formatAtsUpdatedAt(atsScoreUpdatedAt) || "Not saved yet"}
+                  </div>
+                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
+                    Role focus: {liveAtsScore.roleFocus[0] || "General"}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRefreshAtsScore}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+                >
+                  Update ATS Score
+                </button>
+              </div>
+
+              {liveAtsScore.notes.length ? (
+                <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
+                    ATS Notes
+                  </div>
+                  <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-black/90">
+                    {liveAtsScore.notes.slice(0, 4).map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Keyword Coverage</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                    {Math.round(liveAtsScore.keywordCoverage * 100)}%
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Metrics</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                    {liveAtsScore.metricsCount}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Bullet Quality</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                    {liveAtsScore.bulletQualityAverage}/100
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Complete-ness</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                    {Math.round(liveAtsScore.sectionCompleteness * 100)}%
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                <div>
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">ATS Keywords</div>
+                  <div className="text-[11px] text-black/90 dark:text-black/90">Matched keywords and job-post-relevant missing terms are minimized by default.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAtsKeywords((prev) => !prev)}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+                >
+                  {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
+                </button>
+              </div>
+
+              {showAtsKeywords ? (
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                    <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
+                      Matched Keywords ({liveAtsScore.matchedKeywords.length})
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {liveAtsScore.matchedKeywords.length ? (
+                        liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
+                      ) : (
+                        <span className="text-xs text-black/90 dark:text-black/90">No strong keyword matches yet.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
+                        Missing Keywords ({liveAtsScore.missingKeywords.length})
+                      </div>
+                      {ignoredMissingKeywords.length ? (
+                        <button
+                          type="button"
+                          onClick={clearIgnoredMissingKeywords}
+                          className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        >
+                          Reset removed
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="mb-2 text-[11px] text-black/90 dark:text-black/90">
+                      Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {liveAtsScore.missingKeywords.length ? (
+                        liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
+                          <div
+                            key={`missing-${term}`}
+                            className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => addKeywordToExpertise(term)}
+                              className="flex items-center justify-center bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-700 dark:hover:bg-emerald-500/20"
+                              title="Add this keyword to Areas of Expertise"
+                            >
+                              +
+                            </button>
+                            <span className="px-2.5 py-1">{term}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleIgnoreMissingKeyword(term)}
+                              className="flex items-center justify-center bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-600 dark:hover:bg-red-500/20"
+                              title="Remove this keyword from ATS scoring"
+                            >
+                              −
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-xs text-black/90 dark:text-black/90">Coverage looks solid.</span>
+                      )}
+                    </div>
+                    {ignoredMissingKeywords.length ? (
+                      <div className="mt-3">
+                        <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-700">Removed From Scoring ({ignoredMissingKeywords.length})</div>
+                        <div className="flex flex-wrap gap-2">
+                          {ignoredMissingKeywords.map((term) => (
+                            <button
+                              key={`ignored-${term}`}
+                              type="button"
+                              onClick={() => toggleIgnoreMissingKeyword(term)}
+                              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-800 hover:bg-sky-100"
+                              title="Add this keyword back into ATS scoring"
+                            >
+                              <span>{term}</span>
+                              <span aria-hidden>+</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                  ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
+                </div>
+              )}
+              </div>
+          ) : null}
+
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/80 dark:text-black/80">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
               Edit highlight blocks
             </div>
             <div className="mb-3 text-xs text-black/90 dark:text-black/90">
@@ -4424,31 +6247,6 @@ if (typeof planIndex === "number") {
             </div>
 
             <div className="grid gap-3">
-              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Highlight visibility</div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                    <input
-                      type="checkbox"
-                      checked={showShippedBlock}
-                      onChange={(e) => setShowShippedBlock(e.target.checked)}
-                      className="h-4 w-4"
-                    />
-                    Show {shippedLabelMode} Shipped on resume
-                  </label>
-
-                  <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                    <input
-                      type="checkbox"
-                      checked={showMetricsBlock}
-                      onChange={(e) => setShowMetricsBlock(e.target.checked)}
-                      className="h-4 w-4"
-                    />
-                    Show Key Metrics on resume
-                  </label>
-                </div>
-              </div>
-
               <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Shipped label</div>
@@ -4469,14 +6267,25 @@ if (typeof planIndex === "number") {
                     ))}
                   </div>
                 </div>
-                <div className="text-xs text-black/80 dark:text-black/80">
+                <div className="text-xs text-black/90 dark:text-black/80">
                   Preview title: {shippedLabelMode} Shipped
                 </div>
               </div>
 
               <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">{shippedLabelMode} Shipped</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">{shippedLabelMode} Shipped</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                      <input
+                        type="checkbox"
+                        checked={showShippedBlock}
+                        onChange={(e) => setShowShippedBlock(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Show on resume
+                    </label>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setEditorMetaGames((prev) => [...prev, ""])}
@@ -4507,7 +6316,7 @@ if (typeof planIndex === "number") {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/80 dark:border-white/10 dark:bg-black/10 dark:text-black/80">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
                       No shipped items yet.
                     </div>
                   )}
@@ -4516,7 +6325,18 @@ if (typeof planIndex === "number") {
 
               <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                      <input
+                        type="checkbox"
+                        checked={showMetricsBlock}
+                        onChange={(e) => setShowMetricsBlock(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Show on resume
+                    </label>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setEditorMetaMetrics((prev) => [...prev, ""])}
@@ -4547,7 +6367,7 @@ if (typeof planIndex === "number") {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/80 dark:border-white/10 dark:bg-black/10 dark:text-black/80">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
                       No key metrics yet.
                     </div>
                   )}
@@ -4617,6 +6437,7 @@ if (typeof planIndex === "number") {
               const rewritten = row.rewrittenBullet;
               const assigned = row.sectionId;
               const selected = selectedBulletIdx.has(i);
+              const truthRisk = row.truthRisk;
               const scorecard = rewritten
                 ? buildRewriteScorecard({
                     original,
@@ -4630,9 +6451,15 @@ if (typeof planIndex === "number") {
               return (
                 <div
                   key={i}
-                  className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/20"
+                  id={`rewrite-bullet-${row.sectionId}:${row.bulletIndex}`}
+                  className={[
+                    "rounded-2xl border border-black/10 bg-white p-3 transition-all duration-300 dark:border-white/10 dark:bg-black/20",
+                    highlightedNavTarget === `rewrite:${row.sectionId}:${row.bulletIndex}`
+                      ? "ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.15)]"
+                      : "",
+                  ].join(" ")}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-col gap-2">
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -4644,33 +6471,33 @@ if (typeof planIndex === "number") {
                       {rewritten ? <Chip text="Has rewrite" /> : <Chip text="Original" muted />}
                     </label>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={assigned}
-                        onChange={(e) => {
-                          if (row.planIndex === null) return;
-                          setAssignments((prev) => ({
-                            ...prev,
-                            [row.planIndex as number]: { sectionId: e.target.value },
-                          }));
-                        }}
-                        disabled={row.planIndex === null}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
-                      >
-                        {sections.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.company} — {s.title}
-                          </option>
-                        ))}
-                      </select>
+                    <select
+                      value={assigned}
+                      onChange={(e) => {
+                        if (row.planIndex === null) return;
+                        setAssignments((prev) => ({
+                          ...prev,
+                          [row.planIndex as number]: { sectionId: e.target.value },
+                        }));
+                      }}
+                      disabled={row.planIndex === null}
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
+                    >
+                      {sections.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {getSectionDisplayHeader(s)}
+                        </option>
+                      ))}
+                    </select>
 
+                    <div className="flex flex-wrap items-center gap-2">
                       {rewritten ? (
                         <button
                           type="button"
                           onClick={() => handleUndoRewrite(i)}
                           className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
                         >
-                          Undo Rewrite
+                          Restore Original
                         </button>
                       ) : null}
 
@@ -4684,11 +6511,28 @@ if (typeof planIndex === "number") {
 
                       <button
                         type="button"
+                        onClick={() => editSectionHeader(row.sectionId)}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      >
+                        Edit Header
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleRewriteBullet(i)}
                         disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
                         className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                       >
                         {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRewriteBullet(i, { safer: true })}
+                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      >
+                        Safer Rewrite
                       </button>
                     </div>
                   </div>
@@ -4699,19 +6543,20 @@ if (typeof planIndex === "number") {
 
                     {rewritten ? (
                       <>
-                        <div className="mt-2 text-xs font-extrabold text-emerald-700 dark:text-emerald-300">
+                        <div className="mt-2 text-xs font-extrabold text-emerald-700 dark:text-emerald-700">
                           Rewritten {selected ? "(APPLIED)" : "(not applied)"}
                         </div>
 
+
                         {showRewriteScorecard && scorecard ? (
-                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-400/20 dark:bg-emerald-400/10">
-                            <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-400/20 dark:bg-emerald-700/10">
+                            <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-800 dark:text-emerald-700">
                               AI Improvement Scorecard
                             </div>
                             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                               <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
                                 <div className="font-extrabold text-black/90 dark:text-black/90">Score</div>
-                                <div className="mt-1 text-sm font-black text-emerald-700 dark:text-emerald-300">
+                                <div className="mt-1 text-sm font-black text-emerald-700 dark:text-emerald-700">
                                   {scorecard.total}/100
                                 </div>
                               </div>
@@ -4741,7 +6586,7 @@ if (typeof planIndex === "number") {
             <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
               Edit resume bullets (live preview)
             </div>
-            <div className="mb-3 text-xs text-black/60 dark:text-black/90">
+            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
               Drag bullets to reorder them, edit text inline, or add and remove bullets per section.
             </div>
 
@@ -4760,9 +6605,9 @@ if (typeof planIndex === "number") {
                   >
                     <div className="min-w-0">
                       <div className="text-lg font-black text-black dark:text-black">
-                        {s.title || "Untitled Role"} — {s.company || "Untitled Company"} {s.dates ? `| ${s.dates}` : ""}
+                        {getSectionDisplayHeader(s)} {s.dates ? `| ${s.dates}` : ""}
                       </div>
-                      <div className="text-sm text-black/60 dark:text-black/70">
+                      <div className="text-sm text-black/90 dark:text-black/90">
                         {(editorBulletsBySection[s.id] || []).length} bullets
                       </div>
                     </div>
@@ -4772,19 +6617,23 @@ if (typeof planIndex === "number") {
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditorBulletsBySection((prev: Record<string, string[]>) => ({
-                        ...prev,
-                        [s.id]: [...(prev[s.id] || []), ""],
-                      }));
-                      setCollapsedSections((prev) => ({ ...prev, [s.id]: false }));
-                    }}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                  >
-                    + Add bullet
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => addEditorBullet(s.id)}
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    >
+                      + Add bullet
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => deleteEditorSection(s.id)}
+                      className="px-1 py-2 text-xs font-extrabold text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    >
+                      Delete Section
+                    </button>
+                  </div>
                 </div>
 
                     {!isCollapsed ? (
@@ -4805,7 +6654,12 @@ if (typeof planIndex === "number") {
                                 setDragState(null);
                               }}
                               onDragEnd={() => setDragState(null)}
-                              className="rounded-xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/20"
+                              className={[
+                                "rounded-xl border border-black/10 bg-white/80 p-3 transition-all duration-300 dark:border-white/10 dark:bg-black/20",
+                                highlightedNavTarget === `editor:${s.id}:${i}`
+                                  ? "ring-2 ring-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.15)]"
+                                  : "",
+                              ].join(" ")}
                             >
                               <div className="mb-2 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
@@ -4813,7 +6667,15 @@ if (typeof planIndex === "number") {
                                   <span>Bullet {i + 1}</span>
                                 </div>
 
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => goToRewrite(s.id, i)}
+                                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                                  >
+                                    Go To Rewrite
+                                  </button>
+
                                   <button
                                     type="button"
                                     onClick={() => commitEditorBulletUpdate(s.id, i)}
@@ -4836,7 +6698,7 @@ if (typeof planIndex === "number") {
                                 value={b}
                                 onChange={(e) => updateEditorBullet(s.id, i, e.target.value)}
                                 rows={3}
-                                className="w-full rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                                className="w-full rounded-lg border border-black/10 bg-white p-2.5 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
                               />
                             </div>
                           ))

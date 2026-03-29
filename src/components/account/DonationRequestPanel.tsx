@@ -146,7 +146,7 @@ export default function DonationRequestPanel() {
           <div className="text-black text-lg font-extrabold">
             Request Help (Donation Credits)
           </div>
-          <div className="mt-1 text-sm text-black/70">
+          <div className="mt-1 text-sm text-black/90">
             This sends a request to be reviewed by an admin. Approval and fulfillment are separate steps.
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function DonationRequestPanel() {
       {/* Form */}
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <label className="grid gap-1.5">
-          <div className="text-xs font-extrabold text-black/70">Requested credits</div>
+          <div className="text-xs font-extrabold text-black/90">Requested credits</div>
           <input
             type="number"
             min={5}
@@ -188,11 +188,11 @@ export default function DonationRequestPanel() {
             onChange={(e) => setRequestedCredits(Math.trunc(Number(e.target.value)))}
             className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20"
           />
-          <div className="text-xs text-black/60">Min 5, max 200.</div>
+          <div className="text-xs text-black/90">Min 5, max 200.</div>
         </label>
 
         <label className="grid gap-1.5 lg:col-span-2">
-          <div className="text-xs font-extrabold text-black/70">Reason</div>
+          <div className="text-xs font-extrabold text-black/90">Reason</div>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -200,7 +200,7 @@ export default function DonationRequestPanel() {
             placeholder="Tell us what you’re applying for and why you need help (10+ characters)."
             className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20"
           />
-          <div className="text-xs text-black/60">
+          <div className="text-xs text-black/90">
             Keep it short and clear. Include target role/company if you want.
           </div>
         </label>
@@ -216,7 +216,7 @@ export default function DonationRequestPanel() {
           {submitting ? "Submitting…" : "Submit request"}
         </button>
 
-        <div className="text-xs font-extrabold text-black/60">
+        <div className="text-xs font-extrabold text-black/90">
           You can have a limited number of pending requests. Cooldown may apply.
         </div>
       </div>
@@ -224,13 +224,13 @@ export default function DonationRequestPanel() {
       {/* Recent requests */}
       <div className="mt-6">
         <div className="flex items-center justify-between">
-          <div className="text-sm font-extrabold text-black/80">Your recent requests</div>
-          <div className="text-xs text-black/60">Showing up to 10</div>
+          <div className="text-sm font-extrabold text-black/90">Your recent requests</div>
+          <div className="text-xs text-black/90">Showing up to 10</div>
         </div>
 
         <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white">
           {rows.length === 0 ? (
-            <div className="p-4 text-sm text-black/70">
+            <div className="p-4 text-sm text-black/90">
               {loadingList ? "Loading…" : "No requests yet."}
             </div>
           ) : (
@@ -245,23 +245,23 @@ export default function DonationRequestPanel() {
                       <span className={statusBadge(r.status)}>{r.status}</span>
                     </div>
 
-                    <div className="text-xs text-black/60">
+                    <div className="text-xs text-black/90">
                       {fmtDate(r.createdAt)}
                     </div>
                   </div>
 
-                  <div className="mt-2 whitespace-pre-wrap text-sm text-black/80">
+                  <div className="mt-2 whitespace-pre-wrap text-sm text-black/90">
                     {r.reason}
                   </div>
 
                   {r.reviewNote ? (
-                    <div className="mt-3 rounded-xl border border-black/10 bg-black/5 p-3 text-sm text-black/80">
-                      <div className="text-xs font-extrabold text-black/60">Admin note</div>
+                    <div className="mt-3 rounded-xl border border-black/10 bg-black/5 p-3 text-sm text-black/90">
+                      <div className="text-xs font-extrabold text-black/90">Admin note</div>
                       <div className="mt-1 whitespace-pre-wrap">{r.reviewNote}</div>
                     </div>
                   ) : null}
 
-                  <div className="mt-2 text-xs text-black/60">
+                  <div className="mt-2 text-xs text-black/90">
                     Updated: {fmtDate(r.updatedAt)}
                   </div>
                 </div>
@@ -270,7 +270,7 @@ export default function DonationRequestPanel() {
           )}
         </div>
 
-        <div className="mt-3 text-xs text-black/60">
+        <div className="mt-3 text-xs text-black/90">
           Status meanings: <span className="font-bold">pending</span> (waiting review),{" "}
           <span className="font-bold">approved</span> (eligible),{" "}
           <span className="font-bold">fulfilled</span> (credits issued),{" "}

@@ -9,6 +9,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chargeCredits, refundCredits } from "@/lib/credits";
+import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
 
 import { ocrPdfWithGoogleVision } from "@/lib/pdf_ocr_google";
 import { assessPdfTextQuality } from "@/lib/pdf_quality";
@@ -28,6 +29,27 @@ type ResumeBullet = {
   id: string;
   text: string;
   jobId?: string;
+};
+
+type AtsCategoryKey = "titles" | "core" | "tools" | "methods" | "domain" | "outcomes";
+type AtsCategoryBuckets = Record<AtsCategoryKey, string[]>;
+
+type AtsRoleScore = {
+  roleKey: string;
+  roleName: string;
+  score: number;
+  matchedTerms: number;
+  categoryCoverage: Record<AtsCategoryKey, number>;
+};
+
+type AtsHit = {
+  roleKey: string;
+  roleName: string;
+  category: AtsCategoryKey;
+  term: string;
+  count: number;
+  weight: number;
+  score: number;
 };
 
 function okJson(payload: any, init?: ResponseInit) {
@@ -54,8 +76,6 @@ function normalizeResumeText(input: unknown) {
     .trim();
 }
 
-/** ---------------- DOCX helpers (preserve list bullets) ---------------- */
-
 function stripTagsToText(html: string) {
   return String(html ?? "")
     .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|td|th)>/gi, "\n")
@@ -72,8 +92,6 @@ function sanitizeResumeInput(input: unknown) {
   const stripped = looksHtml ? stripTagsToText(s) : s;
   return normalizeResumeText(stripped);
 }
-
-/** ---------------- Safety filters (contact / references) ---------------- */
 
 function digitsCount(s: string) {
   const m = String(s || "").match(/\d/g);
@@ -100,14 +118,10 @@ function looksLikeContactOrReferenceLine(line: string) {
   if (emailRegex.test(l)) return true;
   if (linkedinRegex.test(l)) return true;
   if (urlRegex.test(l)) return true;
-
   if (digitsCount(l) >= 7) return true;
-
   if (/^references?$/i.test(l)) return true;
   if (/available\s+upon\s+request/i.test(l)) return true;
-
   if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}$/.test(l)) return true;
-
   if (/^(massage therapist|production manager|2\s*nd\s*ad)\b/i.test(l)) return true;
 
   return false;
@@ -120,14 +134,205 @@ function filterBadBullets(arr: string[]) {
     .filter((b) => !looksLikeContactOrReferenceLine(b));
 }
 
-/** ---------------- Common cleanup ---------------- */
-
 function cleanLeadingBulletGarbage(s: string) {
-  // ✅ Added ● (U+25CF) because many web/ATS PDFs use it
   return String(s || "").replace(/^[\s•●\u2022\u00B7o-]+/g, "").trim();
 }
 
-/** ---------------- FIX: robust job parsing from experience text ---------------- */
+function safeArray(input: unknown): string[] {
+  return Array.isArray(input) ? input.map((x) => String(x || "").trim()).filter(Boolean) : [];
+}
+
+function pct(part: number, total: number) {
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((part / total) * 100)));
+}
+
+
+function uniqueCaseInsensitive(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const clean = String(value || "").trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function resolveRoleKeyFromTargetPosition(targetPosition: string): string | null {
+  const normalized = normalizeJobText(targetPosition);
+  if (!normalized) return null;
+  const detection = detectGameRole(normalized);
+  return detection.primaryRoleKey || null;
+}
+
+function buildAtsCategoryScores(args: {
+  matchedByCategory?: Partial<AtsCategoryBuckets>;
+  missingByCategory?: Partial<AtsCategoryBuckets>;
+}) {
+  const categories: AtsCategoryKey[] = ["titles", "core", "tools", "methods", "domain", "outcomes"];
+
+  const byCategory: Record<AtsCategoryKey, number> = {
+    titles: 0,
+    core: 0,
+    tools: 0,
+    methods: 0,
+    domain: 0,
+    outcomes: 0,
+  };
+
+  for (const category of categories) {
+    const matched = safeArray(args.matchedByCategory?.[category]);
+    const missing = safeArray(args.missingByCategory?.[category]);
+    const total = matched.length + missing.length;
+    byCategory[category] = pct(matched.length, total);
+  }
+
+  return byCategory;
+}
+
+function buildOverallAtsScore(categoryScores: Record<AtsCategoryKey, number>) {
+  const weights: Record<AtsCategoryKey, number> = {
+    titles: 5,
+    core: 4,
+    tools: 3,
+    methods: 2,
+    domain: 2,
+    outcomes: 2,
+  };
+
+  const weightedTotal =
+    categoryScores.titles * weights.titles +
+    categoryScores.core * weights.core +
+    categoryScores.tools * weights.tools +
+    categoryScores.methods * weights.methods +
+    categoryScores.domain * weights.domain +
+    categoryScores.outcomes * weights.outcomes;
+
+  const divisor =
+    weights.titles + weights.core + weights.tools + weights.methods + weights.domain + weights.outcomes;
+
+  return pct(weightedTotal, divisor * 100);
+}
+
+function buildAtsAnalysis(args: { resumeText: string; jobText: string; targetPosition?: string }) {
+  const resumeDetection = detectGameRole(args.resumeText);
+  const targetPosition = normalizeJobText(args.targetPosition);
+  const titleAnchoredJobDetection = targetPosition
+    ? detectGameRole(`${targetPosition}\n${args.jobText}`)
+    : detectGameRole(args.jobText);
+  const rawJobDetection = detectGameRole(args.jobText);
+  const jobDetection = titleAnchoredJobDetection?.primaryRoleKey ? titleAnchoredJobDetection : rawJobDetection;
+
+  const resolvedTargetRoleKey =
+    resolveRoleKeyFromTargetPosition(targetPosition) ||
+    jobDetection.primaryRoleKey ||
+    rawJobDetection.primaryRoleKey ||
+    resumeDetection.primaryRoleKey ||
+    null;
+
+ const missingBundle = detectRoleAndMissingTerms(
+  args.resumeText,
+  resolvedTargetRoleKey || undefined,
+  args.jobText,
+  targetPosition
+);
+  const missingTerms = missingBundle?.missingTerms ?? null;
+
+  const targetRoleKey = missingTerms?.targetRoleKey || resolvedTargetRoleKey;
+  const targetRoleName = missingTerms?.targetRoleName || jobDetection.primaryRoleName || rawJobDetection.primaryRoleName || resumeDetection.primaryRoleName || null;
+
+  const categoryScores = buildAtsCategoryScores({
+    matchedByCategory: missingTerms?.matchedByCategory,
+    missingByCategory: missingTerms?.missingByCategory,
+  });
+
+  const overallScore = buildOverallAtsScore(categoryScores);
+
+  const resumeTopRoles = ((resumeDetection.roleScores || []) as AtsRoleScore[]).slice(0, 3).map((r: AtsRoleScore) => ({
+    roleKey: r.roleKey,
+    roleName: r.roleName,
+    score: r.score,
+    matchedTerms: r.matchedTerms,
+    categoryCoverage: r.categoryCoverage,
+  }));
+
+  const jobTopRoles = ((jobDetection.roleScores || []) as AtsRoleScore[]).slice(0, 3).map((r: AtsRoleScore) => ({
+    roleKey: r.roleKey,
+    roleName: r.roleName,
+    score: r.score,
+    matchedTerms: r.matchedTerms,
+    categoryCoverage: r.categoryCoverage,
+  }));
+
+  const matchedByCategory = missingTerms?.matchedByCategory ?? null;
+  const missingByCategory = missingTerms?.missingByCategory ?? null;
+
+  const targetHits = ((resumeDetection.hits || []) as AtsHit[])
+    .filter((h: AtsHit) => h.roleKey === targetRoleKey)
+    .slice(0, 24)
+    .map((h: AtsHit) => ({
+      category: h.category,
+      term: h.term,
+      count: h.count,
+      score: h.score,
+    }));
+
+  const matchedTermsFromBuckets = matchedByCategory
+    ? (Object.entries(matchedByCategory) as Array<[AtsCategoryKey, string[]]>)
+        .flatMap(([category, terms]) => safeArray(terms).map((term) => ({ category, term, count: 1, score: 0 })))
+    : [];
+
+  const matchedTermsDetailed = matchedTermsFromBuckets.length ? matchedTermsFromBuckets : targetHits;
+
+  const roleShift =
+    resumeDetection.primaryRoleKey &&
+    targetRoleKey &&
+    resumeDetection.primaryRoleKey !== targetRoleKey
+      ? {
+          fromRoleKey: resumeDetection.primaryRoleKey,
+          fromRoleName: resumeDetection.primaryRoleName,
+          toRoleKey: targetRoleKey,
+          toRoleName: targetRoleName,
+        }
+      : null;
+
+  return {
+    detectedResumeRole: {
+      roleKey: resumeDetection.primaryRoleKey,
+      roleName: resumeDetection.primaryRoleName,
+      secondaryRoleKey: resumeDetection.secondaryRoleKey,
+      secondaryRoleName: resumeDetection.secondaryRoleName,
+      confidence: resumeDetection.confidence,
+      topRoles: resumeTopRoles,
+    },
+    detectedJobRole: {
+      roleKey: jobDetection.primaryRoleKey,
+      roleName: jobDetection.primaryRoleName,
+      secondaryRoleKey: jobDetection.secondaryRoleKey,
+      secondaryRoleName: jobDetection.secondaryRoleName,
+      confidence: jobDetection.confidence,
+      topRoles: jobTopRoles,
+    },
+    targetRole: {
+      roleKey: targetRoleKey,
+      roleName: targetRoleName,
+    },
+    overallScore,
+    categoryScores,
+    matchedTerms: uniqueCaseInsensitive(matchedTermsDetailed.map((h) => h.term)),
+    matchedTermsDetailed,
+    missingCriticalTerms: safeArray(missingTerms?.tier1Critical).slice(0, 15),
+    missingImportantTerms: safeArray(missingTerms?.tier2Important).slice(0, 15),
+    missingNiceToHaveTerms: safeArray(missingTerms?.tier3NiceToHave).slice(0, 20),
+    matchedByCategory,
+    missingByCategory,
+    notes: safeArray(missingTerms?.notes),
+    roleShift,
+  };
+}
 
 function looksLikeDateRangeLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
@@ -140,59 +345,36 @@ function looksLikeDateRangeLine(lineRaw: string) {
   return re.test(line);
 }
 
-/**
- * Baseline header format you already had:
- *   "Title — Company | Dates"
- */
 function looksLikeJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
-
   if (!(line.includes("—") || line.includes("-"))) return false;
   if (!line.includes("|")) return false;
-
-  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/;
-  return headerRegex.test(line);
+  return /^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/.test(line);
 }
 
 function parseJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
-  const headerRegex = /^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/;
-  const m = line.match(headerRegex);
+  const m = line.match(/^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/);
   if (!m) return null;
 
-  const title = String(m[1] || "").trim();
-  const company = String(m[3] || "").trim();
-  const datesInline = String(m[4] || "").trim();
-
-  return { title, company, datesInline };
+  return {
+    title: String(m[1] || "").trim(),
+    company: String(m[3] || "").trim(),
+    datesInline: String(m[4] || "").trim(),
+  };
 }
 
-/**
- * ✅ NEW (safe) header format for many web PDFs:
- *   "Company, Location - Title"
- *   "Company - Title"
- *
- * This is ONLY used for preview job headings (experienceJobs),
- * NOT for bullet extraction, so it won't break bullets.
- */
 function looksLikeCompanyDashTitleHeader(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
-
-  // Avoid bullets
   if (/^[\s]*[•●\u2022\u00B7o-]\s+/.test(line)) return false;
-  // Avoid section headers
   if (/^(highlights|experience|education|skills|projects|certifications|certificates|volunteer|interests)\b/i.test(line))
     return false;
-
   if (!line.includes(" - ") && !line.includes(" — ")) return false;
-  if (line.includes("|")) return false; // that's the other format
-
-  // Keep conservative length
+  if (line.includes("|")) return false;
   if (line.length < 8 || line.length > 170) return false;
 
-  // Must look like "Something - Something"
   const normalized = line.replace(/\s+—\s+/g, " - ");
   const idx = normalized.indexOf(" - ");
   if (idx <= 0) return false;
@@ -200,8 +382,6 @@ function looksLikeCompanyDashTitleHeader(lineRaw: string) {
   const left = normalized.slice(0, idx).trim();
   const right = normalized.slice(idx + 3).trim();
   if (!left || !right) return false;
-
-  // Right side should resemble a title-ish phrase
   if (right.split(/\s+/).length < 2) return false;
 
   return true;
@@ -223,15 +403,11 @@ function parseCompanyDashTitleHeader(lineRaw: string) {
 function looksLikeMetaLine(s: string) {
   const t = String(s || "").trim();
   if (!t) return true;
-
   if (/^(highlights|experience|education|skills|projects|certifications|certificates|volunteer|interests)\b/i.test(t))
     return true;
-
   if (/^games shipped\s*:/i.test(t)) return true;
   if (/^tools\s*:/i.test(t)) return true;
-
   if (/^experi\s*e\s*n\s*ce$/i.test(t.replace(/\s+/g, ""))) return true;
-
   return false;
 }
 
@@ -242,8 +418,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
 
   const jobs: any[] = [];
   let current: any | null = null;
-
-  // pending header -> next line dates
   let pendingHeader: { title: string; company: string } | null = null;
 
   const pushCurrent = () => {
@@ -252,11 +426,9 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   };
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const line = String(raw || "").trim();
+    const line = String(lines[i] || "").trim();
     if (!line) continue;
 
-    // pending header gets dates from next line if present
     if (pendingHeader && looksLikeDateRangeLine(line)) {
       pushCurrent();
       current = {
@@ -271,13 +443,10 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       continue;
     }
 
-    // Format A: "Title — Company | Dates"
     if (looksLikeJobHeaderLine(line)) {
       const parsed = parseJobHeaderLine(line);
       if (parsed) {
-        const dates = parsed.datesInline;
-
-        if (!dates) {
+        if (!parsed.datesInline) {
           pendingHeader = { title: parsed.title, company: parsed.company };
           continue;
         }
@@ -287,7 +456,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
           id: `job_${jobs.length + 1}`,
           company: parsed.company,
           title: parsed.title,
-          dates: dates,
+          dates: parsed.datesInline,
           location: "",
           bullets: [],
         };
@@ -296,7 +465,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       continue;
     }
 
-    // Format B: "Company - Title" (dates usually next line)
     if (looksLikeCompanyDashTitleHeader(line)) {
       const parsed = parseCompanyDashTitleHeader(line);
       if (parsed) {
@@ -305,7 +473,6 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
       }
     }
 
-    // if pending header but we didn't see a date-range line, start job anyway
     if (pendingHeader) {
       pushCurrent();
       current = {
@@ -317,23 +484,19 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
         bullets: [],
       };
       pendingHeader = null;
-      // and then keep going to possibly treat this line as a bullet below
     }
 
     if (!current) continue;
-
     if (looksLikeMetaLine(line)) continue;
     if (looksLikeContactOrReferenceLine(line)) continue;
 
-    // ✅ include ● bullets too
     const isGlyphBullet = /^[•●\u2022\u00B7o-]\s+/.test(line);
     const cleaned = isGlyphBullet ? cleanLeadingBulletGarbage(line) : line;
 
     const candidate = String(cleaned || "").trim();
-    if (!candidate) continue;
-    if (candidate.length < 12) continue;
+    if (!candidate || candidate.length < 12) continue;
 
-    current.bullets.push(candidate);
+    current.bullets = mergeWrappedBulletLines([...(current.bullets || []), candidate]);
   }
 
   if (pendingHeader) {
@@ -368,7 +531,6 @@ function jobsLookPlaceholder(jobs: any[]) {
   if (!arr.length) return true;
 
   let placeholderCount = 0;
-
   for (const j of arr) {
     const company = String(j?.company ?? "").trim();
     const title = String(j?.title ?? "").trim();
@@ -387,8 +549,6 @@ function jobsLookPlaceholder(jobs: any[]) {
 
   return placeholderCount / arr.length >= 0.4;
 }
-
-/** ---------------- Magic-byte sniffing ---------------- */
 
 type SniffedType = "pdf" | "docx" | "doc" | "txt" | "unknown";
 
@@ -412,8 +572,7 @@ function sniffBufferType(buf: Buffer): SniffedType {
     for (const b of head) {
       if (b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e)) printable++;
     }
-    const ratio = printable / head.length;
-    if (ratio > 0.92) return "txt";
+    if (printable / head.length > 0.92) return "txt";
   }
 
   return "unknown";
@@ -454,8 +613,6 @@ async function extractDocxTextAndBulletsFromBuffer(
   return { text: textWithBullets, bullets, html };
 }
 
-/** ---------------- Experience section slicing ---------------- */
-
 function extractExperienceSection(fullText: string) {
   const text = normalizeResumeText(fullText);
   const lower = text.toLowerCase();
@@ -479,7 +636,6 @@ function extractExperienceSection(fullText: string) {
     const afterStart = text.slice(bestStartIdx);
     const endMatch = afterStart.match(endHeadingRegex);
     const endIdx = endMatch?.index;
-
     const experienceText = typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
     return { experienceText: normalizeResumeText(experienceText), foundSection: true, mode: `heading:${bestNeedle}` };
@@ -509,13 +665,11 @@ function extractExperienceSection(fullText: string) {
   const afterStart = lines.slice(startLine).join("\n");
   const endMatch = afterStart.match(endHeadingRegex);
   const endIdx = endMatch?.index;
-
   const experienceText = typeof endIdx === "number" && endIdx > 0 ? afterStart.slice(0, endIdx) : afterStart;
 
   return { experienceText: normalizeResumeText(experienceText), foundSection: true, mode: "heuristic" };
 }
 
-/** Option B: capture metadata blocks (not bullets) */
 function extractMetaBlocks(fullText: string) {
   const text = normalizeResumeText(fullText);
 
@@ -531,7 +685,6 @@ function extractMetaBlocks(fullText: string) {
 
   const gamesShipped: string[] = [];
   const metrics: string[] = [];
-
   const seenGames = new Set<string>();
   const seenMetrics = new Set<string>();
 
@@ -557,26 +710,21 @@ function extractMetaBlocks(fullText: string) {
         seenMetrics.add(k);
         metrics.push(l);
       }
-      continue;
     }
   }
 
   return {
-    gamesShipped: Array.from(new Set(gamesShipped)).slice(0, 30),
+    gamesShipped: Array.from(new Set(gamesShipped)).slice(0, 24),
     metrics: Array.from(new Set(metrics)).slice(0, 50),
   };
 }
-
-/** ---------------- PDF extraction (pdfjs baseline) ---------------- */
 
 async function ensurePdfJsPolyfills() {
   if (!(globalThis as any).DOMMatrix) {
     try {
       const dm: any = await import("dommatrix");
       (globalThis as any).DOMMatrix = dm?.DOMMatrix ?? dm?.default ?? dm;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
   if (!(globalThis as any).Path2D) {
     (globalThis as any).Path2D = class Path2DStub {};
@@ -630,11 +778,14 @@ function buildItemsFromTextContentItems(items: any[]): PdfItem[] {
     const x = tr ? Number(tr[4] ?? 0) : 0;
     const y = tr ? Number(tr[5] ?? 0) : 0;
 
-    const w = Number(it?.width ?? 0);
-    const h = Number(it?.height ?? 0);
-    const hasEOL = Boolean(it?.hasEOL);
-
-    out.push({ str: text, x, y, w, h, hasEOL });
+    out.push({
+      str: text,
+      x,
+      y,
+      w: Number(it?.width ?? 0),
+      h: Number(it?.height ?? 0),
+      hasEOL: Boolean(it?.hasEOL),
+    });
   }
   return out;
 }
@@ -684,7 +835,6 @@ function groupItemsIntoLines(items: PdfItem[]) {
 
       const gap = lastX == null ? 0 : p.x - lastX;
       if (gap > 6) s += " ";
-
       if (!s.endsWith(" ") && !/^[,.:;)\]]/.test(t) && !/[([/]\s*$/.test(s)) s += " ";
 
       s += t;
@@ -693,7 +843,6 @@ function groupItemsIntoLines(items: PdfItem[]) {
 
     const text = normalizePdfText(s);
     if (!text) continue;
-
     normalized.push({ y: l.y, xMin: l.xMin, xMax: l.xMax, text });
   }
 
@@ -706,7 +855,6 @@ function splitIntoColumnsIfNeeded(lines: { y: number; xMin: number; xMax: number
 
   const xMins = lines.map((l) => l.xMin).sort((a, b) => a - b);
   const medianXMin = xMins[Math.floor(xMins.length / 2)] ?? 0;
-
   const maxXMin = xMins[xMins.length - 1] ?? 0;
   const spread = maxXMin - medianXMin;
 
@@ -739,7 +887,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     }
 
     const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
     if (pdfjs?.GlobalWorkerOptions) {
       pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
     }
@@ -752,14 +899,13 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     });
 
     const pdf = await loadingTask.promise;
-
     let out = "";
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-
       const rawItems: any[] = Array.isArray(content?.items) ? content.items : [];
+
       if (!rawItems.length) {
         out += "\n\n";
         continue;
@@ -767,15 +913,8 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
 
       const items = buildItemsFromTextContentItems(rawItems);
       const lines = groupItemsIntoLines(items);
-
       const col = splitIntoColumnsIfNeeded(lines);
-
-      const pageText =
-        col.columns
-          .map((colLines) => colLines.map((l) => l.text).join("\n"))
-          .join("\n\n") + "\n\n";
-
-      out += pageText;
+      out += col.columns.map((colLines) => colLines.map((l) => l.text).join("\n")).join("\n\n") + "\n\n";
     }
 
     return normalizeResumeText(out);
@@ -784,8 +923,6 @@ async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
     throw new Error(`PDF parse failed: ${msg}`);
   }
 }
-
-/** ---------------- PDF extraction (gated OCR fallback) ---------------- */
 
 type PdfExtractionResult = {
   text: string;
@@ -805,7 +942,6 @@ async function extractResumeTextFromPdfWithOcrGate(buffer: Buffer): Promise<PdfE
   let pdfjsText = "";
   let pdfjsError: string | null = null;
 
-  // Always TRY pdfjs first (cheap)
   try {
     pdfjsText = await extractTextFromPdfBuffer(buffer);
   } catch (e: any) {
@@ -813,10 +949,8 @@ async function extractResumeTextFromPdfWithOcrGate(buffer: Buffer): Promise<PdfE
     warnings.push(PDF_WEIRD_WARNING);
   }
 
-  // If pdfjs succeeded, assess quality
-  let quality = pdfjsText ? assessPdfTextQuality(pdfjsText) : null;
+  const quality = pdfjsText ? assessPdfTextQuality(pdfjsText) : null;
 
-  // If pdfjs failed OR quality is bad -> OCR
   if (!pdfjsText || (quality && !quality.ok)) {
     warnings.push(PDF_WEIRD_WARNING);
 
@@ -837,7 +971,6 @@ async function extractResumeTextFromPdfWithOcrGate(buffer: Buffer): Promise<PdfE
     };
   }
 
-  // Good enough from pdfjs
   return {
     text: normalizeResumeText(pdfjsText),
     parserUsed: "pdfjs",
@@ -849,8 +982,6 @@ async function extractResumeTextFromPdfWithOcrGate(buffer: Buffer): Promise<PdfE
     },
   };
 }
-
-/** ---------------- File extraction ---------------- */
 
 async function extractResumeFromFile(file: File): Promise<{
   text: string;
@@ -881,16 +1012,12 @@ async function extractResumeFromFile(file: File): Promise<{
   }
 
   if (sniffed === "doc") throw new Error(friendlyUnsupportedDocMsg());
-
   if (sniffed === "txt") return { text: buffer.toString("utf8"), bulletsFromFile: undefined, detectedType: "txt" };
 
   const name = (file.name || "").toLowerCase();
   if (name.endsWith(".doc")) throw new Error(friendlyUnsupportedDocMsg("(It looks like a legacy Word .doc file.)"));
-
   throw new Error("Unsupported file type. Please upload a PDF or DOCX.");
 }
-
-/** ---------------- Blob URL extraction ---------------- */
 
 function inferExtFromUrl(url: string) {
   const clean = url.split("?")[0].toLowerCase();
@@ -921,21 +1048,17 @@ async function fetchBlobAsBuffer(url: string): Promise<{ buffer: Buffer; content
   };
 
   let res = await tryFetch(false);
-
-  if (!res.ok && (res.status === 401 || res.status === 403)) {
-    res = await tryFetch(true);
-  }
+  if (!res.ok && (res.status === 401 || res.status === 403)) res = await tryFetch(true);
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Failed to fetch resumeBlobUrl. Status ${res.status}. ${text ? `Body: ${text}` : ""}`);
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  const ab = await res.arrayBuffer();
-  const buffer = Buffer.from(ab);
-
-  return { buffer, contentType };
+  return {
+    buffer: Buffer.from(await res.arrayBuffer()),
+    contentType: res.headers.get("content-type") || "",
+  };
 }
 
 async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
@@ -960,7 +1083,6 @@ async function extractResumeFromUrl(resumeBlobUrl: string): Promise<{
   const sniffed = sniffBufferType(buffer);
   const typeFromCt = inferTypeFromContentType(contentType);
   const typeFromUrl = inferExtFromUrl(resumeBlobUrl);
-
   const detectedType = sniffed !== "unknown" ? sniffed : typeFromCt || typeFromUrl || "unknown";
 
   if (detectedType === "docx") {
@@ -1035,10 +1157,57 @@ function flattenFromJobs(jobsIn: any[]) {
   return { outBullets, outJobIds };
 }
 
-/**
- * ✅ NEW: last-resort bullet scan for PDFs with weird glyph bullets (●)
- * Only runs if all other extraction paths found zero bullets.
- */
+function looksLikeWrappedBulletContinuation(prev: string, next: string) {
+  const a = String(prev || "").trim();
+  const b = String(next || "").trim();
+  if (!a || !b) return false;
+
+  if (looksLikeMetaLine(b)) return false;
+  if (looksLikeContactOrReferenceLine(b)) return false;
+  if (looksLikeDateRangeLine(b)) return false;
+  if (looksLikeJobHeaderLine(b)) return false;
+  if (looksLikeCompanyDashTitleHeader(b)) return false;
+  if (/^[•●\u2022\u00B7o-]\s+/.test(b)) return false;
+
+  const prevEndsSentence = /[.!?]$/.test(a);
+  const prevEndsSoftWrap =
+    /[,;:()\/-]$/.test(a) ||
+    /\b(and|or|to|of|for|with|by|in|on|from|using|including|through|across|via)\b$/i.test(a);
+  const nextStartsLower = /^[a-z]/.test(b);
+  const nextStartsDigitish = /^[\d(%$]/.test(b);
+  const nextStartsConnector =
+    /^(and|or|to|of|for|with|by|in|on|from|using|including|through|across|via|while|which|that)\b/i.test(b);
+
+  if ((!prevEndsSentence || prevEndsSoftWrap) && (nextStartsLower || nextStartsDigitish || nextStartsConnector)) {
+    return true;
+  }
+
+  if (!prevEndsSentence && (a.length <= 90 || b.length <= 90)) return true;
+  return false;
+}
+
+function mergeWrappedBulletLines(linesIn: string[]) {
+  const lines = (Array.isArray(linesIn) ? linesIn : []).map((x) => String(x || "").trim()).filter(Boolean);
+  if (!lines.length) return [] as string[];
+
+  const merged: string[] = [];
+  for (const line of lines) {
+    if (!merged.length) {
+      merged.push(line);
+      continue;
+    }
+
+    const prev = merged[merged.length - 1];
+    if (looksLikeWrappedBulletContinuation(prev, line)) {
+      merged[merged.length - 1] = `${prev} ${line}`.replace(/\s+/g, " ").trim();
+    } else {
+      merged.push(line);
+    }
+  }
+
+  return merged;
+}
+
 function scanBulletsFromTextFallback(text: string) {
   const lines = normalizeResumeText(text)
     .split("\n")
@@ -1047,30 +1216,40 @@ function scanBulletsFromTextFallback(text: string) {
 
   const out: string[] = [];
   const seen = new Set<string>();
-
-  // bullet markers: • ● - o (very common in exported PDFs)
   const bulletRe = /^[\s]*([•●\u2022\u00B7o-])\s+/;
+  let current: string | null = null;
 
-  for (const line of lines) {
-    if (!bulletRe.test(line)) continue;
-
-    const cleaned = cleanLeadingBulletGarbage(line);
-    const candidate = String(cleaned || "").trim();
-    if (!candidate) continue;
-    if (candidate.length < 12) continue;
-    if (looksLikeContactOrReferenceLine(candidate)) continue;
-    if (looksLikeMetaLine(candidate)) continue;
+  const flush = () => {
+    const candidate = String(current || "").trim();
+    current = null;
+    if (!candidate || candidate.length < 12) return;
+    if (looksLikeContactOrReferenceLine(candidate)) return;
+    if (looksLikeMetaLine(candidate)) return;
 
     const k = normalizeForContains(candidate);
-    if (seen.has(k)) continue;
+    if (seen.has(k)) return;
     seen.add(k);
     out.push(candidate);
+  };
+
+  for (const line of lines) {
+    if (bulletRe.test(line)) {
+      flush();
+      current = cleanLeadingBulletGarbage(line);
+      continue;
+    }
+
+    if (current && looksLikeWrappedBulletContinuation(current, line)) {
+      current = `${current} ${line}`.replace(/\s+/g, " ").trim();
+      continue;
+    }
+
+    flush();
   }
 
+  flush();
   return out;
 }
-
-/** --------- Route --------- */
 
 export async function POST(req: Request) {
   console.log(BOOT_TAG, { at: new Date().toISOString() });
@@ -1081,7 +1260,6 @@ export async function POST(req: Request) {
   try {
     const contentType = req.headers.get("content-type") || "";
 
-    // ✅ Require login
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
     if (!email) return okJson({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -1091,18 +1269,17 @@ export async function POST(req: Request) {
 
     let resumeText = "";
     let jobText = "";
-    let onlyExperienceBullets: boolean = true;
+    let targetPosition = "";
+    let onlyExperienceBullets = true;
 
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
 
-    // OCR/pdf debug
     const warnings: string[] = [];
     let parserUsed: "pdfjs" | "vision_ocr" | "mammoth" | "txt" | "unknown" = "unknown";
     let pdfInfo: any = null;
-    let detectedType: string = "unknown";
+    let detectedType = "unknown";
 
-    // --- Parse inputs (DO NOT charge yet) ---
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
 
@@ -1129,7 +1306,6 @@ export async function POST(req: Request) {
 
         const extracted = await extractResumeFromFile(file);
         detectedType = extracted.detectedType;
-
         resumeText = sanitizeResumeInput(extracted.text);
 
         if (extracted.parserUsed) parserUsed = extracted.parserUsed;
@@ -1145,13 +1321,13 @@ export async function POST(req: Request) {
         }
       } else {
         resumeText = sanitizeResumeInput(resumeTextFallback);
-        parserUsed = "unknown";
       }
     } else if (contentType.includes("application/json")) {
       const body = (await req.json().catch(() => ({}))) as any;
 
       const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
+      targetPosition = normalizeJobText(body.targetPosition);
 
       if (typeof body.onlyExperienceBullets === "boolean") {
         onlyExperienceBullets = body.onlyExperienceBullets;
@@ -1160,7 +1336,6 @@ export async function POST(req: Request) {
       if (resumeBlobUrl) {
         const extracted = await extractResumeFromUrl(resumeBlobUrl);
         detectedType = extracted.detectedType;
-
         resumeText = sanitizeResumeInput(extracted.text);
 
         if (extracted.parserUsed) parserUsed = extracted.parserUsed;
@@ -1190,7 +1365,6 @@ export async function POST(req: Request) {
         }
       } else {
         resumeText = sanitizeResumeInput(body.resumeText);
-        parserUsed = "unknown";
       }
     } else {
       return okJson(
@@ -1201,8 +1375,8 @@ export async function POST(req: Request) {
 
     const warningsUnique = Array.from(new Set(warnings));
 
-    if (!resumeText || !jobText) {
-      return okJson({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl) or jobText" }, { status: 400 });
+    if (!resumeText || !jobText || !targetPosition) {
+      return okJson({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl), jobText, or targetPosition" }, { status: 400 });
     }
 
     if (resumeText.length < 300) {
@@ -1211,18 +1385,12 @@ export async function POST(req: Request) {
           ok: false,
           error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text.",
           warnings: warningsUnique,
-          debug: {
-            parserUsed,
-            detectedType,
-            pdfInfo,
-            blobDebug,
-          },
+          debug: { parserUsed, detectedType, pdfInfo, blobDebug },
         },
         { status: 400 }
       );
     }
 
-    // ✅ Charge credits AFTER validation
     const COST_ANALYZE = 3;
     const charged = await chargeCredits({
       userId: dbUser.id,
@@ -1239,9 +1407,9 @@ export async function POST(req: Request) {
     chargedUserId = dbUser.id;
     chargedCost = COST_ANALYZE;
 
-    // --- Do analysis ---
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
+    const ats = buildAtsAnalysis({ resumeText, jobText, targetPosition });
 
     const highlights = {
       gamesShipped: metaBlocks.gamesShipped,
@@ -1262,7 +1430,9 @@ export async function POST(req: Request) {
         title: String(j?.title || "Role"),
         dates: String(j?.dates || "Dates"),
         location: j?.location ? String(j.location) : "",
-        bullets: Array.isArray(j?.bullets) ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean) : [],
+        bullets: mergeWrappedBulletLines(
+          Array.isArray(j?.bullets) ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean) : []
+        ),
       }));
 
     const tryExtract = async (text: string) => {
@@ -1283,7 +1453,6 @@ export async function POST(req: Request) {
       }
     };
 
-    // Smart-gated DOCX list bullets (kept)
     const seededFileBulletsRaw = filterBadBullets(bulletsFromFile || []);
     let seededFileBullets = seededFileBulletsRaw;
 
@@ -1291,24 +1460,19 @@ export async function POST(req: Request) {
       const expHaystack = normalizeForContains(experienceSlice.experienceText);
       seededFileBullets = seededFileBullets.filter((b) => {
         const needle = normalizeForContains(b);
-        if (!needle) return false;
-        return expHaystack.includes(needle);
+        return !!needle && expHaystack.includes(needle);
       });
     }
 
-    // 1) strict on experience slice (existing extractor)
     const strict1 = await tryExtract(experienceSlice.experienceText);
     experienceJobs = normalizeJobs(strict1.jobs);
 
-    // flatten from extracted jobs
     const flat1 = flattenFromJobs(experienceJobs);
     bullets = filterBadBullets(flat1.outBullets);
     bulletJobIds = flat1.outJobIds;
 
-    // 2) fallback to bulletSourceText if no bullets
     if (!bullets.length) {
       const strict2 = await tryExtract(bulletSourceText);
-
       const jobs2 = normalizeJobs(strict2.jobs);
       const flat2 = flattenFromJobs(jobs2);
 
@@ -1317,15 +1481,13 @@ export async function POST(req: Request) {
         bullets = filterBadBullets(flat2.outBullets);
         bulletJobIds = flat2.outJobIds;
       } else {
-        const raw = (strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean);
+        const raw = mergeWrappedBulletLines((strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean));
         bullets = filterBadBullets(raw);
-
         const fallbackJobId = experienceJobs[0]?.id || "job_default";
         bulletJobIds = bullets.map(() => fallbackJobId);
       }
     }
 
-    // ✅ 2.5) LAST RESORT for PDFs: scan for glyph bullets (●) directly from text
     if (!bullets.length) {
       const scanned = scanBulletsFromTextFallback(bulletSourceText);
       if (scanned.length) {
@@ -1335,7 +1497,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3) if still empty, fall back to DOCX list bullets (smart-gated)
     if (!bullets.length && seededFileBullets.length) {
       bullets = seededFileBullets;
       const fallbackJobId = experienceJobs[0]?.id || "job_default";
@@ -1343,7 +1504,6 @@ export async function POST(req: Request) {
     }
 
     if (!bullets.length) {
-      // refund: parsing failure
       try {
         const refunded = await refundCredits({
           userId: chargedUserId,
@@ -1401,13 +1561,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ if extracted jobs are placeholders, rebuild from experience text for PREVIEW headings
     if (bullets.length && jobsLookPlaceholder(experienceJobs)) {
       const previewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText);
       if (previewJobs.length) {
         experienceJobs = previewJobs;
 
-        // keep bullets mapping when possible
         const flatPreview = flattenFromJobs(experienceJobs);
         const filteredPreviewBullets = filterBadBullets(flatPreview.outBullets);
 
@@ -1427,7 +1585,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Suggestions + plan
     let bulletSuggestions: any[] = [];
     let weakBullets: any[] = [];
 
@@ -1478,22 +1635,17 @@ export async function POST(req: Request) {
     return okJson({
       ok: true,
       balance: charged.balance,
-
       ...analysis,
-
+      ats,
       experienceJobs,
       bullets,
       bulletJobIds,
-
       bulletSuggestions,
       weakBullets,
       rewritePlan,
       metaBlocks,
-
       highlights,
-
       warnings: warningsUnique,
-
       debug: {
         contentType,
         resumeLen: resumeText.length,
@@ -1513,10 +1665,13 @@ export async function POST(req: Request) {
         maxFileMb: MAX_FILE_MB,
         blobDebug,
         jobsWerePlaceholder: jobsLookPlaceholder(normalizeJobs(strict1?.jobs || [])),
-
         detectedType,
         parserUsed,
         pdfInfo,
+        atsPrimaryResumeRole: ats?.detectedResumeRole?.roleKey ?? null,
+        atsPrimaryJobRole: ats?.detectedJobRole?.roleKey ?? null,
+        atsTargetRole: ats?.targetRole?.roleKey ?? null,
+        atsOverallScore: ats?.overallScore ?? null,
       },
     });
   } catch (e: any) {

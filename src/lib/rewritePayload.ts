@@ -2,6 +2,7 @@ const MAX_JOBTEXT = 6000;
 const MAX_ORIGINAL_BULLET = 800;
 const MAX_KEYWORDS = 40;
 const MAX_PRODUCTS = 25;
+const MAX_CONTEXT_TERMS = 40;
 
 const compact = (s: any, n: number) =>
   String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -18,10 +19,31 @@ export function buildRewriteBulletPayload(raw: any) {
     jobText: compact(raw.jobText, MAX_JOBTEXT),
 
     suggestedKeywords: sanitizedKeywords,
+    priorityMissingKeywords: (raw.priorityMissingKeywords ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, 8),
+    bulletTargetKeywords: (raw.bulletTargetKeywords ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, 8),
+    matchedKeywords: (raw.matchedKeywords ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, 8),
+    ignoredMissingKeywords: (raw.ignoredMissingKeywords ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, 20),
     keywordLimit: MAX_KEYWORDS,
     keywordCount: sanitizedKeywords.length,
 
     role: raw.role ? compact(raw.role, 120) : undefined,
+    targetPosition: raw.targetPosition ? compact(raw.targetPosition, 120) : undefined,
     tone: raw.tone ? compact(raw.tone, 120) : undefined,
 
     sourceCompany: raw.sourceCompany
@@ -56,6 +78,24 @@ export function buildRewriteBulletPayload(raw: any) {
 
     usedOpeners: (raw.usedOpeners ?? []).map(String).slice(0, 80),
     usedPhrases: (raw.usedPhrases ?? []).map(String).slice(0, 80),
+    usedTailPhrases: (raw.usedTailPhrases ?? []).map(String).slice(0, 80),
+
+    // Truth Guardrail V1 context
+    resumeSkills: (raw.resumeSkills ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, MAX_CONTEXT_TERMS),
+    sectionSkills: (raw.sectionSkills ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, MAX_CONTEXT_TERMS),
+    allowedTerms: (raw.allowedTerms ?? [])
+      .map(String)
+      .map((s: string) => compact(s, 80))
+      .filter(Boolean)
+      .slice(0, MAX_CONTEXT_TERMS),
   };
 
   // Optional debugging

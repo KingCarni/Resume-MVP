@@ -115,7 +115,7 @@ export default function DonateCreditsPanel() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-extrabold text-black">Donate Credits</h2>
-          <div className="mt-1 text-xs text-black/60 dark:text-black/70">
+          <div className="mt-1 text-xs text-black/60 dark:text-black/90">
             You can only donate <span className="font-black">paid</span> credits (not daily/free bonuses).
           </div>
         </div>

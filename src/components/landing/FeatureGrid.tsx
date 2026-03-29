@@ -2,44 +2,56 @@
 export default function FeatureGrid() {
   const features = [
     {
-      title: "Resume Builder",
-      desc: "Turn experience into stronger bullets with clearer verbs, structure, and impact.",
+      title: "Resume Analyzer",
+      desc: "Check ATS alignment, keyword coverage, and which parts of your resume need the most work first.",
+    },
+    {
+      title: "Bullet Rewriter",
+      desc: "Strengthen weak bullets with clearer verbs, stronger structure, and better role alignment — while staying grounded in the original experience.",
     },
     {
       title: "Cover Letter Generator",
-      desc: "Role-aligned cover letters that don’t sound robotic — and stay editable.",
+      desc: "Generate role-aligned cover letters that stay editable and don’t read like obvious AI filler.",
     },
     {
-      title: "Template Preview + PDF",
-      desc: "See the final result before you export. Keep formatting consistent.",
+      title: "Preview + PDF Export",
+      desc: "See the finished result before you commit. Adjust templates, review output, then export cleanly.",
     },
     {
       title: "Credit-Based Pricing",
-      desc: "Pay for usage, not a monthly trap. Clear cost per action.",
+      desc: "Use what you need. No bloated monthly plan. Costs stay visible and predictable.",
+    },
+    {
+      title: "Built for Real Use",
+      desc: "Designed for tech and gaming applicants who want stronger applications fast — not another overhyped career subscription.",
     },
   ];
 
   return (
     <section className="rounded-3xl border border-white/30 bg-white/35 p-6 shadow-xl backdrop-blur-xl sm:p-10">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="text-xs font-black uppercase tracking-widest text-black/90">
-            What it does
-          </div>
-          <h2 className="mt-2 text-2xl font-black text-black">
-            Tools that help you apply with confidence.
-          </h2>
+      <div>
+        <div className="text-xs font-black uppercase tracking-widest text-black/90">
+          What it does
         </div>
+        <h2 className="mt-2 text-2xl font-black text-black sm:text-3xl">
+          Everything you need to improve the application — not just “make it prettier.”
+        </h2>
+        <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-black/85">
+          Git-a-Job focuses on stronger content, better alignment, and cleaner output —
+          so you can stop guessing what to fix and start shipping better applications.
+        </p>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {features.map((f) => (
           <div
             key={f.title}
             className="rounded-3xl border border-white/35 bg-white/30 p-5 shadow-sm"
           >
             <div className="text-base font-black text-black">{f.title}</div>
-            <div className="mt-2 text-sm font-semibold text-black/90">{f.desc}</div>
+            <div className="mt-2 text-sm font-semibold leading-6 text-black/90">
+              {f.desc}
+            </div>
           </div>
         ))}
       </div>

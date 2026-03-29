@@ -34,14 +34,11 @@ function matchBulletStart(line: string): string | null {
 }
 
 function looksLikeHeading(line: string) {
-  // Avoid grabbing section headings as bullets
   const l = line.trim();
   if (l.length <= 3) return true;
-  if (
-    /^(experience|work experience|skills|summary|education|projects|certifications)\b/i.test(l)
-  )
+  if (/^(experience|work experience|skills|summary|education|projects|certifications)\b/i.test(l)) {
     return true;
-  // All-caps short lines are often headings
+  }
   if (l.length < 40 && l === l.toUpperCase() && /[A-Z]/.test(l)) return true;
   return false;
 }
@@ -49,27 +46,17 @@ function looksLikeHeading(line: string) {
 function looksLikeContactOrReferenceLine(s: string) {
   const t = normalizeSpaces(s);
 
-  // Emails
   if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(t)) return true;
 
-  // Phone-ish: 7+ digits total (covers 5551234, 604-555-1234, +1 (604) 555-1234)
   const digitCount = (t.match(/\d/g) || []).length;
   if (digitCount >= 7) return true;
 
-  // Common “reference/contact header” lines
-  if (
-    /\b(references?|reference available|contact|phone|mobile|email|linkedin|github|portfolio)\b/i.test(
-      t
-    )
-  ) {
+  if (/\b(references?|reference available|contact|phone|mobile|email|linkedin|github|portfolio)\b/i.test(t)) {
     return true;
   }
 
-  // URLs (often linkedin/portfolio)
   if (/\bhttps?:\/\/\S+|\bwww\.\S+/i.test(t)) return true;
 
-  // “Name, Title” style lines that are usually references
-  // (simple heuristic: two Capitalized words near start, short line)
   if (t.length <= 60 && /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b/.test(t)) return true;
 
   return false;
@@ -83,6 +70,46 @@ function shouldKeepBullet(text: string) {
   return true;
 }
 
+function looksLikeSectionBoundary(line: string) {
+  const t = normalizeSpaces(line);
+  if (!t) return true;
+  if (looksLikeHeading(t)) return true;
+
+  // Common resume headers / job lines
+  if (/^(skills|summary|experience|work experience|education|projects|certifications|areas of expertise|key metrics)\b/i.test(t)) {
+    return true;
+  }
+
+  // Strong signal for a job header/date row
+  if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}\b/i.test(t)) {
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikeBulletContinuation(line: string) {
+  const t = normalizeSpaces(line);
+  if (!t) return false;
+  if (looksLikeHeading(t)) return false;
+  if (looksLikeContactOrReferenceLine(t)) return false;
+  if (matchBulletStart(t)) return false;
+  if (looksLikeSectionBoundary(t)) return false;
+
+  // Lowercase / punctuation starts are usually wrapped continuation lines from PDFs.
+  if (/^[a-z0-9(%$~]/.test(t)) return true;
+
+  // Common continuation starters inside a sentence.
+  if (/^(and|or|to|for|with|while|using|via|through|across|including|improving|reducing|increasing|lowering|enhancing|supporting)\b/i.test(t)) {
+    return true;
+  }
+
+  // Hyphenated wrap fragments like "long - term" or sentence fragments ending previous line.
+  if (/^[a-z]+\s*-\s*[a-z]+/i.test(t)) return true;
+
+  return false;
+}
+
 export function extractResumeBullets(resumeText: string): ResumeBullet[] {
   const lines = String(resumeText || "")
     .replace(/\r\n/g, "\n")
@@ -92,11 +119,10 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
   let current: string | null = null;
 
   for (const rawLine of lines) {
-    const line = rawLine.replace(/\t/g, "  "); // tabs -> spaces
+    const line = rawLine.replace(/\t/g, "  ");
     const trimmed = line.trim();
 
     if (!trimmed) {
-      // blank line ends a bullet continuation
       if (current) {
         if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
         current = null;
@@ -105,9 +131,7 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
     }
 
     const start = matchBulletStart(trimmed);
-
     if (start) {
-      // flush previous bullet
       if (current) {
         if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
       }
@@ -115,32 +139,25 @@ export function extractResumeBullets(resumeText: string): ResumeBullet[] {
       continue;
     }
 
-    // Continuation line: if it's indented in the original text, append to current bullet
     const isIndented = /^\s{2,}/.test(line);
 
-    if (current && isIndented) {
-      // Prevent contact/ref lines from polluting a legitimate bullet
+    if (current && (isIndented || looksLikeBulletContinuation(trimmed))) {
       if (!looksLikeContactOrReferenceLine(trimmed)) {
         current = `${current} ${trimmed}`;
       }
       continue;
     }
 
-    // If we have a current bullet and this line is NOT indented, it's probably a new paragraph/section
     if (current) {
       if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
       current = null;
     }
-
-    // Otherwise ignore non-bullet lines for now (MVP)
   }
 
-  // flush last bullet
   if (current) {
     if (shouldKeepBullet(current)) bullets.push(normalizeSpaces(current));
   }
 
-  // Deduplicate while preserving order
   const seen = new Set<string>();
   const out: ResumeBullet[] = [];
 

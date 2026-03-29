@@ -1,0 +1,52 @@
+{
+  "version": "2026-03-26",
+  "scoringDefaults": {
+    "exactTitleMatch": 24,
+    "aliasTitleMatch": 16,
+    "categoryWeightMultiplier": {
+      "coreTitles": 1.35,
+      "altTitles": 1.15,
+      "gameSignals": 1.2,
+      "toolsAndTech": 1.1,
+      "enginesPlatforms": 1.0,
+      "methodologies": 0.95,
+      "deliverables": 0.9,
+      "outcomes": 1.0,
+      "softSignals": 0.45
+    },
+    "placementBoost": {
+      "headline": 1.25,
+      "summary": 1.15,
+      "recentExperience": 1.2,
+      "skills": 1.0,
+      "olderExperience": 0.9,
+      "projectSection": 1.05
+    },
+    "evidenceBoostRules": {
+      "metricNearKeyword": 1.15,
+      "actionVerbNearKeyword": 1.1,
+      "titleAndBulletBothPresent": 1.12,
+      "shippedTitleOrLiveOpsSignal": 1.1
+    },
+    "penalties": {
+      "keywordStuffingRepeatedMoreThan3xWithoutEvidence": -12,
+      "softSignalsOnlyProfile": -8,
+      "titleMismatchWithWeakSupportingEvidence": -10,
+      "emptySkillsSectionOverweighting": -5
+    },
+    "normalizationRules": {
+      "lowercase": true,
+      "strip_punctuation": true,
+      "expand_aliases": true,
+      "lemmatize_simple_plurals": true,
+      "dedupe_ngrams": true
+    },
+    "scoreBands": {
+      "90_100": "Excellent fit / strong ATS alignment",
+      "75_89": "Good fit / likely shortlistable",
+      "60_74": "Moderate fit / needs targeted resume edits",
+      "40_59": "Weak fit / missing key role signals",
+      "0_39": "Low fit / likely wrong role family"
+    }
+  }
+}

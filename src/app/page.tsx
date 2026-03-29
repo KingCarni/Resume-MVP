@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 
 import LandingTopBar from "@/components/landing/LandingTopBar";
 import LandingHero from "@/components/landing/LandingHero";
+import TrustBar from "@/components/landing/TrustBar";
 import ProblemSolution from "@/components/landing/ProblemSolution";
 import FeatureGrid from "@/components/landing/FeatureGrid";
 import HowItWorks from "@/components/landing/HowItWorks";
@@ -35,7 +36,7 @@ export default async function HomePage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-emerald-400 via-emerald-300 to-blue-500">
-      {/* ✅ App-style header when authed; simple marketing header when not */}
+      {/* App-style header when authed; simple marketing header when not */}
       <LandingTopBar
         isAuthed={!!session}
         credits={credits}
@@ -49,8 +50,12 @@ export default async function HomePage() {
           primaryLabel={primaryLabel}
           secondaryHref="#how-it-works"
           secondaryLabel="See how it works"
-          perkLine="New accounts start with 25 free credits. Earn 10 bonus credits every day you sign in — no subscription required."
+          perkLine="New accounts start with 25 free credits. Earn 10 bonus credits every day you sign in!"
         />
+
+        <div className="mt-6">
+          <TrustBar />
+        </div>
 
         <div className="mt-10 grid gap-10">
           <ProblemSolution />

@@ -46,11 +46,11 @@ export default function DonationPoolCard() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-extrabold text-black">Donation Pool</h2>
-          <div className="mt-1 text-xs text-black/60 dark:text-black/70">
+          <div className="mt-1 text-xs text-black/60 dark:text-black/90">
             Current available balance for fulfillments.
           </div>
           {pool?.email ? (
-            <div className="mt-1 text-[11px] font-bold text-black/50">
+            <div className="mt-1 text-[11px] font-bold text-black/90">
               Pool user: <span className="font-mono">{pool.email}</span>
             </div>
           ) : null}
@@ -77,7 +77,7 @@ export default function DonationPoolCard() {
         <div className="mt-1 text-5xl font-black text-black">
           {balance === null ? "—" : balance}
         </div>
-        <div className="mt-1 text-sm text-black/60">credits</div>
+        <div className="mt-1 text-sm text-black/90">credits</div>
       </div>
     </section>
   );
