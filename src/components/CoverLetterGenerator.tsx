@@ -159,28 +159,6 @@ function Callout({
   );
 }
 
-
-function openHtmlPreviewInNewWindow(title: string, html: string) {
-  const win = window.open("", "_blank", "noopener,noreferrer");
-  if (!win) {
-    throw new Error("Preview popup was blocked by the browser.");
-  }
-
-  win.document.open();
-  win.document.write(html || "<!doctype html><html><head><title>Preview</title></head><body></body></html>");
-  win.document.close();
-
-  if (title) {
-    try {
-      win.document.title = title;
-    } catch {}
-  }
-
-  try {
-    win.focus();
-  } catch {}
-}
-
 async function downloadPdfFromHtml(filename: string, html: string) {
   const ref =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -210,6 +188,33 @@ async function downloadPdfFromHtml(filename: string, html: string) {
 
   URL.revokeObjectURL(url);
 }
+
+function openHtmlPreviewInNewWindow(title: string, html: string) {
+  const docHtml =
+    html && String(html).trim()
+      ? String(html)
+      : `<!doctype html><html><head><title>${escapeHtml(title)}</title></head><body></body></html>`;
+
+  const blob = new Blob([docHtml], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const win = window.open(url, "_blank");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    throw new Error("Preview popup was blocked by the browser.");
+  }
+
+  try {
+    win.focus();
+  } catch {}
+
+  window.setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {}
+  }, 60000);
+}
+
 
 /** ---------------- HTML templates (MATCH RESUME STYLES) ---------------- */
 
@@ -1736,8 +1741,6 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   );
 }
 
-
-
 /** ---------------- Tone recommendation ---------------- */
 
 function recommendToneHeuristic(jobText: string) {
@@ -2229,25 +2232,25 @@ export default function CoverLetterGenerator() {
                   Copy
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      openHtmlPreviewInNewWindow("Cover Letter Preview", coverLetterHtml || "");
+                    } catch (e: any) {
+                      setError(e?.message || "Preview failed");
+                    }
+                  }}
+                  disabled={!coverLetterDraft}
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Preview
+                </button>
+
                 <div className="flex items-center gap-2">
                   <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black dark:border-white/10 dark:bg-black/20 dark:text-black">
                     .pdf
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        openHtmlPreviewInNewWindow("Cover Letter Preview", coverLetterHtml || "");
-                      } catch (e: any) {
-                        setError?.(e?.message || "Preview failed");
-                      }
-                    }}
-                    disabled={!coverLetterDraft}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                  >
-                    Preview
-                  </button>
 
                   <button
                     type="button"

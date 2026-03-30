@@ -3526,21 +3526,24 @@ function computeOverallAtsScore(args: {
   const metricsScore = Math.min(1, args.metricsCount / 8);
   const strongVerbScore = Math.min(1, args.strongVerbCount / 6);
 
-  const overall = Number.isFinite(backendOverall) && backendOverall > 0
-    ? Math.max(0, Math.min(100, Math.round(backendOverall)))
-    : Math.max(
-        20,
-        Math.min(
-          99,
-          Math.round(
-            keywordCoverage * 55 +
-              bulletQualityScore * 30 +
-              metricsScore * 8 +
-              Math.max(0, Math.min(1, args.sectionCompleteness)) * 5 +
-              strongVerbScore * 2
-          )
-        )
-      );
+  const liveOverall = Math.max(
+  20,
+  Math.min(
+    99,
+    Math.round(
+      keywordCoverage * 55 +
+        bulletQualityScore * 30 +
+        metricsScore * 8 +
+        Math.max(0, Math.min(1, args.sectionCompleteness)) * 5 +
+        strongVerbScore * 2
+    )
+  )
+);
+
+const overall =
+  Number.isFinite(backendOverall) && backendOverall > 0
+    ? Math.max(Math.round(backendOverall), liveOverall)
+    : liveOverall;
 
   const label: AtsScoreResult["label"] =
     overall >= 85 ? "Strong" : overall >= 70 ? "Good" : overall >= 55 ? "Fair" : "Weak";
