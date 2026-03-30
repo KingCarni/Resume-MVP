@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     }
 
     // ✅ Charge credits
-    const COST_PDF = 2;
+    const COST_PDF = 5;
     const charged = await chargeCredits({
       userId: dbUser.id,
       cost: COST_PDF,
