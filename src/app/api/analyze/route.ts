@@ -1385,7 +1385,14 @@ export async function POST(req: Request) {
           ok: false,
           error: "Resume text too short. If you uploaded a PDF, it may be scanned. Try DOCX or paste text.",
           warnings: warningsUnique,
-          debug: { parserUsed, detectedType, pdfInfo, blobDebug },
+          debug: {
+            parserUsed,
+            detectedType,
+            pdfInfo,
+            blobDebug,
+            rawText: resumeText,
+            normalizedText: normalizeResumeText(resumeText),
+          },
         },
         { status: 400 }
       );
@@ -1668,6 +1675,8 @@ export async function POST(req: Request) {
         detectedType,
         parserUsed,
         pdfInfo,
+        rawText: resumeText,
+        normalizedText: normalizeResumeText(resumeText),
         atsPrimaryResumeRole: ats?.detectedResumeRole?.roleKey ?? null,
         atsPrimaryJobRole: ats?.detectedJobRole?.roleKey ?? null,
         atsTargetRole: ats?.targetRole?.roleKey ?? null,

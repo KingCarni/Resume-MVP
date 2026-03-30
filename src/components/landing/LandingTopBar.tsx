@@ -10,15 +10,19 @@ type Props = {
   signOutHref: string; // keep server-generated /api/auth/signout?... so callbackUrl is correct
 };
 
-export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props) {
+export default function LandingTopBar({
+  isAuthed,
+  credits,
+  signOutHref,
+}: Props) {
   // Logged out: keep marketing-style header (simple)
   if (!isAuthed) {
     return (
-      <div className="mx-auto max-w-6xl px-6 pt-10">
-        <div className="flex items-center justify-between">
+      <div className="mx-auto max-w-6xl px-6 pt-6">
+        <div className="flex items-center justify-between gap-4">
           <Link
             href="/"
-            className="rounded-xl border border-white/40 bg-white/25 px-3 py-2 text-sm font-black text-black shadow-sm backdrop-blur hover:bg-white/35"
+            className="text-xl font-black tracking-tight text-black transition-opacity hover:opacity-80"
           >
             Git-a-Job
           </Link>
@@ -36,7 +40,7 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
 
   // Logged in: app-style nav + credits + actions, plus Sign Out on the left
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-10">
+    <div className="mx-auto max-w-6xl px-6 pt-6">
       <div className="flex items-center justify-between gap-4">
         {/* Left */}
         <Link

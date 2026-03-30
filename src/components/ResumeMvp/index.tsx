@@ -1998,7 +1998,7 @@ ${printLockCss()}
     return mkThemeCss({
       font: "sans",
       ink: "#140a2a",
-      muted: "#3b2a66",
+muted: "#3b2a66",
       line: "#f5d0fe",
       accent: "#ff00e5",
       accent2: "#00e5ff",
@@ -2143,6 +2143,8 @@ function buildResumeHtml(args: {
   includeMeta: boolean;
   showShippedBlock?: boolean;
   showMetricsBlock?: boolean;
+  educationItems?: string[];
+  showEducationOnResume?: boolean;
   expertiseItems?: string[];
   showExpertiseOnResume?: boolean;
   profilePhotoDataUrl?: string;
@@ -2161,6 +2163,8 @@ function buildResumeHtml(args: {
     includeMeta,
     showShippedBlock,
     showMetricsBlock,
+    educationItems,
+    showEducationOnResume,
     expertiseItems,
     showExpertiseOnResume,
     profilePhotoDataUrl,
@@ -2272,6 +2276,19 @@ function buildResumeHtml(args: {
     </div>`
       : "";
 
+  const educationHtml =
+    showEducationOnResume && Array.isArray(educationItems) && educationItems.length
+      ? `
+    <div class="section">
+      <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Education</div>
+      <div class="box">
+        <div class="small">${educationItems
+          .slice(0, 8)
+          .map((x) => `• ${safe(String(x))}`)
+          .join("<br/>")}</div>
+      </div>
+    </div>`
+      : "";
 
   const expertiseHtml =
     showExpertiseOnResume && Array.isArray(expertiseItems) && expertiseItems.length
@@ -2351,6 +2368,7 @@ function buildResumeHtml(args: {
       </div>
 
       ${metaHtml}
+      ${educationHtml}
       ${expertiseHtml}
     </div>
 
@@ -2428,6 +2446,7 @@ function buildResumeHtml(args: {
     <div class="content">
       ${summaryBlock}
       ${metaHtml}
+      ${educationHtml}
       ${expertiseHtml}
 
       <div class="section">
@@ -2491,6 +2510,72 @@ function sanitizeMetaLines(lines: string[]) {
     .slice(0, 24);
 }
 
+
+function parseEducationLines(input: string) {
+  const text = String(input ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+
+  if (!text) return [];
+
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const schoolRe =
+    /\b(university|college|institute|polytechnic|academy|school)\b/i;
+
+  const degreeRe =
+    /\b(bachelor|master|doctorate|phd|mba|masc|msc|beng|b\.eng|bsc|b\.sc|ba|b\.a|bs|m\.sc|m\.a|ms|ma|associate|diploma)\b/i;
+
+  const certRe =
+    /\b(certification|certifications|certificate|certified|license|licence|az-900|aws|gcp|azure|microsoft|google cloud|scrum|pmp)\b/i;
+
+  const headingRe =
+    /^\s*(education|education & certifications|education and certifications|certifications|training)\s*:?\s*$/i;
+
+  const stopRe =
+    /^\s*(experience|work experience|professional experience|employment|projects|skills|technical skills|areas of expertise|summary|profile|highlights)\s*:?\s*$/i;
+
+  const out: string[] = [];
+  let inEducationSection = false;
+
+  for (const raw of lines) {
+    const line = raw
+      .replace(/\(link to thesis\)/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!line) continue;
+
+    if (headingRe.test(line)) {
+      inEducationSection = true;
+      continue;
+    }
+
+    if (inEducationSection && stopRe.test(line)) {
+      inEducationSection = false;
+      continue;
+    }
+
+    const looksEducational =
+      schoolRe.test(line) ||
+      degreeRe.test(line) ||
+      certRe.test(line) ||
+      (inEducationSection && line.length >= 4 && line.length <= 160);
+
+    if (!looksEducational) continue;
+
+    if (!out.some((x) => x.toLowerCase() === line.toLowerCase())) {
+      out.push(line);
+    }
+  }
+
+  return out.slice(0, 8);
+}
 
 function parseAreasOfExpertise(args: {
   resumeText: string;
@@ -3747,6 +3832,7 @@ export default function ResumeMvp() {
   const [includeMetaInResumeDoc, setIncludeMetaInResumeDoc] = useState(true);
   const [showShippedBlock, setShowShippedBlock] = useState(true);
   const [showMetricsBlock, setShowMetricsBlock] = useState(true);
+  const [showEducationOnResume, setShowEducationOnResume] = useState(true);
   const [showExpertiseOnResume, setShowExpertiseOnResume] = useState(true);
 
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplateId>("modern");
@@ -4415,7 +4501,7 @@ export default function ResumeMvp() {
             : []),
           ...(targetPosition.trim()
             ? [`Write this as if it is being optimized for the target position: ${targetPosition.trim()}.`]
-            : []),
+  : []),
         ],
         mustPreserveMeaning: true,
 
@@ -4887,6 +4973,51 @@ if (typeof planIndex === "number") {
   }, [resumeText, profile.summary, editorBulletsBySection, effectivePlan]);
 
   const [editorExpertiseItems, setEditorExpertiseItems] = useState<string[]>([]);
+  const [editorEducationItems, setEditorEducationItems] = useState<string[]>([]);
+
+  useEffect(() => {
+    setEditorEducationItems((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length) return prev;
+
+      const parsed = parseEducationLines(resumeText);
+      return parsed.length ? parsed : prev;
+    });
+  }, [resumeText]);
+
+  useEffect(() => {
+    if (!analysis) return;
+
+    setEditorEducationItems((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length) return prev;
+
+      const sourceText =
+        String(analysis?.debug?.rawText ?? "") ||
+        String(analysis?.debug?.normalizedText ?? "") ||
+        String(resumeText ?? "");
+
+      const parsed = parseEducationLines(sourceText);
+      return parsed.length ? parsed : prev;
+    });
+  }, [analysis, resumeText]);
+
+useEffect(() => {
+  if (!analysis) return;
+
+  setEditorEducationItems((prev) => {
+    const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+    if (cleanedPrev.length) return prev;
+
+    const sourceText =
+      String(analysis?.debug?.rawText ?? "") ||
+      String(analysis?.debug?.normalizedText ?? "") ||
+      String(resumeText ?? "");
+
+    const parsed = parseEducationLines(sourceText);
+    return parsed.length ? parsed : prev;
+  });
+}, [analysis, resumeText]);
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
@@ -5227,6 +5358,19 @@ if (typeof planIndex === "number") {
     setEditorExpertiseItems((prev) => prev.filter((_, idx) => idx !== index));
   }
 
+
+  function updateEducationItem(index: number, value: string) {
+    setEditorEducationItems((prev) => prev.map((item, idx) => (idx === index ? value : item)));
+  }
+
+  function addEducationItem() {
+    setEditorEducationItems((prev) => [...prev, ""]);
+  }
+
+  function deleteEducationItem(index: number) {
+    setEditorEducationItems((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
   function addKeywordToExpertise(term: string) {
     const cleaned = String(term ?? "").trim();
     if (!cleaned) return;
@@ -5507,6 +5651,8 @@ if (typeof planIndex === "number") {
       includeMeta: includeMetaInResumeDoc,
       showShippedBlock,
       showMetricsBlock,
+      educationItems: editorEducationItems.filter((x) => String(x ?? "").trim()),
+      showEducationOnResume,
       expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
       showExpertiseOnResume,
       profilePhotoDataUrl,
@@ -5525,6 +5671,8 @@ if (typeof planIndex === "number") {
     editorMetaMetrics,
     shippedLabelMode,
     includeMetaInResumeDoc,
+    showEducationOnResume,
+    editorEducationItems,
     showExpertiseOnResume,
     editorExpertiseItems,
     profilePhotoDataUrl,
@@ -5902,6 +6050,16 @@ if (typeof planIndex === "number") {
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
                   <input
                     type="checkbox"
+                    checked={showEducationOnResume}
+                    onChange={(e) => setShowEducationOnResume(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show Education on resume
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                  <input
+                    type="checkbox"
                     checked={showExpertiseOnResume}
                     onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
                     className="h-4 w-4"
@@ -5921,6 +6079,52 @@ if (typeof planIndex === "number") {
                                 
               </div>
 
+
+              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Education (Editable)</div>
+                    <div className="text-xs text-black/90 dark:text-black/90">
+                      {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={addEducationItem}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {editorEducationItems.length ? (
+                  <div className="mt-3 grid gap-2">
+                    {editorEducationItems.map((item, i) => (
+                      <div key={`education-${i}`} className="flex items-center gap-2">
+                        <input
+                          value={item}
+                          onChange={(e) => updateEducationItem(i, e.target.value)}
+                          className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-black"
+                          placeholder="Education or certification"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => deleteEducationItem(i)}
+                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                          aria-label={`Delete education ${i + 1}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
+                    No education detected yet. Add it manually here if the parser misses anything.
+                  </div>
+                )}
+              </div>
 
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="flex flex-wrap items-center justify-between gap-2">
