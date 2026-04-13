@@ -5,6 +5,8 @@ import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 import { upload } from "@vercel/blob/client";
 import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
+import { trackJobEvent } from "@/lib/analytics/jobs";
 
 /** ---------------- Types ---------------- */
 
@@ -185,6 +187,30 @@ type AnalyzeAtsPayload = {
     toRoleKey?: string | null;
     toRoleName?: string | null;
   } | null;
+};
+
+type ApplyPackBundle = {
+  bundle?: string;
+  jobId?: string;
+  resumeProfileId?: string;
+  nextStep?: string;
+  createdAt?: string;
+  job?: {
+    id?: string;
+    title?: string;
+    company?: string;
+    location?: string | null;
+    remoteType?: string;
+    seniority?: string;
+    employmentType?: string;
+    applyUrl?: string | null;
+    sourceUrl?: string | null;
+    description?: string;
+    requirementsText?: string | null;
+    responsibilitiesText?: string | null;
+    postedAt?: string | null;
+    jobContextText?: string;
+  };
 };
 
 type AnalyzeResponse = {
@@ -3805,6 +3831,8 @@ export default function ResumeMvp() {
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
   const [targetPosition, setTargetPosition] = useState("");
+  const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
+  const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resumeBlobUrl, setResumeBlobUrl] = useState<string>("");
@@ -3867,6 +3895,10 @@ export default function ResumeMvp() {
     Record<string, { sessionId: string; attemptNumber: number; maxAttempts: number }>
   >({});
 
+  const trackedResumeEntryRef = useRef("");
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+
 
   function createRewriteSessionId() {
     try {
@@ -3887,6 +3919,149 @@ export default function ResumeMvp() {
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
   }, [file, resumeText, jobText, targetPosition]);
+
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    async function hydrateApplyPack() {
+      const queryJobId = String(searchParams.get("jobId") || "").trim();
+      const queryResumeProfileId = String(searchParams.get("resumeProfileId") || "").trim();
+      const queryBundle = String(searchParams.get("bundle") || "").trim();
+      const queryNext = String(searchParams.get("next") || "").trim();
+
+      let parsed: ApplyPackBundle | null = null;
+
+      try {
+        const raw = window.sessionStorage.getItem("gitajob.applyPack");
+        if (raw) {
+          parsed = JSON.parse(raw) as ApplyPackBundle;
+        }
+      } catch {
+        parsed = null;
+      }
+
+      const storedJobId = String(parsed?.jobId || "").trim();
+      const storedJobText = String(parsed?.job?.jobContextText || "").trim();
+      const storedTargetPosition = String(parsed?.job?.title || "").trim();
+
+      const needsFreshJobContext =
+        queryBundle === "apply-pack" &&
+        queryJobId &&
+        (queryJobId !== storedJobId || !storedJobText);
+
+      if (needsFreshJobContext) {
+        try {
+          const response = await fetch(`/api/jobs/${encodeURIComponent(queryJobId)}/context`, {
+            method: "GET",
+            cache: "no-store",
+          });
+          const json = (await response.json().catch(() => null)) as
+            | { ok?: boolean; item?: ApplyPackBundle["job"]; error?: string }
+            | null;
+
+          if (response.ok && json?.ok && json.item) {
+            const nextBundle: ApplyPackBundle = {
+              bundle: "apply-pack",
+              jobId: queryJobId,
+              resumeProfileId:
+                queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
+              createdAt: new Date().toISOString(),
+              nextStep: queryNext || parsed?.nextStep || "resume",
+              job: json.item,
+            };
+
+            window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+
+            if (cancelled) return;
+
+            setApplyPackBundle(nextBundle);
+            setJobText(String(json.item.jobContextText || "").trim());
+            setTargetPosition(String(json.item.title || "").trim());
+            setJobTextOverrideMode(false);
+            return;
+          }
+        } catch {
+          // fall through to stored bundle
+        }
+      }
+
+      if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
+
+      setApplyPackBundle(parsed);
+
+      const sameRequestedJob = !queryJobId || queryJobId === storedJobId;
+
+      if (sameRequestedJob && storedJobText) {
+        setJobText((current) => (current.trim() ? current : storedJobText));
+      }
+
+      if (sameRequestedJob && storedTargetPosition) {
+        setTargetPosition((current) => (current.trim() ? current : storedTargetPosition));
+      }
+    }
+
+    hydrateApplyPack();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const queryJobId = searchParams.get("jobId") || "";
+    const queryResumeProfileId = searchParams.get("resumeProfileId") || "";
+    const bundle = searchParams.get("bundle") || "";
+    const next = searchParams.get("next") || "";
+
+    const storedJobId = String(applyPackBundle?.jobId || "").trim();
+    const storedResumeProfileId = String(applyPackBundle?.resumeProfileId || "").trim();
+    const activeJobId = queryJobId || storedJobId;
+    const activeResumeProfileId = queryResumeProfileId || storedResumeProfileId;
+    const activeTitle = String(applyPackBundle?.job?.title || targetPosition || "").trim();
+    const activeCompany = String(applyPackBundle?.job?.company || "").trim();
+
+    if (!activeJobId) return;
+
+    const entryKey = JSON.stringify({
+      activeJobId,
+      activeResumeProfileId,
+      bundle,
+      next,
+      activeTitle,
+      activeCompany,
+    });
+
+    if (trackedResumeEntryRef.current === entryKey) return;
+    trackedResumeEntryRef.current = entryKey;
+
+    trackJobEvent({
+      event: "job_context_resume_entry",
+      jobId: activeJobId,
+      resumeProfileId: activeResumeProfileId || undefined,
+      company: activeCompany || undefined,
+      jobTitle: activeTitle || undefined,
+      route: "/resume",
+      mode: bundle === "apply-pack" ? "apply_pack" : "resume",
+      meta: {
+        next: next || undefined,
+        hasBundlePayload: !!applyPackBundle,
+      },
+    });
+  }, [applyPackBundle, targetPosition, searchParamsKey]);
+
+  function syncJobTextFromApplyPack() {
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    const savedTargetPosition = String(applyPackBundle?.job?.title || "").trim();
+
+    if (savedJobText) setJobText(savedJobText);
+    if (savedTargetPosition) setTargetPosition(savedTargetPosition);
+    setJobTextOverrideMode(false);
+  }
 
   const resetDerivedState = useCallback(() => {
     setAnalysis(null);
@@ -4029,6 +4204,34 @@ export default function ResumeMvp() {
       const resumeInput = resumeText.trim();
       const resumePlain = looksLikeHtmlInput(resumeInput) ? htmlToPlainText(resumeInput) : resumeInput;
       const resumeTextForApi = resumePlain ? normalizeResumeTextForParsing(resumePlain) : "";
+
+      const analyticsParams =
+        typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const analyticsJobId =
+        analyticsParams?.get("jobId") || String(applyPackBundle?.jobId || "").trim();
+      const analyticsResumeProfileId =
+        analyticsParams?.get("resumeProfileId") || String(applyPackBundle?.resumeProfileId || "").trim();
+      const analyticsBundle =
+        analyticsParams?.get("bundle") || String(applyPackBundle?.bundle || "").trim();
+      const analyticsMode = analyticsBundle === "apply-pack" ? "apply_pack" : "resume";
+
+      if (analyticsJobId) {
+        trackJobEvent({
+          event: analyticsMode === "apply_pack" ? "job_apply_pack_started" : "job_resume_analysis_started",
+          jobId: analyticsJobId,
+          resumeProfileId: analyticsResumeProfileId || undefined,
+          company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+          jobTitle: String(applyPackBundle?.job?.title || targetPosition || "").trim() || undefined,
+          route: "/resume",
+          mode: analyticsMode,
+          meta: {
+            hasResumeFile: !!file,
+            hasResumeText: !!resumeText.trim(),
+            hasJobText: !!jobText.trim(),
+            hasTargetPosition: !!targetPosition.trim(),
+          },
+        });
+      }
 
       if (file) {
         const url = await ensureResumeUploadedToBlob(file);
@@ -5777,6 +5980,7 @@ useEffect(() => {
         </div>
       ) : null}
 
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
@@ -5835,24 +6039,63 @@ useEffect(() => {
             </div>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Job posting text</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                  {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
+                </div>
+
+                {applyPackBundle?.job?.jobContextText ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setJobTextOverrideMode((v) => !v)}
+                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                    >
+                      {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={syncJobTextFromApplyPack}
+                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                    >
+                      Re-sync saved job
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={6}
-                placeholder="Post job description/requirements here"
+                placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Post job description/requirements here"}
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
               />
+
+              <div className="text-xs text-black/70 dark:text-black/80">
+                {applyPackBundle?.job?.jobContextText
+                  ? jobTextOverrideMode
+                    ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
+                    : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
+                  : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
+              </div>
             </label>
 
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Target position (required)</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                {applyPackBundle?.job?.title ? "Target position (prefilled from saved job)" : "Target position (required)"}
+              </div>
               <input
                 value={targetPosition}
                 onChange={(e) => setTargetPosition(e.target.value)}
                 placeholder="Production Director, QA Engineer, Product Owner..."
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
               />
+              {applyPackBundle?.job?.title ? (
+                <div className="text-xs text-black/70 dark:text-black/80">
+                  Prefilled from AI Job Match: {applyPackBundle.job.title}
+                </div>
+              ) : null}
             </label>
 
             {/* Template */}

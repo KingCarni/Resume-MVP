@@ -10,6 +10,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chargeCredits, refundCredits } from "@/lib/credits";
 import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
+import { upsertLatestResumeProfileForUser } from "@/lib/resumeProfiles/buildProfile";
 
 import { ocrPdfWithGoogleVision } from "@/lib/pdf_ocr_google";
 import { assessPdfTextQuality } from "@/lib/pdf_quality";
@@ -51,6 +52,83 @@ type AtsHit = {
   weight: number;
   score: number;
 };
+
+type JobsAnalyticsMode = "resume" | "cover_letter" | "apply_pack" | "browse";
+
+type JobsAnalyticsContext = {
+  jobId: string;
+  resumeProfileId?: string;
+  sourceSlug?: string;
+  company?: string;
+  jobTitle?: string;
+  mode?: JobsAnalyticsMode;
+};
+
+function cleanOptionalString(value: unknown) {
+  const s = String(value ?? "").trim();
+  return s || undefined;
+}
+
+function buildJobsAnalyticsContext(input: {
+  jobId?: unknown;
+  resumeProfileId?: unknown;
+  sourceSlug?: unknown;
+  company?: unknown;
+  jobTitle?: unknown;
+  mode?: unknown;
+}) {
+  const jobId = cleanOptionalString(input.jobId);
+  if (!jobId) return null;
+
+  const modeRaw = cleanOptionalString(input.mode);
+  const mode: JobsAnalyticsMode | undefined =
+    modeRaw === "apply_pack" || modeRaw === "cover_letter" || modeRaw === "browse" || modeRaw === "resume"
+      ? modeRaw
+      : "resume";
+
+  return {
+    jobId,
+    resumeProfileId: cleanOptionalString(input.resumeProfileId),
+    sourceSlug: cleanOptionalString(input.sourceSlug),
+    company: cleanOptionalString(input.company),
+    jobTitle: cleanOptionalString(input.jobTitle),
+    mode,
+  } satisfies JobsAnalyticsContext;
+}
+
+async function writeJobsAnalyticsEvent(args: {
+  userId: string;
+  event: string;
+  route: string;
+  context: JobsAnalyticsContext | null;
+  meta?: Record<string, unknown>;
+}) {
+  if (!args.context?.jobId) return;
+
+  await prisma.event.create({
+    data: {
+      userId: args.userId,
+      type: "analyze",
+      metaJson: {
+        tag: BOOT_TAG,
+        category: "jobs",
+        event: args.event,
+        route: args.route,
+        jobId: args.context.jobId,
+        resumeProfileId: args.context.resumeProfileId ?? null,
+        sourceSlug: args.context.sourceSlug ?? null,
+        company: args.context.company ?? null,
+        jobTitle: args.context.jobTitle ?? null,
+        mode: args.context.mode ?? null,
+        ...(typeof args.meta === "object" && args.meta ? toSafeJson(args.meta) : {}),
+      },
+    },
+  });
+}
+
+function toSafeJson(value: unknown) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
 
 function okJson(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
@@ -141,6 +219,36 @@ function cleanLeadingBulletGarbage(s: string) {
 function safeArray(input: unknown): string[] {
   return Array.isArray(input) ? input.map((x) => String(x || "").trim()).filter(Boolean) : [];
 }
+
+function safeTitleArray(input: Array<string | null | undefined>) {
+  return uniqueCaseInsensitive(
+    input.map((item) => String(item || "").trim()).filter(Boolean)
+  );
+}
+
+function buildAutoResumeProfileSummary(args: {
+  targetPosition: string;
+  parserUsed: string;
+  ats?: any;
+  highlights?: { gamesShipped?: string[]; keyMetrics?: string[] };
+}) {
+  const roleName =
+    String(args.ats?.detectedResumeRole?.roleName || "").trim() ||
+    String(args.ats?.targetRole?.roleName || "").trim() ||
+    String(args.targetPosition || "").trim();
+
+  const matchedTerms = safeArray(args.ats?.matchedTerms).slice(0, 4);
+  const metricHint = safeArray(args.highlights?.keyMetrics).slice(0, 1);
+  const parts: string[] = [];
+
+  if (roleName) parts.push(`${roleName} profile auto-created from resume analysis.`);
+  if (matchedTerms.length) parts.push(`Detected strengths: ${matchedTerms.join(", ")}.`);
+  if (metricHint.length) parts.push(`Evidence captured: ${metricHint[0]}.`);
+  if (args.parserUsed && args.parserUsed !== "unknown") parts.push(`Source parse: ${args.parserUsed}.`);
+
+  return parts.join(" ").trim() || "Auto-created from resume analysis.";
+}
+
 
 function pct(part: number, total: number) {
   if (!total) return 0;
@@ -1256,6 +1364,7 @@ export async function POST(req: Request) {
 
   let chargedUserId = "";
   let chargedCost = 0;
+  let jobsAnalyticsContext: JobsAnalyticsContext | null = null;
 
   try {
     const contentType = req.headers.get("content-type") || "";
@@ -1272,6 +1381,7 @@ export async function POST(req: Request) {
     let targetPosition = "";
     let onlyExperienceBullets = true;
 
+
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
 
@@ -1286,12 +1396,23 @@ export async function POST(req: Request) {
       const file = form.get("file");
       const resumeTextFallback = form.get("resumeText");
       const job = form.get("jobText") ?? form.get("jobPostingText");
+      const target = form.get("targetPosition");
 
       const flagRaw = form.get("onlyExperienceBullets");
       const parsedFlag = parseOnlyExperienceFlagFromFormData(flagRaw);
       if (typeof parsedFlag === "boolean") onlyExperienceBullets = parsedFlag;
 
       jobText = normalizeJobText(job);
+      targetPosition = normalizeJobText(target);
+
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: form.get("jobId"),
+        resumeProfileId: form.get("resumeProfileId"),
+        sourceSlug: form.get("sourceSlug"),
+        company: form.get("company"),
+        jobTitle: form.get("jobTitle") ?? target,
+        mode: form.get("mode"),
+      });
 
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
@@ -1328,6 +1449,15 @@ export async function POST(req: Request) {
       const resumeBlobUrl = String(body.resumeBlobUrl ?? "").trim();
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
       targetPosition = normalizeJobText(body.targetPosition);
+
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: body.jobId,
+        resumeProfileId: body.resumeProfileId,
+        sourceSlug: body.sourceSlug,
+        company: body.company,
+        jobTitle: body.jobTitle ?? body.targetPosition,
+        mode: body.mode,
+      });
 
       if (typeof body.onlyExperienceBullets === "boolean") {
         onlyExperienceBullets = body.onlyExperienceBullets;
@@ -1408,11 +1538,53 @@ export async function POST(req: Request) {
     });
 
     if (!charged.ok) {
+      await writeJobsAnalyticsEvent({
+        userId: dbUser.id,
+        event: "job_resume_analysis_failed",
+        route: "/resume",
+        context: jobsAnalyticsContext,
+        meta: {
+          creditsCost: COST_ANALYZE,
+          error: "OUT_OF_CREDITS",
+          refunded: false,
+          parserUsed,
+          detectedType,
+        },
+      });
+
+      if (jobsAnalyticsContext?.mode === "apply_pack") {
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_apply_pack_failed",
+          route: "/resume",
+          context: jobsAnalyticsContext,
+          meta: {
+            step: "resume_analyze",
+            creditsCost: COST_ANALYZE,
+            error: "OUT_OF_CREDITS",
+            refunded: false,
+          },
+        });
+      }
+
       return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
     chargedUserId = dbUser.id;
     chargedCost = COST_ANALYZE;
+
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_resume_credit_charged",
+      route: "/api/analyze",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: COST_ANALYZE,
+        parserUsed,
+        detectedType,
+        targetPosition,
+      },
+    });
 
     const analysis: any = analyzeKeywordFit(resumeText, jobText);
     const metaBlocks = extractMetaBlocks(resumeText);
@@ -1531,6 +1703,37 @@ export async function POST(req: Request) {
           },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: "NO_BULLETS_DETECTED",
+            parserUsed,
+            detectedType,
+            foundExperienceSection: experienceSlice.foundSection,
+            experienceMode: experienceSlice.mode,
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: dbUser.id,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: "NO_BULLETS_DETECTED",
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
@@ -1554,6 +1757,37 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       } catch (refundErr: any) {
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: false,
+            error: "NO_BULLETS_DETECTED",
+            refundError: refundErr?.message || String(refundErr),
+            parserUsed,
+            detectedType,
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: dbUser.id,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: false,
+              error: "NO_BULLETS_DETECTED",
+              refundError: refundErr?.message || String(refundErr),
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
@@ -1639,6 +1873,59 @@ export async function POST(req: Request) {
       };
     });
 
+    let autoResumeProfile: any = null;
+    let autoResumeProfileError: string | null = null;
+
+    try {
+      autoResumeProfile = await upsertLatestResumeProfileForUser({
+        userId: dbUser.id,
+        title:
+          String(ats?.detectedResumeRole?.roleName || "").trim() ||
+          String(targetPosition || "").trim() ||
+          null,
+        rawText: resumeText,
+        summary: buildAutoResumeProfileSummary({
+          targetPosition,
+          parserUsed,
+          ats,
+          highlights,
+        }),
+        skills: uniqueCaseInsensitive([
+          ...safeArray(analysis?.presentKeywords),
+          ...safeArray(ats?.matchedTerms),
+        ]).slice(0, 40),
+        titles: safeTitleArray([
+          ats?.detectedResumeRole?.roleName,
+          ats?.targetRole?.roleName,
+          targetPosition,
+        ]).slice(0, 10),
+        keywords: uniqueCaseInsensitive([
+          ...safeArray(analysis?.presentKeywords),
+          ...safeArray(ats?.matchedTerms),
+          ...safeArray(metaBlocks?.gamesShipped),
+        ]).slice(0, 60),
+      });
+    } catch (profileErr: any) {
+      autoResumeProfileError = profileErr?.message ? String(profileErr.message) : String(profileErr);
+      console.error("resume profile auto-save failed:", profileErr);
+    }
+
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_resume_analysis_completed",
+      route: "/api/analyze",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: COST_ANALYZE,
+        parserUsed,
+        detectedType,
+        targetPosition,
+        bulletsCount: bullets.length,
+        jobsDetected: experienceJobs.length,
+        atsOverallScore: ats?.overallScore ?? null,
+      },
+    });
+
     return okJson({
       ok: true,
       balance: charged.balance,
@@ -1652,7 +1939,16 @@ export async function POST(req: Request) {
       rewritePlan,
       metaBlocks,
       highlights,
-      warnings: warningsUnique,
+      warnings: autoResumeProfileError
+        ? Array.from(new Set([...warningsUnique, "Resume profile auto-save failed."]))
+        : warningsUnique,
+      autoResumeProfile: autoResumeProfile
+        ? {
+            id: autoResumeProfile.id,
+            title: autoResumeProfile.title,
+            updatedAt: autoResumeProfile.updatedAt,
+          }
+        : null,
       debug: {
         contentType,
         resumeLen: resumeText.length,
@@ -1681,6 +1977,9 @@ export async function POST(req: Request) {
         atsPrimaryJobRole: ats?.detectedJobRole?.roleKey ?? null,
         atsTargetRole: ats?.targetRole?.roleKey ?? null,
         atsOverallScore: ats?.overallScore ?? null,
+        autoResumeProfileSaved: !!autoResumeProfile,
+        autoResumeProfileId: autoResumeProfile?.id ?? null,
+        autoResumeProfileError,
       },
     });
   } catch (e: any) {
@@ -1697,11 +1996,67 @@ export async function POST(req: Request) {
           meta: { cost: chargedCost, error: message },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: message || "Failed to analyze input",
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: message || "Failed to analyze input",
+            },
+          });
+        }
+
         return okJson(
           { ok: false, error: message || "Failed to analyze input", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: false,
+            error: message || "Failed to analyze input",
+            refundError: refundErr?.message || String(refundErr),
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: false,
+              error: message || "Failed to analyze input",
+              refundError: refundErr?.message || String(refundErr),
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,

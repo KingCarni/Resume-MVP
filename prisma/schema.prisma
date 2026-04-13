@@ -26,6 +26,12 @@ model User {
   documents     Document[]
   events        Event[]
   sessions      Session[]
+
+  // AI Job Match
+  resumeProfiles ResumeProfile[]
+  jobMatches     JobMatch[]
+  savedJobs      SavedJob[]
+  hiddenJobs     HiddenJob[]
 }
 
 model Account {
@@ -89,6 +95,9 @@ model Document {
   createdAt DateTime     @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // AI Job Match
+  resumeProfiles ResumeProfile[]
 
   @@index([userId, createdAt])
 }
@@ -160,4 +169,217 @@ model DonationRequest {
   // Helpful admin screens
   @@index([reviewedAt])
   @@index([fulfilledAt])
+}
+
+enum JobSourceKind {
+  manual
+  ats_feed
+  api
+}
+
+enum JobImportAdapter {
+  greenhouse
+  lever
+  ashby
+}
+
+enum RemoteType {
+  remote
+  hybrid
+  onsite
+  unknown
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  temporary
+  internship
+  freelance
+  other
+  unknown
+}
+
+enum SeniorityLevel {
+  entry
+  junior
+  mid
+  senior
+  lead
+  staff
+  principal
+  manager
+  director
+  executive
+  unknown
+}
+
+enum JobStatus {
+  active
+  closed
+  expired
+}
+
+model ResumeProfile {
+  id               String         @id @default(cuid())
+  userId           String
+  sourceDocumentId String?
+  title            String?
+  rawText          String?
+  normalizedSkills Json?
+  normalizedTitles Json?
+  seniority        SeniorityLevel @default(unknown)
+  yearsExperience  Int?
+  industries       Json?
+  certifications   Json?
+  keywords         Json?
+  summary          String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  jobMatches     JobMatch[]
+
+  @@index([userId, createdAt])
+  @@index([userId, updatedAt])
+  @@index([sourceDocumentId])
+}
+
+model JobSource {
+  id        String        @id @default(cuid())
+  slug      String        @unique
+  name      String
+  kind      JobSourceKind @default(manual)
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  jobs Job[]
+
+  @@index([kind, isActive])
+}
+
+model JobImportSource {
+  id              String           @id @default(cuid())
+  adapter         JobImportAdapter
+  tokenOrSite     String
+  displayName     String
+  companyOverride String?
+  isActive        Boolean          @default(true)
+  refreshHours    Int              @default(24)
+  lastRunAt       DateTime?
+  lastSuccessAt   DateTime?
+  lastErrorAt     DateTime?
+  lastError       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([adapter, tokenOrSite])
+  @@index([isActive])
+  @@index([adapter])
+  @@index([lastSuccessAt])
+}
+
+model Job {
+  id                   String         @id @default(cuid())
+  sourceId             String
+  externalId           String?
+  company              String
+  companyNormalized    String?
+  title                String
+  titleNormalized      String?
+  location             String?
+  locationNormalized   String?
+  remoteType           RemoteType     @default(unknown)
+  employmentType       EmploymentType @default(unknown)
+  seniority            SeniorityLevel @default(unknown)
+  salaryMin            Int?
+  salaryMax            Int?
+  salaryCurrency       String?
+  description          String
+  requirementsText     String?
+  responsibilitiesText String?
+  skills               Json?
+  keywords             Json?
+  postedAt             DateTime?
+  applyUrl             String?
+  sourceUrl            String?
+  rawPayload           Json?
+  status               JobStatus      @default(active)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  source   JobSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  matches  JobMatch[]
+  savedBy  SavedJob[]
+  hiddenBy HiddenJob[]
+
+  @@unique([sourceId, externalId])
+  @@index([status, createdAt])
+  @@index([status, postedAt])
+  @@index([companyNormalized])
+  @@index([titleNormalized])
+  @@index([locationNormalized])
+  @@index([remoteType, status])
+  @@index([seniority, status])
+  @@index([sourceId, status])
+}
+
+model JobMatch {
+  id               String    @id @default(cuid())
+  userId           String
+  resumeProfileId  String
+  jobId            String
+  totalScore       Int
+  titleScore       Int
+  skillScore       Int
+  seniorityScore   Int
+  locationScore    Int
+  keywordScore     Int
+  explanationShort String?
+  missingSkills    Json?
+  matchingSkills   Json?
+  computedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeProfile ResumeProfile @relation(fields: [resumeProfileId], references: [id], onDelete: Cascade)
+  job           Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeProfileId, jobId])
+  @@index([userId, createdAt])
+  @@index([jobId, totalScore])
+  @@index([resumeProfileId, computedAt])
+}
+
+model SavedJob {
+  id        String   @id @default(cuid())
+  userId    String
+  jobId     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@index([userId, createdAt])
+  @@index([jobId])
+}
+
+model HiddenJob {
+  id        String   @id @default(cuid())
+  userId    String
+  jobId     String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@index([userId, createdAt])
+  @@index([jobId])
 }

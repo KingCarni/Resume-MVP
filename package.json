@@ -8,7 +8,12 @@
     "vercel-build": "prisma migrate deploy && prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "import:jobs": "tsx src/scripts/import-jobs.ts",
+    "import:registry": "tsx src/scripts/import-job-sources.ts",
+    "validate:jobs:scoring": "tsx src/scripts/validate-jobs-scoring.ts",
+    "validate:jobs:api": "tsx src/scripts/validate-jobs-api.ts",
+    "validate:jobs": "tsx src/scripts/validate-jobs-scoring.ts && tsx src/scripts/validate-jobs-api.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -46,6 +51,7 @@
     "eslint-config-next": "16.1.6",
     "prisma": "^6.19.2",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

@@ -1,7 +1,9 @@
 // src/components/CoverLetterGenerator.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { trackJobEvent } from "@/lib/analytics/jobs";
 
 /** ---------------- Types ---------------- */
 
@@ -71,6 +73,30 @@ type ResumeProfile = {
 };
 
 type ApiResp = { ok: true; coverLetter: string } | { ok: false; error?: string };
+
+type ApplyPackBundle = {
+  bundle?: string;
+  jobId?: string;
+  resumeProfileId?: string;
+  nextStep?: string;
+  createdAt?: string;
+  job?: {
+    id?: string;
+    title?: string;
+    company?: string;
+    location?: string | null;
+    remoteType?: string;
+    seniority?: string;
+    employmentType?: string;
+    applyUrl?: string | null;
+    sourceUrl?: string | null;
+    description?: string;
+    requirementsText?: string | null;
+    responsibilitiesText?: string | null;
+    postedAt?: string | null;
+    jobContextText?: string;
+  };
+};
 
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
 
@@ -1790,6 +1816,11 @@ export default function CoverLetterGenerator() {
   const [resumeText, setResumeText] = useState("");
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
+  const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
+  const trackedCoverLetterEntryRef = useRef("");
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
 
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
@@ -1815,11 +1846,142 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
+  const applyPackActive = !!applyPackBundle?.job?.jobContextText;
+
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
     const hasJob = jobText.trim().length > 0;
     return hasResume && hasJob;
   }, [file, resumeText, jobText]);
+
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    async function hydrateApplyPack() {
+      const queryJobId = String(searchParams.get("jobId") || "").trim();
+      const queryResumeProfileId = String(searchParams.get("resumeProfileId") || "").trim();
+      const queryBundle = String(searchParams.get("bundle") || "").trim();
+
+      let parsed: ApplyPackBundle | null = null;
+
+      try {
+        const raw = window.sessionStorage.getItem("gitajob.applyPack");
+        if (raw) {
+          parsed = JSON.parse(raw) as ApplyPackBundle;
+        }
+      } catch {
+        parsed = null;
+      }
+
+      const storedJobId = String(parsed?.jobId || "").trim();
+      const storedJobText = String(parsed?.job?.jobContextText || "").trim();
+
+      const needsFreshJobContext =
+        queryBundle === "apply-pack" &&
+        queryJobId &&
+        (queryJobId !== storedJobId || !storedJobText);
+
+      if (needsFreshJobContext) {
+        try {
+          const response = await fetch(`/api/jobs/${encodeURIComponent(queryJobId)}/context`, {
+            method: "GET",
+            cache: "no-store",
+          });
+          const json = (await response.json().catch(() => null)) as
+            | { ok?: boolean; item?: ApplyPackBundle["job"]; error?: string }
+            | null;
+
+          if (response.ok && json?.ok && json.item) {
+            const nextBundle: ApplyPackBundle = {
+              bundle: "apply-pack",
+              jobId: queryJobId,
+              resumeProfileId:
+                queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
+              createdAt: new Date().toISOString(),
+              nextStep: parsed?.nextStep || "cover-letter",
+              job: json.item,
+            };
+
+            window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+
+            if (cancelled) return;
+
+            setApplyPackBundle(nextBundle);
+            setJobText(String(json.item.jobContextText || "").trim());
+            setJobTextOverrideMode(false);
+            return;
+          }
+        } catch {
+          // fall through to stored bundle
+        }
+      }
+
+      if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
+
+      setApplyPackBundle(parsed);
+
+      const sameRequestedJob = !queryJobId || queryJobId === storedJobId;
+      if (sameRequestedJob && storedJobText) {
+        setJobText((current) => (current.trim() ? current : storedJobText));
+      }
+    }
+
+    hydrateApplyPack();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const queryJobId = searchParams.get("jobId") || "";
+    const queryResumeProfileId = searchParams.get("resumeProfileId") || "";
+    const bundle = searchParams.get("bundle") || "";
+
+    const storedJobId = String(applyPackBundle?.jobId || "").trim();
+    const storedResumeProfileId = String(applyPackBundle?.resumeProfileId || "").trim();
+    const activeJobId = queryJobId || storedJobId;
+    const activeResumeProfileId = queryResumeProfileId || storedResumeProfileId;
+    const activeTitle = String(applyPackBundle?.job?.title || "").trim();
+    const activeCompany = String(applyPackBundle?.job?.company || "").trim();
+
+    if (!activeJobId) return;
+
+    const entryKey = JSON.stringify({
+      activeJobId,
+      activeResumeProfileId,
+      bundle,
+      activeTitle,
+      activeCompany,
+    });
+
+    if (trackedCoverLetterEntryRef.current === entryKey) return;
+    trackedCoverLetterEntryRef.current = entryKey;
+
+    trackJobEvent({
+      event: "job_context_cover_letter_entry",
+      jobId: activeJobId,
+      resumeProfileId: activeResumeProfileId || undefined,
+      company: activeCompany || undefined,
+      jobTitle: activeTitle || undefined,
+      route: "/cover-letter",
+      mode: bundle === "apply-pack" ? "apply_pack" : "cover_letter",
+      meta: {
+        hasBundlePayload: !!applyPackBundle,
+      },
+    });
+  }, [applyPackBundle, searchParamsKey]);
+
+  function syncJobTextFromApplyPack() {
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    if (savedJobText) setJobText(savedJobText);
+    setJobTextOverrideMode(false);
+  }
 
   function clearFile() {
     setFile(null);
@@ -1850,6 +2012,44 @@ export default function CoverLetterGenerator() {
       }
       if (jobText && safeJobText.length < jobText.trim().length) {
         setError("Job text was very large — truncated for upload safety.");
+      }
+
+      const analyticsJobId =
+        (typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("jobId")
+          : "") ||
+        String(applyPackBundle?.jobId || "").trim();
+
+      const analyticsResumeProfileId =
+        (typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("resumeProfileId")
+          : "") ||
+        String(applyPackBundle?.resumeProfileId || "").trim();
+
+      const analyticsMode =
+        String(
+          (typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("bundle")
+            : "") || applyPackBundle?.bundle || ""
+        ).trim() === "apply-pack"
+          ? "apply_pack"
+          : "cover_letter";
+
+      if (analyticsJobId) {
+        trackJobEvent({
+          event: "job_cover_letter_started",
+          jobId: analyticsJobId,
+          resumeProfileId: analyticsResumeProfileId || undefined,
+          company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+          jobTitle: String(applyPackBundle?.job?.title || "").trim() || undefined,
+          route: "/cover-letter",
+          mode: analyticsMode,
+          meta: {
+            hasResumeFile: !!file,
+            hasResumeText: !!safeResumeText.trim(),
+            hasJobText: !!safeJobText.trim(),
+          },
+        });
       }
 
       if (file) {
@@ -1981,6 +2181,7 @@ export default function CoverLetterGenerator() {
         </div>
       ) : null}
 
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
@@ -1990,7 +2191,7 @@ export default function CoverLetterGenerator() {
             {/* File input */}
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
-                Resume file (optional)
+                {applyPackActive ? "Resume file (recommended)" : "Resume file (optional)"}
               </div>
               <input
                 type="file"
@@ -2028,20 +2229,22 @@ export default function CoverLetterGenerator() {
                 </div>
               ) : null}
               <div className="text-xs text-black/60 dark:text-black/90">
-                If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT).
+                {applyPackActive
+                ? "Your saved job is already loaded below. Upload a resume file for the cleanest job-aware cover letter, or paste resume text instead."
+                : "If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT)."}
               </div>
             </label>
 
                   {/* Resume text */}
           <label className="grid gap-1.5">
             <div className="text-xs font-extrabold text-black/90">
-              Resume text (paste if not uploading)
+              {applyPackActive ? "Resume text (optional override)" : "Resume text (paste if not uploading)"}
             </div>
 
             <textarea
               value={resumeText}
               onChange={(e) => setResumeText(e.target.value)}
-              rows={8}
+              rows={applyPackActive ? 6 : 8}
               className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm text-black outline-none
                         placeholder:text-black/80 focus:border-black/20
                         dark:bg-white dark:text-black dark:placeholder:text-black/90"
@@ -2050,14 +2253,46 @@ export default function CoverLetterGenerator() {
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Job posting text</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                  {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
+                </div>
+
+                {applyPackBundle?.job?.jobContextText ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setJobTextOverrideMode((v) => !v)}
+                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                    >
+                      {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={syncJobTextFromApplyPack}
+                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                    >
+                      Re-sync saved job
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
               <textarea
                 value={jobText}
                 onChange={(e) => setJobText(e.target.value)}
                 rows={8}
-                placeholder="Paste job posting here"
+                placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Paste job posting here"}
                 className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
               />
+
+              <div className="text-xs text-black/70 dark:text-black/80">
+                {applyPackBundle?.job?.jobContextText
+                  ? jobTextOverrideMode
+                    ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
+                    : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
+                  : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
+              </div>
             </label>
 
             {/* Template selector */}
