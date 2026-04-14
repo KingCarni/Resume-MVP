@@ -5,10 +5,14 @@ type JobForScoring = {
   title: string;
   titleNormalized?: string | null;
   company: string;
+  companyNormalized?: string | null;
   location?: string | null;
   locationNormalized?: string | null;
   remoteType?: string | null;
   seniority?: string | null;
+  description?: string | null;
+  requirementsText?: string | null;
+  responsibilitiesText?: string | null;
   skills?: unknown;
   keywords?: unknown;
 };
@@ -48,6 +52,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "validation engineer",
       "gameplay qa",
       "embedded qa",
+      "qa lead",
+      "quality lead",
     ],
     bridges: ["engineering", "design_game", "support_ops"],
   },
@@ -92,6 +98,11 @@ const ROLE_FAMILY_DEFINITIONS = {
       "android engineer",
       "react native developer",
       "react native engineer",
+      "unity developer",
+      "unreal developer",
+      "graphics engineer",
+      "rendering engineer",
+      "network engineer",
       "programmer",
       "developer",
       "engineer",
@@ -132,6 +143,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "design systems designer",
       "web designer",
       "graphic designer",
+      "ux researcher",
+      "product researcher",
     ],
     bridges: ["art", "product_ops"],
   },
@@ -154,6 +167,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "prop artist",
       "lighting artist",
       "cinematic artist",
+      "fx artist",
+      "vfx animator",
     ],
     bridges: ["design_game", "design_product"],
   },
@@ -189,6 +204,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "strategy manager",
       "platform operations",
       "operations manager",
+      "product operations specialist",
+      "product strategist",
     ],
     bridges: ["production", "data", "support_ops", "design_product"],
   },
@@ -205,6 +222,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "reporting analyst",
       "metrics analyst",
       "player insights analyst",
+      "bi developer",
+      "data engineer",
     ],
     bridges: ["product_ops"],
   },
@@ -223,6 +242,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "systems engineer",
       "automation engineer",
       "tools engineer",
+      "infrastructure developer",
+      "build pipeline engineer",
     ],
     bridges: ["engineering", "qa", "support_ops"],
   },
@@ -238,6 +259,8 @@ const ROLE_FAMILY_DEFINITIONS = {
       "support analyst",
       "operations specialist",
       "customer success technical specialist",
+      "live ops specialist",
+      "player experience specialist",
     ],
     bridges: ["product_ops", "platform_ops", "qa"],
   },
@@ -254,6 +277,11 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "test automation",
     "manual testing",
     "test planning",
+    "test strategy",
+    "bug triage",
+    "defect tracking",
+    "jira",
+    "acceptance criteria",
   ],
   engineering: [
     "software engineering",
@@ -261,6 +289,13 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "application development",
     "programming",
     "systems engineering",
+    "unity",
+    "unreal engine",
+    "c++",
+    "c#",
+    "build systems",
+    "rendering",
+    "multiplayer",
   ],
   design_game: [
     "game design",
@@ -268,6 +303,9 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "level design",
     "content design",
     "gameplay systems",
+    "combat design",
+    "technical design",
+    "economy design",
   ],
   design_product: [
     "product design",
@@ -275,6 +313,9 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "ui",
     "interaction design",
     "design systems",
+    "user research",
+    "prototyping",
+    "accessibility",
   ],
   art: [
     "art production",
@@ -282,6 +323,9 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "3d modeling",
     "animation",
     "vfx",
+    "maya",
+    "blender",
+    "shader development",
   ],
   production: [
     "production planning",
@@ -289,6 +333,8 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "delivery",
     "project coordination",
     "stakeholder management",
+    "milestone planning",
+    "dependency management",
   ],
   product_ops: [
     "product operations",
@@ -296,6 +342,8 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "technical program management",
     "roadmapping",
     "cross functional delivery",
+    "product strategy",
+    "product analytics",
   ],
   data: [
     "data analysis",
@@ -303,6 +351,9 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "reporting",
     "insights",
     "business intelligence",
+    "tableau",
+    "power bi",
+    "sql",
   ],
   platform_ops: [
     "platform operations",
@@ -310,6 +361,10 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "build and release",
     "ci cd",
     "automation",
+    "incident response",
+    "monitoring",
+    "terraform",
+    "kubernetes",
   ],
   support_ops: [
     "support operations",
@@ -317,9 +372,11 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "customer support",
     "community support",
     "player support",
+    "ticket triage",
+    "zendesk",
+    "knowledge base",
   ],
 };
-
 
 const GENERIC_TITLE_PHRASES = new Set([
   "engineer",
@@ -443,7 +500,6 @@ const FILLER_KEYWORDS = new Set([
   "you",
   "they",
   "them",
-  "team",
   "role",
   "work",
   "worked",
@@ -453,6 +509,60 @@ const FILLER_KEYWORDS = new Set([
   "clearly",
   "continuously",
   "closely",
+  "software",
+  "development",
+  "design",
+  "product",
+  "operations",
+  "production",
+  "delivery",
+  "analytics",
+  "data",
+  "research",
+  "users",
+  "customers",
+  "customer",
+  "studio",
+  "stakeholders",
+]);
+
+const JUNK_GAP_TOKENS = new Set([
+  ...FILLER_KEYWORDS,
+  "ability",
+  "alongside",
+  "around",
+  "basis",
+  "care",
+  "casino",
+  "colleagues",
+  "communities",
+  "community",
+  "connecting",
+  "connections",
+  "daily",
+  "deep",
+  "deeply",
+  "developing",
+  "environment",
+  "environments",
+  "hybrid",
+  "india",
+  "bangalore",
+  "scope",
+  "scopely",
+  "team",
+  "teams",
+  "world",
+  "global",
+  "player",
+  "players",
+  "mobile",
+  "games",
+  "gaming",
+  "stronger",
+  "relevant",
+  "fit",
+  "promising",
 ]);
 
 const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
@@ -462,6 +572,7 @@ const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
     "test automation",
     "automation engineer",
     "automation tester",
+    "automation frameworks",
   ],
   "quality assurance": [
     "quality assurance",
@@ -470,12 +581,14 @@ const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
     "platform quality",
     "quality analyst",
     "qa analyst",
+    "quality engineering",
   ],
   "manual testing": [
     "manual testing",
     "functional testing",
     "functional tester",
     "exploratory testing",
+    "regression testing",
   ],
   "test planning": [
     "test plans",
@@ -485,33 +598,239 @@ const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
     "test strategy",
     "testing strategy",
     "acceptance criteria",
+    "risk based testing",
+    "risk-based testing",
+    "validation approaches",
   ],
   "bug investigation": [
     "bug triage",
     "bug tracking",
     "defect tracking",
+    "defect leakage",
     "reproduction steps",
     "logs",
     "screenshots",
     "bug reporting",
+    "cycle time",
+    "live issues",
   ],
-  "agile delivery": [
-    "agile",
-    "scrum",
-    "sprint planning",
-    "standups",
-    "retrospectives",
-  ],
+  "agile delivery": ["agile", "scrum", "sprint planning", "standups", "retrospectives"],
   "api testing": ["api testing", "rest api", "graphql"],
-  "sql": ["sql", "postgres", "postgresql", "mysql"],
-  "cloud": ["aws", "azure", "gcp", "cloud engineer", "cloud infrastructure"],
+  sql: ["sql", "postgres", "postgresql", "mysql"],
+  cloud: ["aws", "azure", "gcp", "cloud engineer", "cloud infrastructure"],
   "ci/cd": ["ci/cd", "github actions", "release management", "release planning"],
+  "software engineering": [
+    "software engineering",
+    "software development",
+    "application development",
+    "microservices",
+    "distributed systems",
+  ],
+  "game engineering": [
+    "unity",
+    "unity 3d",
+    "unreal engine",
+    "unreal",
+    "blueprints",
+    "rendering",
+    "physics",
+    "multiplayer",
+    "profiling",
+  ],
+  "programming languages": [
+    "javascript",
+    "typescript",
+    "python",
+    "java",
+    "c#",
+    "c++",
+    "go",
+    "golang",
+    "rust",
+    "swift",
+    "kotlin",
+  ],
+  frontend: ["react", "next.js", "nextjs", "design systems", "accessibility"],
+  backend: ["node", "node.js", "express", "nestjs", "rest api", "graphql", "grpc"],
   "game systems": ["gameplay systems", "systems design", "level design", "economy design"],
-  "design research": ["user research", "wireframing", "prototyping", "interaction design"],
-  "art production": ["3d modeling", "rigging", "animation", "vfx", "maya", "blender"],
-  "production planning": ["production planning", "roadmapping", "stakeholder management"],
+  "design research": [
+    "user research",
+    "wireframing",
+    "prototyping",
+    "interaction design",
+    "usability testing",
+    "journey mapping",
+  ],
+  "product design": ["product design", "ux", "ui", "visual design", "figma", "sketch"],
+  "art production": [
+    "3d modeling",
+    "rigging",
+    "animation",
+    "vfx",
+    "maya",
+    "blender",
+    "houdini",
+    "technical art",
+    "shader development",
+    "substance painter",
+  ],
+  "production planning": [
+    "production planning",
+    "roadmapping",
+    "stakeholder management",
+    "project management",
+    "program management",
+    "delivery management",
+    "milestone planning",
+  ],
+  "data analytics": [
+    "data analysis",
+    "analytics",
+    "business intelligence",
+    "dashboarding",
+    "tableau",
+    "power bi",
+    "looker",
+    "data visualization",
+    "experimentation",
+  ],
+  "support operations": [
+    "customer support",
+    "player support",
+    "community management",
+    "ticket triage",
+    "incident management",
+    "zendesk",
+    "salesforce",
+    "knowledge base",
+  ],
 };
 
+const JOB_SIGNAL_PATTERNS = [
+  "qa",
+  "quality assurance",
+  "quality analyst",
+  "quality engineering",
+  "software testing",
+  "manual testing",
+  "automation testing",
+  "test automation",
+  "automation frameworks",
+  "test plans",
+  "test cases",
+  "test strategy",
+  "risk based testing",
+  "risk-based testing",
+  "acceptance criteria",
+  "jira",
+  "bug triage",
+  "bug tracking",
+  "defect leakage",
+  "cycle time",
+  "live issues",
+  "risk assessment",
+  "go/no-go decisions",
+  "cross functional collaboration",
+  "stakeholder management",
+  "team leadership",
+  "mentoring",
+  "upskilling",
+  "cross pod coordination",
+  "cross-pod coordination",
+  "player-first mindset",
+  "qa partners",
+  "offshore qa teams",
+  "automation frameworks",
+  "software engineering",
+  "software development",
+  "application development",
+  "unity",
+  "unity 3d",
+  "unreal engine",
+  "unreal",
+  "blueprints",
+  "rendering",
+  "physics",
+  "multiplayer",
+  "profiling",
+  "performance optimization",
+  "memory optimization",
+  "build systems",
+  "build pipelines",
+  "release engineering",
+  "release pipelines",
+  "devops",
+  "site reliability",
+  "cloud infrastructure",
+  "incident response",
+  "observability",
+  "monitoring",
+  "terraform",
+  "kubernetes",
+  "docker",
+  "linux systems",
+  "sql",
+  "tableau",
+  "power bi",
+  "looker",
+  "dashboarding",
+  "data visualization",
+  "analytics",
+  "business intelligence",
+  "user research",
+  "interaction design",
+  "visual design",
+  "design systems",
+  "usability testing",
+  "wireframing",
+  "prototyping",
+  "accessibility",
+  "technical design",
+  "systems design",
+  "combat design",
+  "economy design",
+  "quest design",
+  "mission design",
+  "technical art",
+  "shader development",
+  "material authoring",
+  "environment art",
+  "character art",
+  "concept art",
+  "ui art",
+  "3d modeling",
+  "rigging",
+  "animation",
+  "vfx",
+  "maya",
+  "blender",
+  "houdini",
+  "production planning",
+  "delivery management",
+  "program management",
+  "project management",
+  "milestone planning",
+  "dependency management",
+  "product strategy",
+  "product analytics",
+  "customer support",
+  "player support",
+  "community management",
+  "ticket triage",
+  "incident management",
+  "knowledge base",
+  "zendesk",
+  "rest api",
+  "graphql",
+  "selenium",
+  "playwright",
+  "cypress",
+  "unity",
+  "unreal engine",
+  "live ops",
+  "metrics dashboards",
+  "quality metrics",
+];
 
 const GENERIC_SUPPORT_TOKENS = new Set([
   ...GENERIC_TITLE_PHRASES,
@@ -534,21 +853,15 @@ const GENERIC_SUPPORT_TOKENS = new Set([
 
 function getFamilyKeywordHints(families: Set<RoleFamily>): string[] {
   const hints: string[] = [];
-  for (const family of families) {
-    hints.push(...ROLE_FAMILY_KEYWORD_HINTS[family]);
-  }
+  for (const family of families) hints.push(...ROLE_FAMILY_KEYWORD_HINTS[family]);
   return uniqueStrings(hints.map(normalizeKeywordText).filter(Boolean));
 }
 
-function buildKeywordSupportPool(
-  values: string[],
-  families: Set<RoleFamily>,
-): Set<string> {
+function buildKeywordSupportPool(values: string[], families: Set<RoleFamily>): Set<string> {
   const pool = buildCanonicalSignalSet(values);
-  const sourceValues = uniqueStrings([
-    ...values.map(normalizeKeywordText),
-    ...getFamilyKeywordHints(families),
-  ].filter(Boolean));
+  const sourceValues = uniqueStrings(
+    [...values.map(normalizeKeywordText), ...getFamilyKeywordHints(families)].filter(Boolean),
+  );
 
   for (const value of sourceValues) {
     const normalizedValue = normalizeKeywordText(value);
@@ -561,15 +874,11 @@ function buildKeywordSupportPool(
       (token) => token.length >= 2 && !GENERIC_SUPPORT_TOKENS.has(token),
     );
 
-    for (const token of tokens) {
-      pool.add(token);
-    }
+    for (const token of tokens) pool.add(token);
 
     for (let index = 0; index < tokens.length - 1; index += 1) {
       const bigram = `${tokens[index]} ${tokens[index + 1]}`.trim();
-      if (bigram && !GENERIC_SUPPORT_TOKENS.has(bigram)) {
-        pool.add(bigram);
-      }
+      if (bigram && !GENERIC_SUPPORT_TOKENS.has(bigram)) pool.add(bigram);
     }
   }
 
@@ -608,14 +917,12 @@ function normalizeKeywordText(value: string): string {
 function uniqueStrings(values: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-
   for (const value of values) {
     const normalizedValue = value.trim();
     if (!normalizedValue || seen.has(normalizedValue)) continue;
     seen.add(normalizedValue);
     out.push(normalizedValue);
   }
-
   return out;
 }
 
@@ -637,54 +944,34 @@ function isGenericTitlePhrase(value: string): boolean {
   return GENERIC_TITLE_PHRASES.has(normalizeTitleText(value));
 }
 
-function scoreByRatio(ratio: number, max: number): number {
-  if (ratio <= 0) return 0;
-  return Math.max(0, Math.min(max, Math.round(ratio * max)));
-}
-
 function getTitleFamilies(texts: string[]): Set<RoleFamily> {
   const families = new Set<RoleFamily>();
-
   for (const rawText of texts) {
     const text = normalizeTitleText(rawText);
     if (!text) continue;
-
     for (const family of Object.keys(ROLE_FAMILY_DEFINITIONS) as RoleFamily[]) {
-      if (
-        ROLE_FAMILY_DEFINITIONS[family].aliases.some((phrase) =>
-          includesPhrase(text, phrase),
-        )
-      ) {
+      if (ROLE_FAMILY_DEFINITIONS[family].aliases.some((phrase) => includesPhrase(text, phrase))) {
         families.add(family);
       }
     }
   }
-
   return families;
 }
 
 function getBridgeFamilies(families: Set<RoleFamily>): Set<RoleFamily> {
   const bridged = new Set<RoleFamily>();
-
   for (const family of families) {
-    for (const bridge of ROLE_FAMILY_DEFINITIONS[family].bridges) {
-      bridged.add(bridge);
-    }
+    for (const bridge of ROLE_FAMILY_DEFINITIONS[family].bridges) bridged.add(bridge);
   }
-
   return bridged;
 }
 
 function getRoleNouns(text: string): Set<string> {
   const normalizedText = normalizeTitleText(text);
   const nouns = new Set<string>();
-
   for (const noun of ROLE_NOUNS) {
-    if (includesPhrase(normalizedText, noun)) {
-      nouns.add(noun);
-    }
+    if (includesPhrase(normalizedText, noun)) nouns.add(noun);
   }
-
   return nouns;
 }
 
@@ -711,21 +998,18 @@ function canonicalizeSkill(value: string): string {
 
 function buildCanonicalSignalSet(values: string[]): Set<string> {
   const signals = new Set<string>();
-
   for (const value of values) {
     const normalizedValue = normalizeKeywordText(value);
     if (!normalizedValue) continue;
     signals.add(canonicalizeSkill(normalizedValue));
     signals.add(normalizedValue);
   }
-
   return signals;
 }
 
 function phraseSimilarity(left: string, right: string): number {
   const leftTokens = new Set(tokenizePhrase(left));
   const rightTokens = new Set(tokenizePhrase(right));
-
   if (!leftTokens.size || !rightTokens.size) return 0;
 
   let overlap = 0;
@@ -736,67 +1020,156 @@ function phraseSimilarity(left: string, right: string): number {
   return overlap / Math.max(leftTokens.size, rightTokens.size);
 }
 
-function isMeaningfulKeyword(
-  keyword: string,
-  job: JobForScoring,
-  jobSkillSet: Set<string>,
-): boolean {
-  const normalizedKeyword = normalizeKeywordText(keyword);
-  if (!normalizedKeyword) return false;
-  if (normalizedKeyword.length < 3 || normalizedKeyword.length > 50) return false;
-  if (/^\d+([.+-]\d+)?$/.test(normalizedKeyword)) return false;
-  if (/^\d{4}$/.test(normalizedKeyword)) return false;
-  if (!/[a-z]/.test(normalizedKeyword)) return false;
-  if (FILLER_KEYWORDS.has(normalizedKeyword)) return false;
+function buildJobSourceText(job: JobForScoring): string {
+  return [
+    job.title,
+    job.titleNormalized ?? "",
+    job.description ?? "",
+    job.requirementsText ?? "",
+    job.responsibilitiesText ?? "",
+  ]
+    .join("\n")
+    .trim();
+}
 
-  const jobTitle = normalizeKeywordText(job.title);
+function isClearlyJunkSignal(value: string, job: JobForScoring): boolean {
+  const normalizedValue = normalizeKeywordText(value);
+  if (!normalizedValue) return true;
+  if (normalizedValue.length < 3 || normalizedValue.length > 60) return true;
+  if (/^\d+([.+-]\d+)?$/.test(normalizedValue)) return true;
+  if (/^\d{4}$/.test(normalizedValue)) return true;
+  if (!/[a-z]/.test(normalizedValue)) return true;
+  if (JUNK_GAP_TOKENS.has(normalizedValue)) return true;
+
+  const title = normalizeKeywordText(job.title);
   const company = normalizeKeywordText(job.company);
+  const companyNormalized = normalizeKeywordText(job.companyNormalized ?? "");
   const location = normalizeKeywordText(job.location ?? "");
+  const locationNormalized = normalizeKeywordText(job.locationNormalized ?? "");
   const remote = normalizeKeywordText(job.remoteType ?? "");
   const seniority = normalizeKeywordText(job.seniority ?? "");
 
   if (
-    normalizedKeyword === jobTitle ||
-    normalizedKeyword === company ||
-    normalizedKeyword === location ||
-    normalizedKeyword === remote ||
-    normalizedKeyword === seniority
+    normalizedValue === title ||
+    normalizedValue === company ||
+    normalizedValue === companyNormalized ||
+    normalizedValue === location ||
+    normalizedValue === locationNormalized ||
+    normalizedValue === remote ||
+    normalizedValue === seniority
   ) {
-    return false;
+    return true;
   }
 
+  const tokens = tokenizePhrase(normalizedValue);
+  if (!tokens.length) return true;
+  if (tokens.every((token) => JUNK_GAP_TOKENS.has(token))) return true;
+
+  return false;
+}
+
+function extractPatternHits(text: string, patterns: string[]): string[] {
+  const normalizedText = normalizeKeywordText(text);
+  const hits = new Set<string>();
+
+  for (const pattern of patterns) {
+    if (includesPhrase(normalizedText, pattern)) {
+      hits.add(canonicalizeSkill(pattern));
+    }
+  }
+
+  return Array.from(hits);
+}
+
+function deriveLiveJobSignals(job: JobForScoring): { skills: string[]; keywords: string[] } {
+  const sourceText = buildJobSourceText(job);
+  if (!sourceText) return { skills: [], keywords: [] };
+
+  const titleFamilies = getTitleFamilies([job.title, job.titleNormalized ?? ""]);
+  const familyHints = getFamilyKeywordHints(titleFamilies);
+  const patternHits = extractPatternHits(sourceText, JOB_SIGNAL_PATTERNS);
+
+  const storedSkillCandidates = ensureStringArray(job.skills)
+    .map(normalizeKeywordText)
+    .filter(Boolean);
+
+  const storedKeywordCandidates = ensureStringArray(job.keywords)
+    .map(normalizeKeywordText)
+    .filter(Boolean);
+
+  const liveSkills = uniqueStrings(
+    [...storedSkillCandidates, ...patternHits]
+      .map(canonicalizeSkill)
+      .filter((value) => !isClearlyJunkSignal(value, job)),
+  );
+
+  const liveKeywords = uniqueStrings(
+    [
+      ...storedKeywordCandidates,
+      ...patternHits,
+      ...familyHints,
+      job.title,
+      job.titleNormalized ?? "",
+      job.seniority ?? "",
+    ]
+      .map(normalizeKeywordText)
+      .map(canonicalizeSkill)
+      .filter((value) => !isClearlyJunkSignal(value, job)),
+  );
+
+  return { skills: liveSkills, keywords: liveKeywords };
+}
+
+function isMeaningfulKeyword(keyword: string, job: JobForScoring, jobSkillSet: Set<string>): boolean {
+  const normalizedKeyword = normalizeKeywordText(keyword);
+  if (isClearlyJunkSignal(normalizedKeyword, job)) return false;
   if (jobSkillSet.has(normalizedKeyword) || jobSkillSet.has(canonicalizeSkill(normalizedKeyword))) {
     return false;
   }
-
-  const tokens = tokenizePhrase(normalizedKeyword);
-  if (!tokens.length) return false;
-  if (tokens.every((token) => FILLER_KEYWORDS.has(token))) return false;
-
   return true;
 }
 
-export function computeTitleScore(
-  profile: ResumeProfileInput,
-  job: JobForScoring,
-): number {
-  const rawProfileTitles = uniqueStrings(
-    profile.normalizedTitles.map(normalizeTitleText).filter(Boolean),
+function isUsefulGapSignal(value: string, job: JobForScoring): boolean {
+  const normalizedValue = canonicalizeSkill(value);
+  if (isClearlyJunkSignal(normalizedValue, job)) return false;
+
+  const tokens = tokenizePhrase(normalizedValue);
+  if (!tokens.length) return false;
+  if (tokens.some((token) => JUNK_GAP_TOKENS.has(token))) return false;
+
+  return (
+    JOB_SIGNAL_PATTERNS.some((pattern) => includesPhrase(normalizedValue, pattern)) ||
+    Object.keys(SKILL_CANONICAL_GROUPS).some((canonical) => includesPhrase(normalizedValue, canonical)) ||
+    tokens.length >= 2 ||
+    tokens.some((token) =>
+      [
+        "unity",
+        "unreal",
+        "terraform",
+        "kubernetes",
+        "docker",
+        "figma",
+        "maya",
+        "blender",
+        "houdini",
+        "tableau",
+        "looker",
+        "zendesk",
+      ].includes(token),
+    )
   );
-  const profileTitles = rawProfileTitles.filter(
-    (title) => !isGenericTitlePhrase(title),
-  );
-  const jobTitles = uniqueStrings(
-    [job.titleNormalized ?? "", job.title].map(normalizeTitleText).filter(Boolean),
-  );
+}
+
+export function computeTitleScore(profile: ResumeProfileInput, job: JobForScoring): number {
+  const rawProfileTitles = uniqueStrings(profile.normalizedTitles.map(normalizeTitleText).filter(Boolean));
+  const profileTitles = rawProfileTitles.filter((title) => !isGenericTitlePhrase(title));
+  const jobTitles = uniqueStrings([job.titleNormalized ?? "", job.title].map(normalizeTitleText).filter(Boolean));
 
   if (!jobTitles.length || !rawProfileTitles.length) return 0;
 
   const exactSourceTitles = profileTitles.length > 0 ? profileTitles : rawProfileTitles;
 
-  if (exactSourceTitles.some((title) => jobTitles.includes(title))) {
-    return TITLE_WEIGHT;
-  }
+  if (exactSourceTitles.some((title) => jobTitles.includes(title))) return TITLE_WEIGHT;
 
   if (
     exactSourceTitles.some((title) =>
@@ -813,30 +1186,22 @@ export function computeTitleScore(
 
   const profileFamilies = getTitleFamilies(rawProfileTitles);
   const jobFamilies = getTitleFamilies(jobTitles);
-  const directOverlap = Array.from(profileFamilies).filter((family) =>
-    jobFamilies.has(family),
-  );
+  const directOverlap = Array.from(profileFamilies).filter((family) => jobFamilies.has(family));
 
-  const jobRoleNouns = new Set(
-    jobTitles.flatMap((title) => Array.from(getRoleNouns(title))),
-  );
+  const jobRoleNouns = new Set(jobTitles.flatMap((title) => Array.from(getRoleNouns(title))));
   const sharesRoleNoun = rawProfileTitles.some((title) => {
     const titleNouns = getRoleNouns(title);
     return Array.from(titleNouns).some((noun) => jobRoleNouns.has(noun));
   });
 
   if (directOverlap.length > 0) {
-    if (directOverlap.length >= 2 || sharesRoleNoun) {
-      return Math.round(TITLE_WEIGHT * 0.72);
-    }
+    if (directOverlap.length >= 2 || sharesRoleNoun) return Math.round(TITLE_WEIGHT * 0.72);
     return Math.round(TITLE_WEIGHT * 0.6);
   }
 
   const profileBridges = getBridgeFamilies(profileFamilies);
   const jobBridges = getBridgeFamilies(jobFamilies);
-  const bridgedOverlap = Array.from(profileFamilies).filter(
-    (family) => jobBridges.has(family),
-  ).concat(
+  const bridgedOverlap = Array.from(profileFamilies).filter((family) => jobBridges.has(family)).concat(
     Array.from(jobFamilies).filter((family) => profileBridges.has(family)),
   );
 
@@ -855,14 +1220,15 @@ export function computeSkillScore(
   const profileSignalPool = buildCanonicalSignalSet([
     ...profile.normalizedSkills,
     ...(profile.keywords ?? []),
+    ...profile.normalizedTitles,
+    profile.summary ?? "",
   ]);
-  const rawJobSkills = uniqueStrings(
-    ensureStringArray(job.skills).map(normalizeKeywordText).filter(Boolean),
-  );
-  const jobSkills = rawJobSkills.map((skill) => canonicalizeSkill(skill));
+
+  const liveSignals = deriveLiveJobSignals(job);
+  const jobSkills = uniqueStrings(liveSignals.skills);
 
   if (!jobSkills.length) {
-    return { score: Math.round(SKILL_WEIGHT * 0.5), matching: [], missing: [] };
+    return { score: Math.round(SKILL_WEIGHT * 0.45), matching: [], missing: [] };
   }
 
   const matching = new Set<string>();
@@ -870,31 +1236,27 @@ export function computeSkillScore(
   let exactMatches = 0;
   let relatedMatches = 0;
 
-  for (let index = 0; index < rawJobSkills.length; index += 1) {
-    const rawSkill = rawJobSkills[index];
-    const canonicalSkill = jobSkills[index];
+  for (const jobSkill of jobSkills) {
+    const canonicalSkill = canonicalizeSkill(jobSkill);
 
-    if (
-      profileSignalPool.has(canonicalSkill) ||
-      profileSignalPool.has(rawSkill)
-    ) {
-      matching.add(rawSkill);
+    if (profileSignalPool.has(canonicalSkill) || profileSignalPool.has(jobSkill)) {
+      matching.add(jobSkill);
       exactMatches += 1;
       continue;
     }
 
     const hasRelatedMatch = Array.from(profileSignalPool).some((signal) => {
       if (!signal || signal.length < 3) return false;
-      return phraseSimilarity(signal, rawSkill) >= 0.67;
+      return phraseSimilarity(signal, jobSkill) >= 0.67;
     });
 
     if (hasRelatedMatch) {
-      matching.add(rawSkill);
+      matching.add(jobSkill);
       relatedMatches += 1;
       continue;
     }
 
-    missing.push(rawSkill);
+    if (isUsefulGapSignal(jobSkill, job)) missing.push(jobSkill);
   }
 
   if (exactMatches === 0 && relatedMatches === 0) {
@@ -906,8 +1268,8 @@ export function computeSkillScore(
   }
 
   const effectiveMatches = exactMatches + relatedMatches * 0.6;
-  const ratio = Math.max(0, Math.min(1, effectiveMatches / rawJobSkills.length));
-  const baseFloor = exactMatches > 0 ? 5 : 3;
+  const ratio = Math.max(0, Math.min(1, effectiveMatches / Math.max(1, jobSkills.length)));
+  const baseFloor = exactMatches > 0 ? 6 : 3;
   const score = Math.min(
     SKILL_WEIGHT,
     Math.round(baseFloor + (SKILL_WEIGHT - baseFloor) * Math.sqrt(ratio)),
@@ -935,9 +1297,7 @@ export function normalizeSeniorityKey(value?: string | null): SeniorityKey | nul
   }
 
   for (const entry of SENIORITY_PATTERNS) {
-    if (entry.patterns.some((pattern) => pattern.test(normalizedValue))) {
-      return entry.key;
-    }
+    if (entry.patterns.some((pattern) => pattern.test(normalizedValue))) return entry.key;
   }
 
   return null;
@@ -948,16 +1308,11 @@ export function seniorityRank(value?: string | null): number | null {
   return key ? SENIORITY_RANK[key] : null;
 }
 
-export function computeSeniorityScore(
-  profile: ResumeProfileInput,
-  job: JobForScoring,
-): number {
+export function computeSeniorityScore(profile: ResumeProfileInput, job: JobForScoring): number {
   const profileLevel = seniorityRank(profile.seniority);
   const jobLevel = seniorityRank(job.seniority);
 
-  if (profileLevel == null || jobLevel == null) {
-    return Math.round(SENIORITY_WEIGHT * 0.6);
-  }
+  if (profileLevel == null || jobLevel == null) return Math.round(SENIORITY_WEIGHT * 0.6);
 
   const delta = profileLevel - jobLevel;
 
@@ -970,54 +1325,31 @@ export function computeSeniorityScore(
   return 1;
 }
 
-export function computeKeywordScore(
-  profile: ResumeProfileInput,
-  job: JobForScoring,
-): number {
+export function computeKeywordScore(profile: ResumeProfileInput, job: JobForScoring): number {
   const profileFamilies = getTitleFamilies(profile.normalizedTitles);
-  const jobFamilies = getTitleFamilies([
-    job.titleNormalized ?? "",
-    job.title,
-  ].filter(Boolean));
+  const jobFamilies = getTitleFamilies([job.titleNormalized ?? "", job.title].filter(Boolean));
 
   const profileKeywordPool = buildKeywordSupportPool(
-    [
-      ...(profile.keywords ?? []),
-      ...profile.normalizedSkills,
-      ...profile.normalizedTitles,
-      profile.summary ?? "",
-    ],
+    [...(profile.keywords ?? []), ...profile.normalizedSkills, ...profile.normalizedTitles, profile.summary ?? ""],
     profileFamilies,
   );
 
-  const rawJobSkills = uniqueStrings(
-    ensureStringArray(job.skills).map(normalizeKeywordText).filter(Boolean),
-  );
-  const jobSkillSet = new Set(
-    rawJobSkills.flatMap((skill) => [skill, canonicalizeSkill(skill)]),
-  );
-
+  const liveSignals = deriveLiveJobSignals(job);
+  const jobSkillSet = new Set(liveSignals.skills.flatMap((skill) => [skill, canonicalizeSkill(skill)]));
   const rawJobKeywords = uniqueStrings(
-    [
-      ...ensureStringArray(job.keywords),
-      job.title,
-      job.titleNormalized ?? "",
-      ...getFamilyKeywordHints(jobFamilies),
-    ]
+    [...liveSignals.keywords, ...getFamilyKeywordHints(jobFamilies)]
       .map(normalizeKeywordText)
       .filter((keyword) => isMeaningfulKeyword(keyword, job, jobSkillSet)),
   );
 
-  const directFamilyOverlap = Array.from(jobFamilies).filter((family) =>
-    profileFamilies.has(family),
-  ).length;
+  const directFamilyOverlap = Array.from(jobFamilies).filter((family) => profileFamilies.has(family)).length;
   const profileBridges = getBridgeFamilies(profileFamilies);
   const bridgedFamilyOverlap = Array.from(jobFamilies).filter(
     (family) => profileBridges.has(family) && !profileFamilies.has(family),
   ).length;
 
   if (!rawJobKeywords.length) {
-    if (directFamilyOverlap > 0) return 4;
+    if (directFamilyOverlap > 0) return 5;
     if (bridgedFamilyOverlap > 0) return 2;
     return Math.round(KEYWORD_WEIGHT * 0.25);
   }
@@ -1028,18 +1360,13 @@ export function computeKeywordScore(
   for (const keyword of rawJobKeywords) {
     const canonicalKeyword = canonicalizeSkill(keyword);
 
-    if (
-      profileKeywordPool.has(keyword) ||
-      profileKeywordPool.has(canonicalKeyword)
-    ) {
+    if (profileKeywordPool.has(keyword) || profileKeywordPool.has(canonicalKeyword)) {
       exactHits += 1;
       continue;
     }
 
     const keywordFamilies = getTitleFamilies([keyword]);
-    if (
-      Array.from(keywordFamilies).some((family) => profileFamilies.has(family))
-    ) {
+    if (Array.from(keywordFamilies).some((family) => profileFamilies.has(family))) {
       relatedHits += 1;
       continue;
     }
@@ -1049,41 +1376,30 @@ export function computeKeywordScore(
       return phraseSimilarity(signal, keyword) >= 0.5;
     });
 
-    if (hasRelatedMatch) {
-      relatedHits += 1;
-    }
+    if (hasRelatedMatch) relatedHits += 1;
   }
 
-  const familySupport = directFamilyOverlap * 0.8 + bridgedFamilyOverlap * 0.35;
+  const familySupport = directFamilyOverlap * 1 + bridgedFamilyOverlap * 0.4;
 
   if (exactHits === 0 && relatedHits === 0 && familySupport === 0) return 0;
 
-  const effectiveHits = exactHits + relatedHits * 0.55 + familySupport;
-  const ratio = Math.max(
-    0,
-    Math.min(1, effectiveHits / Math.max(1, rawJobKeywords.length)),
-  );
+  const effectiveHits = exactHits + relatedHits * 0.6 + familySupport;
+  const ratio = Math.max(0, Math.min(1, effectiveHits / Math.max(1, rawJobKeywords.length)));
   const baseFloor =
     directFamilyOverlap > 0
-      ? 4
+      ? 5
       : bridgedFamilyOverlap > 0
         ? 2
         : exactHits > 0
-          ? 3
+          ? 4
           : relatedHits > 0
-            ? 1
+            ? 2
             : 0;
 
-  return Math.min(
-    KEYWORD_WEIGHT,
-    Math.round(baseFloor + (KEYWORD_WEIGHT - baseFloor) * Math.sqrt(ratio)),
-  );
+  return Math.min(KEYWORD_WEIGHT, Math.round(baseFloor + (KEYWORD_WEIGHT - baseFloor) * Math.sqrt(ratio)));
 }
 
-export function computeLocationScore(
-  profile: ResumeProfileInput,
-  job: JobForScoring,
-): number {
+export function computeLocationScore(profile: ResumeProfileInput, job: JobForScoring): number {
   const remoteType = (job.remoteType ?? "unknown").toLowerCase();
   if (remoteType === "remote") return LOCATION_WEIGHT;
   if (remoteType === "hybrid") return Math.round(LOCATION_WEIGHT * 0.7);
@@ -1111,14 +1427,17 @@ export function buildShortReasons(args: {
 
   if (args.titleScore >= 18) reasons.push("Strong title fit");
   else if (args.titleScore >= 15) reasons.push("Relevant role family");
+
   if (args.skillScore >= 18 && args.matchingSkills.length) {
     reasons.push(`Skills match: ${args.matchingSkills.slice(0, 2).join(", ")}`);
   } else if (args.skillScore >= 10) {
     reasons.push("Relevant process/tool overlap");
   }
+
   if (args.remoteType === "remote") reasons.push("Remote-friendly");
   if (args.seniorityScore >= 12) reasons.push("Seniority aligned");
-  if (args.keywordScore >= 7) reasons.push("Supporting keyword overlap");
+  if (args.keywordScore >= 6) reasons.push("Supporting keyword overlap");
+
   if (!reasons.length && args.missingSkills.length) {
     reasons.push(`Gap to close: ${args.missingSkills[0]}`);
   }
@@ -1149,10 +1468,7 @@ export function buildExplanationShort(result: {
   return "Partial match. Review this role before spending credits on tailoring.";
 }
 
-export function scoreResumeToJob(
-  profile: ResumeProfileInput,
-  job: JobForScoring,
-): MatchResult {
+export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring): MatchResult {
   const titleScore = computeTitleScore(profile, job);
   const skillResult = computeSkillScore(profile, job);
   const seniorityScore = computeSeniorityScore(profile, job);
@@ -1161,14 +1477,7 @@ export function scoreResumeToJob(
 
   const totalScore = Math.max(
     0,
-    Math.min(
-      100,
-      titleScore +
-        skillResult.score +
-        seniorityScore +
-        keywordScore +
-        locationScore,
-    ),
+    Math.min(100, titleScore + skillResult.score + seniorityScore + keywordScore + locationScore),
   );
 
   const shortReasons = buildShortReasons({

@@ -1,8 +1,6 @@
-// src/app/account/page.tsx
-import DashboardShell from "@/components/layout/DashboardShell";
-import DonationRequestPanel from "@/components/account/DonationRequestPanel";
-import AdminDonationRequestsPanel from "@/components/account/AdminDonationRequestsPanel";
 import { getServerSession } from "next-auth";
+
+import AccountProfileHub from "@/components/account/AccountProfileHub";
 import { authOptions } from "@/lib/auth";
 
 const ADMIN_EMAIL = "gitajob.com@gmail.com";
@@ -13,22 +11,13 @@ export default async function AccountPage() {
   const isAdmin = email === ADMIN_EMAIL;
 
   return (
-    <DashboardShell
-      title="Account"
-      subtitle="Manage your credits and requests."
-    >
-      {/* Subtle signed-in indicator */}
-      <div className="mb-6 text-right text-xs font-semibold text-black/60">
-        Signed in as: {email || "unknown"}
+    <main className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <AccountProfileHub
+          email={String(session?.user?.email ?? "").trim()}
+          isAdmin={isAdmin}
+        />
       </div>
-
-      <div className="grid gap-6">
-        {/* User Donation Request Panel */}
-        <DonationRequestPanel />
-
-        {/* Admin Review Panel */}
-        {isAdmin ? <AdminDonationRequestsPanel /> : null}
-      </div>
-    </DashboardShell>
+    </main>
   );
 }

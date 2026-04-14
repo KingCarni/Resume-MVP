@@ -1,4 +1,3 @@
-// src/components/account/DonationRequestPanel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -25,15 +24,11 @@ type ApiCreateResp =
   | { ok: false; error?: string };
 
 function statusBadge(status: DonationRequestStatus) {
-  const base =
-    "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-extrabold border shadow-sm";
-  if (status === "pending")
-    return `${base} border-amber-300/70 bg-amber-100/70 text-amber-900`;
-  if (status === "approved")
-    return `${base} border-emerald-300/70 bg-emerald-100/70 text-emerald-900`;
-  if (status === "fulfilled")
-    return `${base} border-sky-300/70 bg-sky-100/70 text-sky-900`;
-  return `${base} border-red-300/70 bg-red-100/70 text-red-900`;
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
+  if (status === "pending") return `${base} border-amber-500/25 bg-amber-500/10 text-amber-100`;
+  if (status === "approved") return `${base} border-emerald-500/25 bg-emerald-500/10 text-emerald-100`;
+  if (status === "fulfilled") return `${base} border-cyan-500/25 bg-cyan-500/10 text-cyan-100`;
+  return `${base} border-rose-500/25 bg-rose-500/10 text-rose-100`;
 }
 
 function fmtDate(iso: string) {
@@ -55,22 +50,16 @@ export default function DonationRequestPanel() {
 
   const [requestedCredits, setRequestedCredits] = useState<number>(25);
   const [reason, setReason] = useState<string>("");
-
   const [rows, setRows] = useState<DonationRequestRow[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
     const creditsOk =
-      Number.isFinite(requestedCredits) &&
-      requestedCredits >= 5 &&
-      requestedCredits <= 200;
-
+      Number.isFinite(requestedCredits) && requestedCredits >= 5 && requestedCredits <= 200;
     const reasonOk = normalizeText(reason, 2000).length >= 10;
-
     return creditsOk && reasonOk && !submitting;
   }, [requestedCredits, reason, submitting]);
 
@@ -87,13 +76,13 @@ export default function DonationRequestPanel() {
       const data = (await res.json().catch(() => null)) as ApiListResp | null;
 
       if (!res.ok || !data || !data.ok) {
-        throw new Error((data as any)?.error || `Failed to load requests (${res.status})`);
+        throw new Error((data as { error?: string } | null)?.error || `Failed to load requests (${res.status})`);
       }
 
       const list = Array.isArray(data.requests) ? data.requests : [];
       setRows(list.slice(0, 10));
-    } catch (e: any) {
-      setErr(e?.message || "Failed to load donation requests");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed to load donation requests");
     } finally {
       setLoadingList(false);
     }
@@ -101,7 +90,6 @@ export default function DonationRequestPanel() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function submit() {
@@ -124,159 +112,133 @@ export default function DonationRequestPanel() {
       const data = (await res.json().catch(() => null)) as ApiCreateResp | null;
 
       if (!res.ok || !data || !data.ok) {
-        throw new Error((data as any)?.error || `Request failed (${res.status})`);
+        throw new Error((data as { error?: string } | null)?.error || `Request failed (${res.status})`);
       }
 
-      setOkMsg("Request submitted. You’ll see updates here after admin review.");
+      setOkMsg("Request submitted. You'll see updates here after admin review.");
       setReason("");
 
       await load();
       router.refresh();
-    } catch (e: any) {
-      setErr(e?.message || "Request failed");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Request failed");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="rounded-3xl border border-white/35 bg-white/45 backdrop-blur-xl p-6 shadow-lg">
+    <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-5 shadow-lg shadow-black/15">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-black text-lg font-extrabold">
-            Request Help (Donation Credits)
-          </div>
-          <div className="mt-1 text-sm text-black/90">
-            This sends a request to be reviewed by an admin. Approval and fulfillment are separate steps.
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+            Request help
+          </p>
+          <h4 className="mt-2 text-xl font-semibold text-white">Ask for donation credits without guesswork.</h4>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            Requests are reviewed by an admin first. Approval and fulfillment are separate, so the status trail matters.
+          </p>
         </div>
 
         <button
           type="button"
           onClick={load}
           disabled={loadingList}
-          className="rounded-xl bg-black px-4 py-2 text-sm font-extrabold text-white shadow-md transition-all hover:scale-[1.02] hover:bg-neutral-800 disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           title="Reload"
         >
-          {loadingList ? "Reloading…" : "Reload"}
+          {loadingList ? "Reloading..." : "Reload"}
         </button>
       </div>
 
       {err ? (
-        <div className="mt-4 rounded-2xl border border-red-300/60 bg-red-100/70 p-3 text-sm text-red-950">
-          <div className="font-extrabold">Error</div>
-          <div className="mt-1 whitespace-pre-wrap opacity-90">{err}</div>
-        </div>
+        <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3 text-sm text-rose-100">{err}</div>
       ) : null}
 
       {okMsg ? (
-        <div className="mt-4 rounded-2xl border border-emerald-300/60 bg-emerald-100/70 p-3 text-sm text-emerald-950">
-          <div className="font-extrabold">Success</div>
-          <div className="mt-1 opacity-90">{okMsg}</div>
-        </div>
+        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{okMsg}</div>
       ) : null}
 
-      {/* Form */}
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <label className="grid gap-1.5">
-          <div className="text-xs font-extrabold text-black/90">Requested credits</div>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Requested credits</span>
           <input
             type="number"
             min={5}
             max={200}
             value={Number.isFinite(requestedCredits) ? requestedCredits : 0}
             onChange={(e) => setRequestedCredits(Math.trunc(Number(e.target.value)))}
-            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20"
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
           />
-          <div className="text-xs text-black/90">Min 5, max 200.</div>
+          <span className="text-xs text-slate-500">Min 5, max 200.</span>
         </label>
 
         <label className="grid gap-1.5 lg:col-span-2">
-          <div className="text-xs font-extrabold text-black/90">Reason</div>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Reason</span>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            placeholder="Tell us what you’re applying for and why you need help (10+ characters)."
-            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20"
+            placeholder="Tell us what you're applying for and why you need help (10+ characters)."
+            className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
           />
-          <div className="text-xs text-black/90">
-            Keep it short and clear. Include target role/company if you want.
-          </div>
+          <span className="text-xs text-slate-500">Keep it short and clear. Include target role/company if useful.</span>
         </label>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={submit}
           disabled={!canSubmit}
-          className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] hover:shadow-lg disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {submitting ? "Submitting…" : "Submit request"}
+          {submitting ? "Submitting..." : "Submit request"}
         </button>
-
-        <div className="text-xs font-extrabold text-black/90">
-          You can have a limited number of pending requests. Cooldown may apply.
-        </div>
+        <span className="text-xs text-slate-400">You can have a limited number of pending requests. Cooldown may apply.</span>
       </div>
 
-      {/* Recent requests */}
-      <div className="mt-6">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-extrabold text-black/90">Your recent requests</div>
-          <div className="text-xs text-black/90">Showing up to 10</div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-white">Your recent requests</div>
+          <div className="text-xs text-slate-400">Showing up to 10</div>
         </div>
 
-        <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-white">
+        <div className="mt-4 space-y-3">
           {rows.length === 0 ? (
-            <div className="p-4 text-sm text-black/90">
-              {loadingList ? "Loading…" : "No requests yet."}
+            <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/60 p-4 text-sm text-slate-400">
+              {loadingList ? "Loading..." : "No requests yet."}
             </div>
           ) : (
-            <div className="divide-y divide-black/10">
-              {rows.map((r) => (
-                <div key={r.id} className="p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-extrabold text-black">
-                        {r.requestedCredits} credits
-                      </div>
-                      <span className={statusBadge(r.status)}>{r.status}</span>
-                    </div>
-
-                    <div className="text-xs text-black/90">
-                      {fmtDate(r.createdAt)}
-                    </div>
+            rows.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-white">{r.requestedCredits} credits</div>
+                    <span className={statusBadge(r.status)}>{r.status}</span>
                   </div>
-
-                  <div className="mt-2 whitespace-pre-wrap text-sm text-black/90">
-                    {r.reason}
-                  </div>
-
-                  {r.reviewNote ? (
-                    <div className="mt-3 rounded-xl border border-black/10 bg-black/5 p-3 text-sm text-black/90">
-                      <div className="text-xs font-extrabold text-black/90">Admin note</div>
-                      <div className="mt-1 whitespace-pre-wrap">{r.reviewNote}</div>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-2 text-xs text-black/90">
-                    Updated: {fmtDate(r.updatedAt)}
-                  </div>
+                  <div className="text-xs text-slate-400">{fmtDate(r.createdAt)}</div>
                 </div>
-              ))}
-            </div>
+
+                <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">{r.reason}</div>
+
+                {r.reviewNote ? (
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-slate-950/70 p-3 text-sm leading-6 text-slate-300">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Admin note</div>
+                    <div className="mt-2 whitespace-pre-wrap">{r.reviewNote}</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-3 text-xs text-slate-500">Updated: {fmtDate(r.updatedAt)}</div>
+              </div>
+            ))
           )}
         </div>
 
-        <div className="mt-3 text-xs text-black/90">
-          Status meanings: <span className="font-bold">pending</span> (waiting review),{" "}
-          <span className="font-bold">approved</span> (eligible),{" "}
-          <span className="font-bold">fulfilled</span> (credits issued),{" "}
-          <span className="font-bold">rejected</span> (not eligible).
+        <div className="mt-4 text-xs leading-6 text-slate-500">
+          Status meanings: <span className="font-semibold text-slate-300">pending</span> (waiting review), <span className="font-semibold text-slate-300">approved</span> (eligible), <span className="font-semibold text-slate-300">fulfilled</span> (credits issued), <span className="font-semibold text-slate-300">rejected</span> (not eligible).
         </div>
       </div>
-    </div>
+    </section>
   );
 }
