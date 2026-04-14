@@ -679,19 +679,15 @@ const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
     "asset pipelines",
   ],
   "ui frameworks": ["ui frameworks", "wpf", "winforms", "qt"],
-  "programming languages": [
-    "javascript",
-    "typescript",
-    "python",
-    "java",
-    "c#",
-    "c++",
-    "go",
-    "golang",
-    "rust",
-    "swift",
-    "kotlin",
-  ],
+  javascript: ["javascript", "js"],
+  typescript: ["typescript", "ts"],
+  python: ["python"],
+  java: ["java"],
+  go: ["go", "golang"],
+  rust: ["rust"],
+  swift: ["swift"],
+  kotlin: ["kotlin"],
+  "programming foundations": ["programming languages", "programming", "software fundamentals"],
   frontend: ["react", "next.js", "nextjs", "design systems", "accessibility"],
   backend: ["node", "node.js", "express", "nestjs", "rest api", "graphql", "grpc"],
   "game systems": ["gameplay systems", "systems design", "level design", "economy design"],
@@ -804,6 +800,10 @@ const JOB_SIGNAL_PATTERNS = [
   "design patterns",
   ".net",
   "asp.net",
+  "java",
+  "c#",
+  "c++",
+  "unity",
   "application development",
   "unity",
   "unity 3d",
@@ -913,6 +913,47 @@ const GENERIC_SUPPORT_TOKENS = new Set([
 ]);
 
 const WEAK_STANDALONE_SIGNALS = new Set(["frameworks", "languages", "programming"]);
+
+const STRONG_SIGNAL_DISPLAY_PRIORITY = [
+  "c#",
+  "c++",
+  "java",
+  ".net",
+  "wpf",
+  "winforms",
+  "qt",
+  "oop",
+  "object oriented programming",
+  "design patterns",
+  "unity",
+  "game engineering",
+  "tools development",
+  "ui frameworks",
+  "engine tools",
+  "editor tools",
+  "world editor",
+  "content pipelines",
+  "asset pipelines",
+] as const;
+
+function rankDisplaySignal(value: string): number {
+  const normalizedValue = canonicalizeSkill(value);
+  const index = STRONG_SIGNAL_DISPLAY_PRIORITY.indexOf(normalizedValue as (typeof STRONG_SIGNAL_DISPLAY_PRIORITY)[number]);
+  if (index !== -1) return index;
+  if (normalizedValue.includes("engineering")) return 100;
+  if (normalizedValue.includes("tools")) return 110;
+  return 1000;
+}
+
+function sortDisplaySignals(values: string[]): string[] {
+  return uniqueStrings(values)
+    .sort((left, right) => {
+      const leftRank = rankDisplaySignal(left);
+      const rightRank = rankDisplaySignal(right);
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      return left.localeCompare(right);
+    });
+}
 
 function getFamilyKeywordHints(families: Set<RoleFamily>): string[] {
   const hints: string[] = [];
@@ -1167,9 +1208,7 @@ function deriveLiveJobSignals(job: JobForScoring): { skills: string[]; keywords:
     .filter(Boolean);
 
   const liveSkills = uniqueStrings(
-    [...storedSkillCandidates, ...patternHits]
-      .map(canonicalizeSkill)
-      .filter((value) => !isClearlyJunkSignal(value, job)),
+    [...storedSkillCandidates, ...patternHits].filter((value) => !isClearlyJunkSignal(value, job)),
   );
 
   const liveKeywords = uniqueStrings(
@@ -1332,7 +1371,7 @@ export function computeSkillScore(
     return {
       score: 0,
       matching: [],
-      missing: uniqueStrings(missing).slice(0, 8),
+      missing: sortDisplaySignals(missing).slice(0, 8),
     };
   }
 
@@ -1346,8 +1385,8 @@ export function computeSkillScore(
 
   return {
     score,
-    matching: uniqueStrings(Array.from(matching)).sort().slice(0, 8),
-    missing: uniqueStrings(missing).sort().slice(0, 8),
+    matching: sortDisplaySignals(Array.from(matching)).slice(0, 8),
+    missing: sortDisplaySignals(missing).slice(0, 8),
   };
 }
 
