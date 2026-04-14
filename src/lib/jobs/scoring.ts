@@ -70,7 +70,11 @@ const ROLE_FAMILY_DEFINITIONS = {
       "engine developer",
       "tools programmer",
       "tools engineer",
+      "tools developer",
       "technical developer",
+      "engine tools programmer",
+      "engine tools engineer",
+      "ui programmer",
       "systems programmer",
       "systems engineer",
       "integration engineer",
@@ -294,6 +298,21 @@ const ROLE_FAMILY_KEYWORD_HINTS: Record<RoleFamily, string[]> = {
     "c++",
     "c#",
     "build systems",
+    "tool development",
+    "tools programming",
+    "engine tools",
+    "editor tools",
+    "world editor",
+    "performance tools",
+    "content pipelines",
+    "asset pipelines",
+    "ui frameworks",
+    "wpf",
+    "winforms",
+    "qt",
+    "oop",
+    "object oriented programming",
+    ".net",
     "rendering",
     "multiplayer",
   ],
@@ -524,6 +543,8 @@ const FILLER_KEYWORDS = new Set([
   "customer",
   "studio",
   "stakeholders",
+  "frameworks",
+  "languages",
 ]);
 
 const JUNK_GAP_TOKENS = new Set([
@@ -637,6 +658,27 @@ const SKILL_CANONICAL_GROUPS: Record<string, string[]> = {
     "multiplayer",
     "profiling",
   ],
+  "c#": ["c#", "c sharp"],
+  "c++": ["c++", "cpp"],
+  ".net": [".net", "dotnet", "asp.net"],
+  "wpf": ["wpf", "windows presentation foundation"],
+  "winforms": ["winforms", "windows forms"],
+  "qt": ["qt", "qt framework"],
+  "oop": ["oop", "object oriented programming", "object-oriented programming"],
+  "design patterns": ["design patterns"],
+  "tools development": [
+    "tool development",
+    "tools development",
+    "tools programming",
+    "tooling",
+    "engine tools",
+    "editor tools",
+    "world editor",
+    "performance tools",
+    "content pipelines",
+    "asset pipelines",
+  ],
+  "ui frameworks": ["ui frameworks", "wpf", "winforms", "qt"],
   "programming languages": [
     "javascript",
     "typescript",
@@ -743,6 +785,25 @@ const JOB_SIGNAL_PATTERNS = [
   "automation frameworks",
   "software engineering",
   "software development",
+  "tool development",
+  "tools development",
+  "tools programming",
+  "engine tools",
+  "editor tools",
+  "world editor",
+  "performance tools",
+  "content pipelines",
+  "asset pipelines",
+  "ui frameworks",
+  "wpf",
+  "winforms",
+  "qt",
+  "oop",
+  "object oriented programming",
+  "object-oriented programming",
+  "design patterns",
+  ".net",
+  "asp.net",
   "application development",
   "unity",
   "unity 3d",
@@ -850,6 +911,8 @@ const GENERIC_SUPPORT_TOKENS = new Set([
   "site",
   "level",
 ]);
+
+const WEAK_STANDALONE_SIGNALS = new Set(["frameworks", "languages", "programming"]);
 
 function getFamilyKeywordHints(families: Set<RoleFamily>): string[] {
   const hints: string[] = [];
@@ -1032,6 +1095,11 @@ function buildJobSourceText(job: JobForScoring): string {
     .trim();
 }
 
+function isWeakStandaloneSignal(value: string): boolean {
+  const normalizedValue = normalizeKeywordText(value);
+  return WEAK_STANDALONE_SIGNALS.has(normalizedValue);
+}
+
 function isClearlyJunkSignal(value: string, job: JobForScoring): boolean {
   const normalizedValue = normalizeKeywordText(value);
   if (!normalizedValue) return true;
@@ -1040,6 +1108,7 @@ function isClearlyJunkSignal(value: string, job: JobForScoring): boolean {
   if (/^\d{4}$/.test(normalizedValue)) return true;
   if (!/[a-z]/.test(normalizedValue)) return true;
   if (JUNK_GAP_TOKENS.has(normalizedValue)) return true;
+  if (isWeakStandaloneSignal(normalizedValue)) return true;
 
   const title = normalizeKeywordText(job.title);
   const company = normalizeKeywordText(job.company);
