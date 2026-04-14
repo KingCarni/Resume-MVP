@@ -1,4 +1,3 @@
-
 import { prisma } from "@/lib/prisma";
 import {
   normalizeResumeProfile,
@@ -19,7 +18,17 @@ const TITLE_STOP_WORDS = new Set([
   "document",
   "untitled",
   "your name",
+  "skills",
+  "experience",
+  "job experience",
+  "areas of expertise",
 ]);
+
+const TITLE_NOISE_PATTERNS = [
+  /\b(job experience|areas of expertise|key metrics|skills|resume|profile)\b/i,
+  /^[A-Z\s&/+.-]{12,}$/,
+  /\b(?:pdfjs|mammoth)\b/i,
+];
 
 const GENERIC_SINGLE_WORD_TITLES = new Set([
   "engineer",
@@ -40,6 +49,24 @@ const GENERIC_SINGLE_WORD_TITLES = new Set([
   "programmer",
   "animator",
 ]);
+
+const CORE_ROLE_PATTERNS = [
+  /\bsoftware engineer\b/i,
+  /\bsoftware developer\b/i,
+  /\bsoftware design engineer\b/i,
+  /\bfull(?:-|\s)?stack software engineer\b/i,
+  /\bgame engineer\b/i,
+  /\bgame developer\b/i,
+  /\bgameplay engineer\b/i,
+  /\bgameplay programmer\b/i,
+  /\bengine programmer\b/i,
+  /\bengine developer\b/i,
+  /\btools programmer\b/i,
+  /\btools engineer\b/i,
+  /\bqa engineer\b/i,
+  /\bqa tester\b/i,
+  /\btest engineer\b/i,
+];
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -79,8 +106,18 @@ function cleanCandidateTitle(value: unknown): string | null {
   const lower = cleaned.toLowerCase();
   if (TITLE_STOP_WORDS.has(lower)) return null;
   if (/^[a-z\s]+$/.test(lower) && lower.length <= 8) return null;
+  if (/\d{4}/.test(cleaned)) return null;
+  if (TITLE_NOISE_PATTERNS.some((pattern) => pattern.test(cleaned))) return null;
 
   return cleaned;
+}
+
+function normalizeTitleVariant(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\b(intern|internship|new grad|graduate|junior|jr)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function seniorityRank(value: string) {
@@ -106,12 +143,20 @@ function titleSpecificityScore(value: string) {
     score += 4;
   }
 
-  if (words.length >= 2 && words.length <= 6) {
-    score += 2;
+  if (CORE_ROLE_PATTERNS.some((pattern) => pattern.test(value))) {
+    score += 5;
+  }
+
+  if (words.length >= 2 && words.length <= 5) {
+    score += 3;
   }
 
   if (/\b(full-stack|software|tools|engine|gameplay|qa|platform|support|devops|unity|technical)\b/.test(lower)) {
     score += 2;
+  }
+
+  if (/\b(intern|internship|new grad|graduate|junior|jr)\b/.test(lower)) {
+    score -= 5;
   }
 
   if (/\b(lead|principal|manager|director|head|chief|vp)\b/.test(lower)) {
@@ -122,8 +167,26 @@ function titleSpecificityScore(value: string) {
     score -= 4;
   }
 
-  if (value.length > 48) score -= 1;
+  if (value.length > 48) score -= 2;
   if (value.length < 4) score -= 2;
+
+  return score;
+}
+
+function candidateTitleSupportScore(value: string, allTitles: string[]) {
+  const lower = value.toLowerCase();
+  const normalizedVariant = normalizeTitleVariant(value);
+  let score = 0;
+
+  const exactRepeats = allTitles.filter((title) => title.toLowerCase() === lower).length;
+  score += exactRepeats * 4;
+
+  const variantSupport = allTitles.filter((title) => normalizeTitleVariant(title) === normalizedVariant).length;
+  score += variantSupport * 3;
+
+  if (!/\b(intern|internship|new grad|graduate|junior|jr)\b/.test(lower) && variantSupport > exactRepeats) {
+    score += 4;
+  }
 
   return score;
 }
@@ -145,8 +208,9 @@ function pickSaferProfileTitle(input: BuildResumeProfileInput, normalized: Norma
 
   if (candidatePool.length > 0) {
     return [...candidatePool].sort((left, right) => {
-      const specificityDiff = titleSpecificityScore(right) - titleSpecificityScore(left);
-      if (specificityDiff !== 0) return specificityDiff;
+      const leftScore = titleSpecificityScore(left) + candidateTitleSupportScore(left, candidatePool);
+      const rightScore = titleSpecificityScore(right) + candidateTitleSupportScore(right, candidatePool);
+      if (leftScore !== rightScore) return rightScore - leftScore;
 
       const seniorityDiff = seniorityRank(left) - seniorityRank(right);
       if (seniorityDiff !== 0) return seniorityDiff * 4;
@@ -223,4 +287,47 @@ export async function upsertLatestResumeProfileForUser(input: BuildResumeProfile
   }
 
   return buildResumeProfile(input);
+}
+
+export type StoredResumeProfileRebuildSource = {
+  userId: string;
+  sourceDocumentId?: string | null;
+  sourceDocument?: {
+    title?: string | null;
+    text?: string | null;
+  } | null;
+  title?: string | null;
+  rawText?: string | null;
+  summary?: string | null;
+  normalizedSkills?: string[];
+  normalizedTitles?: string[];
+  certifications?: string[];
+  industries?: string[];
+  keywords?: string[];
+  yearsExperience?: number | null;
+  seniority?: string | null;
+};
+
+export function createRebuildInputFromStoredProfile(
+  profile: StoredResumeProfileRebuildSource,
+): BuildResumeProfileInput | null {
+  const nextRawText = profile.sourceDocument?.text?.trim() || profile.rawText?.trim() || "";
+  if (!nextRawText) return null;
+
+  const nextTitle = profile.sourceDocument?.title?.trim() || profile.title?.trim() || null;
+
+  return {
+    userId: profile.userId,
+    sourceDocumentId: profile.sourceDocumentId ?? null,
+    title: nextTitle,
+    rawText: nextRawText,
+    summary: profile.summary ?? null,
+    skills: toStringArray(profile.normalizedSkills),
+    titles: toStringArray(profile.normalizedTitles),
+    certifications: toStringArray(profile.certifications),
+    industries: toStringArray(profile.industries),
+    keywords: toStringArray(profile.keywords),
+    yearsExperience: profile.yearsExperience ?? null,
+    seniority: profile.seniority ?? null,
+  };
 }

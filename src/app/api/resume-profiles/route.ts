@@ -78,17 +78,22 @@ function formatProfileItem(profile: {
   updatedAt: Date;
   normalizedSkills: unknown;
   normalizedTitles: unknown;
+  keywords: unknown;
+  rawText?: string | null;
   sourceDocumentId: string | null;
   sourceDocument?: { id: string; title: string | null; createdAt: Date } | null;
 }) {
   const normalizedSkills = jsonToStringArray(profile.normalizedSkills);
   const normalizedTitles = jsonToStringArray(profile.normalizedTitles);
+  const keywords = jsonToStringArray(profile.keywords);
 
   return {
     ...profile,
     seniority: String(profile.seniority),
     normalizedSkills,
     normalizedTitles,
+    keywords,
+    rawTextLength: typeof profile.rawText === "string" ? profile.rawText.length : 0,
     skillsCount: normalizedSkills.length,
     titlesCount: normalizedTitles.length,
     sourceDocument: profile.sourceDocument
@@ -121,7 +126,13 @@ export async function GET() {
         updatedAt: true,
         normalizedSkills: true,
         normalizedTitles: true,
-        sourceDocumentId: true,
+        keywords: true,
+        rawText: true,
+        keywords: true,
+      rawText: true,
+      keywords: true,
+      rawText: true,
+      sourceDocumentId: true,
         sourceDocument: {
           select: {
             id: true,

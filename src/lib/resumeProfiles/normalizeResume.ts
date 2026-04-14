@@ -1,4 +1,3 @@
-
 import { SeniorityLevel } from "@prisma/client";
 
 export type ResumeNormalizationInput = {
@@ -144,6 +143,9 @@ const SKILL_ALIASES: Record<string, string[]> = {
   ],
   "content pipelines": ["content pipelines", "asset pipelines", "spreadsheet-to-json", "spreadsheet to json"],
   profiling: ["profiling", "runtime profiling", "performance optimization"],
+  react: ["react", "react.js"],
+  typescript: ["typescript", "ts"],
+  javascript: ["javascript", "js"],
 };
 
 const TITLE_PATTERNS = [
@@ -245,7 +247,22 @@ const NOISY_KEYWORDS = new Set([
   "developed",
   "engineer",
   "software engineering",
+  "job",
 ]);
+
+const NOISY_LINE_PATTERNS = [
+  /^skills\b/i,
+  /^job experience\b/i,
+  /^areas of expertise\b/i,
+  /^high\s*l\s*i\s*g\s*h\s*t\s*s\b/i,
+  /^key metrics\b/i,
+  /^education\b/i,
+  /^(?:page\s+\d+|references|available upon request)$/i,
+  /^[A-Z\s&/+.-]{18,}$/,
+];
+
+const WEAK_SKILLS = new Set(["rest", "testing", "apis", "google", "ai", "c"]);
+const STRONG_LANGUAGE_SKILLS = new Set(["c#", "c++", "java", ".net", "typescript", "javascript", "python", "sql", "unity", "graphql", "microservices", "ecs", "oop", "design patterns"]);
 
 function uniqueStrings(values: string[]): string[] {
   const seen = new Set<string>();
@@ -287,6 +304,20 @@ function canonicalizeSkill(value: string): string {
   return normalizedValue;
 }
 
+function sanitizeRawTextForProfile(rawText?: string | null): string {
+  if (!rawText) return "";
+
+  const cleanedLines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((line) => !NOISY_LINE_PATTERNS.some((pattern) => pattern.test(line)))
+    .filter((line) => !/^([A-Z]\s+){4,}[A-Z]$/.test(line))
+    .filter((line) => line.length <= 500);
+
+  return cleanedLines.join("\n");
+}
+
 function collectMatches(haystack: string, patterns: string[]): string[] {
   const found: string[] = [];
 
@@ -310,7 +341,7 @@ function extractStructuredSkillCandidates(rawText: string): string[] {
   for (const line of lines) {
     const cleanedLine = line.replace(/^[•\-–]\s*/, "").trim();
 
-    if (/^[A-Za-z &/+-]{3,40}:\s*/.test(cleanedLine)) {
+    if (/^[A-Za-z &/+#.-]{3,40}:\s*/.test(cleanedLine)) {
       const [, value] = cleanedLine.split(/:\s*/, 2);
       if (value) {
         candidates.push(
@@ -345,9 +376,48 @@ function collectKeywordCandidates(haystack: string): string[] {
     .map((value) => value.trim().toLowerCase())
     .filter((value) => value.length >= 2 && value.length <= 50)
     .filter((value) => !NOISY_KEYWORDS.has(value))
-    .filter((value) => !/^\d+([.%+-]\d+)?$/.test(value));
+    .filter((value) => !/^\d+([.%+-]\d+)?$/.test(value))
+    .filter((value) => !/^(and|the|for|with|from|into|over|under)$/.test(value));
 
   return uniqueStrings(cleaned).slice(0, 80);
+}
+
+function cleanupSkills(values: string[]): string[] {
+  return uniqueStrings(values)
+    .filter((value) => !WEAK_SKILLS.has(value))
+    .filter((value) => value.length >= 2)
+    .filter((value) => !/^\d+$/.test(value))
+    .sort((left, right) => {
+      const leftStrong = STRONG_LANGUAGE_SKILLS.has(left) ? 1 : 0;
+      const rightStrong = STRONG_LANGUAGE_SKILLS.has(right) ? 1 : 0;
+      if (leftStrong !== rightStrong) return rightStrong - leftStrong;
+      return left.localeCompare(right);
+    });
+}
+
+function cleanupTitles(values: string[], yearsExperience?: number | null): string[] {
+  const normalizedYears = yearsExperience ?? 0;
+  const unique = uniqueStrings(values).filter((value) => !NOISY_KEYWORDS.has(value));
+
+  const stableVariants = new Set(
+    unique.map((value) =>
+      value.replace(/\b(intern|internship|new grad|graduate|junior|jr)\b/g, "").replace(/\s+/g, " ").trim(),
+    ),
+  );
+
+  return unique
+    .filter((value) => {
+      if (TITLE_PATTERNS.includes(value)) return true;
+      return /\b(engineer|developer|programmer|tester|analyst|manager)\b/.test(value);
+    })
+    .filter((value) => {
+      if (!/\b(intern|internship)\b/.test(value)) return true;
+      const stable = value.replace(/\b(intern|internship|new grad|graduate|junior|jr)\b/g, "").replace(/\s+/g, " ").trim();
+      if (normalizedYears >= 2 && stableVariants.has(stable)) return false;
+      return true;
+    })
+    .sort((left, right) => left.length - right.length)
+    .slice(0, 20);
 }
 
 function guessYearsExperience(text: string, explicitValue?: number | null): number | null {
@@ -414,23 +484,25 @@ function derivePrimaryTitle(explicitTitle?: string | null, normalizedTitles?: st
 }
 
 export function normalizeResumeProfile(input: ResumeNormalizationInput): NormalizedResumeProfileData {
-  const rawText = compactSentence(input.rawText);
+  const sanitizedRawText = sanitizeRawTextForProfile(input.rawText);
+  const rawText = compactSentence(sanitizedRawText);
   const summary = compactSentence(input.summary);
-  const rawHaystack = `${input.title ?? ""}\n${input.rawText ?? ""}\n${summary ?? ""}`.toLowerCase();
+  const rawHaystack = `${input.title ?? ""}\n${sanitizedRawText ?? ""}\n${summary ?? ""}`.toLowerCase();
   const haystack = `${input.title ?? ""}\n${rawText ?? ""}\n${summary ?? ""}`.toLowerCase();
 
-  const structuredSkillCandidates = rawText ? extractStructuredSkillCandidates(input.rawText ?? "") : [];
+  const yearsExperience = guessYearsExperience(rawHaystack, input.yearsExperience);
+  const structuredSkillCandidates = sanitizedRawText ? extractStructuredSkillCandidates(sanitizedRawText) : [];
   const matchedSkills = collectMatches(haystack, KNOWN_SKILLS);
-  const normalizedSkills = uniqueStrings([
+  const normalizedSkills = cleanupSkills([
     ...(input.skills ?? []).map((item) => canonicalizeSkill(item)),
     ...structuredSkillCandidates.map((item) => canonicalizeSkill(item)),
     ...matchedSkills.map((item) => canonicalizeSkill(item)),
-  ]).slice(0, 100);
+  ]).slice(0, 60);
 
-  const normalizedTitles = uniqueStrings([
+  const normalizedTitles = cleanupTitles([
     ...(input.titles ?? []).map((item) => item.toLowerCase()),
     ...collectMatches(haystack, TITLE_PATTERNS),
-  ]).slice(0, 40);
+  ], yearsExperience).slice(0, 20);
 
   const certifications = uniqueStrings([
     ...(input.certifications ?? []).map((item) => item.toLowerCase()),
@@ -442,16 +514,15 @@ export function normalizeResumeProfile(input: ResumeNormalizationInput): Normali
     ...collectMatches(haystack, INDUSTRY_PATTERNS),
   ]).slice(0, 20);
 
-  const keywordSeed = uniqueStrings([
+  const keywordSeed = cleanupSkills([
     ...(input.keywords ?? []).map((item) => canonicalizeSkill(item)),
     ...normalizedSkills,
     ...normalizedTitles,
     ...certifications,
     ...industries,
     ...collectKeywordCandidates(rawHaystack).map((item) => canonicalizeSkill(item)),
-  ]).slice(0, 140);
+  ]).slice(0, 100);
 
-  const yearsExperience = guessYearsExperience(rawHaystack, input.yearsExperience);
   const seniority = guessSeniority(rawHaystack, input.seniority, yearsExperience);
   const title = derivePrimaryTitle(input.title, normalizedTitles);
 
