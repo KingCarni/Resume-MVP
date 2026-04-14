@@ -1,3 +1,4 @@
+
 import { SeniorityLevel } from "@prisma/client";
 
 export type ResumeNormalizationInput = {
@@ -30,29 +31,39 @@ const KNOWN_SKILLS = [
   "selenium",
   "playwright",
   "cypress",
-  "test automation",
-  "qa automation",
-  "automation testing",
-  "manual testing",
-  "regression testing",
-  "integration testing",
-  "unit testing",
-  "end-to-end testing",
-  "e2e testing",
-  "exploratory testing",
-  "performance testing",
-  "accessibility testing",
-  "api testing",
   "postman",
   "jira",
-  "bug triage",
-  "test plans",
-  "test cases",
-  "reproduction steps",
-  "logs",
-  "screenshots",
-  "typescript",
+  "confluence",
+  "github actions",
+  "bitbucket",
+  "jenkins",
+  "growthbook",
+  "sql",
+  "postgresql",
+  "mysql",
+  "rest",
+  "rest api",
+  "restful api",
+  "graphql",
+  "grpc",
+  "microservices",
+  "distributed systems",
+  "scalable systems",
+  "websockets",
+  "tcp",
+  "oauth",
+  "google oauth",
+  "docker",
+  "kubernetes",
+  "terraform",
+  "linux",
+  "aws",
+  "azure",
+  "gcp",
+  "ci/cd",
+  "git",
   "javascript",
+  "typescript",
   "react",
   "next.js",
   "node.js",
@@ -60,56 +71,109 @@ const KNOWN_SKILLS = [
   "java",
   "c#",
   "c++",
-  "php",
-  "ruby",
-  "sql",
-  "postgresql",
-  "mysql",
-  "graphql",
-  "rest",
-  "aws",
-  "azure",
-  "gcp",
-  "docker",
-  "kubernetes",
-  "terraform",
-  "linux",
-  "ci/cd",
-  "github actions",
+  ".net",
+  "asp.net",
+  "vue",
+  "vue.js",
   "unity",
   "unreal engine",
-  "gameplay systems",
-  "system design",
-  "level design",
-  "combat design",
-  "economy design",
-  "live ops",
-  "monetization",
-  "balancing",
-  "wireframing",
-  "prototyping",
-  "figma",
-  "user research",
-  "interaction design",
-  "maya",
-  "blender",
-  "photoshop",
-  "substance painter",
-  "zbrush",
-  "3d modeling",
-  "rigging",
-  "animation",
-  "vfx",
-  "production planning",
-  "release management",
-  "sprint planning",
-  "scrum",
+  "ecs",
+  "entity component system",
+  "solid",
+  "sdlc",
+  "oop",
+  "object oriented programming",
+  "design patterns",
+  "code reviews",
+  "unit testing",
+  "integration testing",
+  "api testing",
+  "manual testing",
+  "automation testing",
+  "test automation",
+  "qa automation",
+  "regression testing",
+  "exploratory testing",
+  "performance testing",
   "agile",
+  "scrum",
+  "sprint planning",
+  "release management",
   "stakeholder management",
-  "roadmapping",
+  "a/b testing",
+  "ab testing",
+  "monetization",
+  "live ops",
+  "tooling",
+  "tool development",
+  "tools programming",
+  "designer tooling",
+  "qa tooling",
+  "content pipelines",
+  "asset pipelines",
+  "spreadsheet-to-json",
+  "spreadsheet to json",
+  "debug commands",
+  "profiling",
+  "performance optimization",
+  "authentication",
+  "session services",
+  "inventory systems",
+  "player progression",
+  "gameplay systems",
+  "ui frameworks",
+  "google maps api",
 ];
 
+const SKILL_ALIASES: Record<string, string[]> = {
+  "rest api": ["rest api", "restful api", "restful apis", "rest apis"],
+  websockets: ["websocket", "websockets"],
+  oauth: ["oauth", "google oauth", "oauth tokens"],
+  ".net": [".net", "dotnet", "asp.net", "c# .net"],
+  vue: ["vue", "vue.js"],
+  ecs: ["ecs", "entity component system", "entity component systems"],
+  oop: ["oop", "object oriented programming", "object-oriented programming"],
+  "a/b testing": ["a/b testing", "ab testing"],
+  "tool development": [
+    "tool development",
+    "tools development",
+    "tools programming",
+    "tooling",
+    "designer tooling",
+    "qa tooling",
+  ],
+  "content pipelines": ["content pipelines", "asset pipelines", "spreadsheet-to-json", "spreadsheet to json"],
+  profiling: ["profiling", "runtime profiling", "performance optimization"],
+};
+
 const TITLE_PATTERNS = [
+  "software engineer",
+  "full-stack software engineer",
+  "full stack software engineer",
+  "software developer",
+  "game developer",
+  "game engineer",
+  "gameplay programmer",
+  "gameplay engineer",
+  "gameplay developer",
+  "engine programmer",
+  "engine developer",
+  "tools programmer",
+  "tools engineer",
+  "tools developer",
+  "engine tools programmer",
+  "engine tools engineer",
+  "frontend engineer",
+  "frontend developer",
+  "backend engineer",
+  "backend developer",
+  "full stack engineer",
+  "full stack developer",
+  "mobile engineer",
+  "mobile developer",
+  "software design engineer",
+  "software design engineer internship",
+  "software engineer internship",
   "qa tester",
   "qa engineer",
   "qa analyst",
@@ -125,137 +189,23 @@ const TITLE_PATTERNS = [
   "gameplay qa",
   "automation tester",
   "test automation engineer",
-  "software engineer",
-  "software developer",
-  "game developer",
-  "game engineer",
-  "gameplay programmer",
-  "gameplay engineer",
-  "gameplay developer",
-  "engine programmer",
-  "engine developer",
-  "tools programmer",
-  "tools engineer",
-  "frontend engineer",
-  "frontend developer",
-  "front end engineer",
-  "front end developer",
-  "backend engineer",
-  "backend developer",
-  "back end engineer",
-  "back end developer",
-  "full stack engineer",
-  "full stack developer",
-  "fullstack engineer",
-  "fullstack developer",
-  "mobile developer",
-  "mobile engineer",
-  "ios developer",
-  "ios engineer",
-  "android developer",
-  "android engineer",
-  "react native developer",
-  "react native engineer",
-  "game designer",
-  "gameplay designer",
-  "systems designer",
-  "level designer",
-  "combat designer",
-  "economy designer",
-  "narrative designer",
-  "quest designer",
-  "mission designer",
-  "technical designer",
-  "content designer",
-  "live ops designer",
-  "feature designer",
-  "mechanics designer",
-  "balance designer",
-  "product designer",
-  "ux designer",
-  "ui designer",
-  "ui ux designer",
-  "ui/ux designer",
-  "interaction designer",
-  "experience designer",
-  "visual designer",
-  "interface designer",
-  "design systems designer",
-  "artist",
-  "game artist",
-  "2d artist",
-  "3d artist",
-  "environment artist",
-  "character artist",
-  "concept artist",
-  "technical artist",
-  "ui artist",
-  "vfx artist",
-  "animator",
-  "motion designer",
-  "rigging artist",
-  "illustrator",
-  "prop artist",
-  "lighting artist",
-  "cinematic artist",
-  "producer",
-  "game producer",
-  "associate producer",
-  "senior producer",
-  "development producer",
   "project manager",
-  "delivery manager",
-  "production coordinator",
-  "release manager",
-  "scrum master",
-  "project coordinator",
-  "development manager",
-  "live operations producer",
   "product manager",
-  "technical product manager",
-  "program manager",
-  "technical program manager",
-  "product operations manager",
-  "product ops manager",
-  "product owner",
-  "data analyst",
-  "business analyst",
-  "game analyst",
-  "insights analyst",
-  "business intelligence analyst",
-  "bi analyst",
-  "data scientist",
-  "analytics engineer",
-  "reporting analyst",
-  "metrics analyst",
-  "player insights analyst",
   "devops engineer",
-  "site reliability engineer",
-  "sre",
   "platform engineer",
-  "cloud engineer",
-  "infrastructure engineer",
-  "build engineer",
-  "release engineer",
-  "build and release engineer",
   "support engineer",
-  "technical support engineer",
-  "application support engineer",
-  "customer support specialist",
-  "player support specialist",
-  "community manager",
-  "live operations specialist",
-  "support analyst",
-  "operations specialist",
 ];
 
 const CERT_PATTERNS = [
   "istqb",
   "aws certified",
+  "azure fundamentals",
+  "microsoft azure fundamentals",
   "azure certified",
   "google cloud certified",
   "scrum master",
   "pmp",
+  "az-900",
 ];
 
 const INDUSTRY_PATTERNS = [
@@ -264,14 +214,38 @@ const INDUSTRY_PATTERNS = [
   "healthtech",
   "gaming",
   "game development",
-  "ecommerce",
-  "payroll",
-  "hr tech",
   "developer tools",
   "enterprise software",
   "mobile games",
   "console games",
+  "live service",
 ];
+
+const NOISY_KEYWORDS = new Set([
+  "your name",
+  "high l ig h ts",
+  "experience",
+  "areas of expertise",
+  "education",
+  "key metrics",
+  "job experience",
+  "skills",
+  "resume",
+  "profile",
+  "role",
+  "team",
+  "worked",
+  "work",
+  "using",
+  "used",
+  "built",
+  "designed",
+  "implemented",
+  "improved",
+  "developed",
+  "engineer",
+  "software engineering",
+]);
 
 function uniqueStrings(values: string[]): string[] {
   const seen = new Set<string>();
@@ -300,7 +274,17 @@ function escapeRegex(value: string): string {
 function createLoosePhrasePattern(value: string): RegExp {
   const normalizedValue = value.toLowerCase().trim().replace(/[._/]+/g, " ");
   const escaped = escapeRegex(normalizedValue).replace(/\s+/g, "\\s+");
-  return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i");
+  return new RegExp(`(^|[^a-z0-9+#])${escaped}(?=$|[^a-z0-9+#])`, "i");
+}
+
+function canonicalizeSkill(value: string): string {
+  const normalizedValue = value.trim().toLowerCase();
+  for (const [canonical, aliases] of Object.entries(SKILL_ALIASES)) {
+    if (aliases.some((alias) => createLoosePhrasePattern(alias).test(normalizedValue))) {
+      return canonical;
+    }
+  }
+  return normalizedValue;
 }
 
 function collectMatches(haystack: string, patterns: string[]): string[] {
@@ -315,37 +299,75 @@ function collectMatches(haystack: string, patterns: string[]): string[] {
   return found.sort((left, right) => right.length - left.length);
 }
 
-function collectKeywordCandidates(haystack: string): string[] {
-  const phrases =
-    haystack.match(
-      /\b[a-z][a-z0-9.+#/-]{2,}(?:\s+[a-z0-9.+#/-]{2,}){0,2}\b/gi,
-    ) ?? [];
-  const cleaned = phrases
-    .map((value) => value.trim().toLowerCase())
-    .filter((value) => value.length >= 3 && value.length <= 40)
-    .filter(
-      (value) =>
-        !/^(the|and|with|from|that|this|have|using|used|built|work|worked|team|role|game|games)$/.test(
-          value,
-        ),
-    );
+function extractStructuredSkillCandidates(rawText: string): string[] {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
 
-  return uniqueStrings(cleaned).slice(0, 60);
+  const candidates: string[] = [];
+
+  for (const line of lines) {
+    const cleanedLine = line.replace(/^[•\-–]\s*/, "").trim();
+
+    if (/^[A-Za-z &/+-]{3,40}:\s*/.test(cleanedLine)) {
+      const [, value] = cleanedLine.split(/:\s*/, 2);
+      if (value) {
+        candidates.push(
+          ...value
+            .split(/[;,|]/)
+            .map((part) => part.trim())
+            .filter((part) => part.length >= 2 && part.length <= 60),
+        );
+      }
+    }
+
+    if (/languages? & frameworks?/i.test(cleanedLine) || /engineering practices/i.test(cleanedLine) || /tooling & delivery/i.test(cleanedLine) || /systems & architecture/i.test(cleanedLine)) {
+      candidates.push(
+        ...cleanedLine
+          .split(/:\s*/)
+          .slice(1)
+          .join(":")
+          .split(/[;,|]/)
+          .map((part) => part.trim())
+          .filter((part) => part.length >= 2 && part.length <= 60),
+      );
+    }
+  }
+
+  return uniqueStrings(candidates);
 }
 
-function guessYearsExperience(
-  text: string,
-  explicitValue?: number | null,
-): number | null {
+function collectKeywordCandidates(haystack: string): string[] {
+  const phrases =
+    haystack.match(/\b[a-z][a-z0-9.+#/-]{2,}(?:\s+[a-z0-9.+#/-]{2,}){0,2}\b/gi) ?? [];
+  const cleaned = phrases
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length >= 2 && value.length <= 50)
+    .filter((value) => !NOISY_KEYWORDS.has(value))
+    .filter((value) => !/^\d+([.%+-]\d+)?$/.test(value));
+
+  return uniqueStrings(cleaned).slice(0, 80);
+}
+
+function guessYearsExperience(text: string, explicitValue?: number | null): number | null {
   if (typeof explicitValue === "number" && Number.isFinite(explicitValue)) {
     return Math.max(0, Math.min(50, Math.floor(explicitValue)));
   }
 
-  const explicitYearMatch = text.match(
-    /\b(\d{1,2})\+?\s+years?\s+of\s+experience\b/i,
-  );
+  const explicitYearMatch = text.match(/\b(\d{1,2})\+?\s+years?\s+of\s+experience\b/i);
   if (explicitYearMatch) {
     return Math.max(0, Math.min(50, Number(explicitYearMatch[1])));
+  }
+
+  const yearRanges = Array.from(text.matchAll(/\b(20\d{2})\s*[–-]\s*(20\d{2}|present)\b/gi));
+  if (yearRanges.length > 0) {
+    const starts = yearRanges.map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
+    const ends = yearRanges.map((m) => (m[2].toLowerCase() === "present" ? 2026 : Number(m[2]))).filter((n) => Number.isFinite(n));
+    if (starts.length && ends.length) {
+      const approx = Math.max(...ends) - Math.min(...starts);
+      if (approx >= 0) return Math.max(0, Math.min(50, approx));
+    }
   }
 
   const presentCount = (text.match(/\bpresent\b/gi) ?? []).length;
@@ -356,11 +378,7 @@ function guessYearsExperience(
   return null;
 }
 
-function guessSeniority(
-  text: string,
-  explicit?: string | null,
-  yearsExperience?: number | null,
-): SeniorityLevel {
+function guessSeniority(text: string, explicit?: string | null, yearsExperience?: number | null): SeniorityLevel {
   const lowered = explicit?.toLowerCase().trim();
 
   if (lowered === "entry") return SeniorityLevel.entry;
@@ -373,8 +391,7 @@ function guessSeniority(
   if (/\bmanager\b/i.test(text)) return SeniorityLevel.manager;
   if (/\bprincipal\b|\bstaff\b|\blead\b/i.test(text)) return SeniorityLevel.lead;
   if (/\bsenior\b/i.test(text)) return SeniorityLevel.senior;
-  if (/\bjunior\b/i.test(text) || /\bentry[- ]level\b/i.test(text))
-    return SeniorityLevel.junior;
+  if (/\bnew grad\b|\bgraduate\b|\bjunior\b|\bentry[- ]level\b/i.test(text)) return SeniorityLevel.junior;
 
   if ((yearsExperience ?? 0) >= 8) return SeniorityLevel.senior;
   if ((yearsExperience ?? 0) >= 4) return SeniorityLevel.mid;
@@ -383,11 +400,10 @@ function guessSeniority(
   return SeniorityLevel.entry;
 }
 
-function derivePrimaryTitle(
-  explicitTitle?: string | null,
-  normalizedTitles?: string[],
-): string | null {
-  if (explicitTitle?.trim()) return explicitTitle.trim();
+function derivePrimaryTitle(explicitTitle?: string | null, normalizedTitles?: string[]): string | null {
+  if (explicitTitle?.trim() && !NOISY_KEYWORDS.has(explicitTitle.trim().toLowerCase())) {
+    return explicitTitle.trim();
+  }
   if (normalizedTitles && normalizedTitles.length > 0) {
     return normalizedTitles[0]
       .split(/\s+/)
@@ -397,19 +413,19 @@ function derivePrimaryTitle(
   return null;
 }
 
-export function normalizeResumeProfile(
-  input: ResumeNormalizationInput,
-): NormalizedResumeProfileData {
+export function normalizeResumeProfile(input: ResumeNormalizationInput): NormalizedResumeProfileData {
   const rawText = compactSentence(input.rawText);
   const summary = compactSentence(input.summary);
-  const haystack = `${input.title ?? ""}\n${rawText ?? ""}\n${
-    summary ?? ""
-  }`.toLowerCase();
+  const rawHaystack = `${input.title ?? ""}\n${input.rawText ?? ""}\n${summary ?? ""}`.toLowerCase();
+  const haystack = `${input.title ?? ""}\n${rawText ?? ""}\n${summary ?? ""}`.toLowerCase();
 
+  const structuredSkillCandidates = rawText ? extractStructuredSkillCandidates(input.rawText ?? "") : [];
+  const matchedSkills = collectMatches(haystack, KNOWN_SKILLS);
   const normalizedSkills = uniqueStrings([
-    ...(input.skills ?? []).map((item) => item.toLowerCase()),
-    ...collectMatches(haystack, KNOWN_SKILLS),
-  ]).slice(0, 80);
+    ...(input.skills ?? []).map((item) => canonicalizeSkill(item)),
+    ...structuredSkillCandidates.map((item) => canonicalizeSkill(item)),
+    ...matchedSkills.map((item) => canonicalizeSkill(item)),
+  ]).slice(0, 100);
 
   const normalizedTitles = uniqueStrings([
     ...(input.titles ?? []).map((item) => item.toLowerCase()),
@@ -427,16 +443,16 @@ export function normalizeResumeProfile(
   ]).slice(0, 20);
 
   const keywordSeed = uniqueStrings([
-    ...(input.keywords ?? []).map((item) => item.toLowerCase()),
+    ...(input.keywords ?? []).map((item) => canonicalizeSkill(item)),
     ...normalizedSkills,
     ...normalizedTitles,
     ...certifications,
     ...industries,
-    ...collectKeywordCandidates(haystack),
-  ]).slice(0, 100);
+    ...collectKeywordCandidates(rawHaystack).map((item) => canonicalizeSkill(item)),
+  ]).slice(0, 140);
 
-  const yearsExperience = guessYearsExperience(haystack, input.yearsExperience);
-  const seniority = guessSeniority(haystack, input.seniority, yearsExperience);
+  const yearsExperience = guessYearsExperience(rawHaystack, input.yearsExperience);
+  const seniority = guessSeniority(rawHaystack, input.seniority, yearsExperience);
   const title = derivePrimaryTitle(input.title, normalizedTitles);
 
   return {

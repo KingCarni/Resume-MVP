@@ -1,3 +1,4 @@
+
 import { prisma } from "@/lib/prisma";
 import {
   normalizeResumeProfile,
@@ -17,6 +18,7 @@ const TITLE_STOP_WORDS = new Set([
   "profile",
   "document",
   "untitled",
+  "your name",
 ]);
 
 const GENERIC_SINGLE_WORD_TITLES = new Set([
@@ -76,6 +78,7 @@ function cleanCandidateTitle(value: unknown): string | null {
 
   const lower = cleaned.toLowerCase();
   if (TITLE_STOP_WORDS.has(lower)) return null;
+  if (/^[a-z\s]+$/.test(lower) && lower.length <= 8) return null;
 
   return cleaned;
 }
@@ -83,17 +86,11 @@ function cleanCandidateTitle(value: unknown): string | null {
 function seniorityRank(value: string) {
   const lower = value.toLowerCase();
 
-  if (/\b(entry|intern|internship|graduate|new grad|junior|jr)\b/.test(lower))
-    return 0;
+  if (/\b(entry|intern|internship|graduate|new grad|junior|jr)\b/.test(lower)) return 0;
   if (/\b(mid|intermediate)\b/.test(lower)) return 1;
   if (/\b(senior|sr)\b/.test(lower)) return 2;
   if (/\b(lead|staff|principal)\b/.test(lower)) return 3;
-  if (
-    /\b(manager|head|director|vp|vice president|chief|cto|cpo|ceo)\b/.test(
-      lower,
-    )
-  )
-    return 4;
+  if (/\b(manager|head|director|vp|vice president|chief|cto|cpo|ceo)\b/.test(lower)) return 4;
 
   return 1;
 }
@@ -104,15 +101,17 @@ function titleSpecificityScore(value: string) {
   let score = 0;
 
   if (
-    /\b(qa|quality assurance|sdet|test|automation|engineer|developer|designer|artist|producer|analyst|programmer|manager|administrator|architect|scientist|specialist|consultant|coordinator|technician|support|security|product|project|program|data|devops|cloud|platform|reliability|operations|network|system|ux|ui|game|gameplay|level|narrative|economy|technical|frontend|backend|full stack|fullstack|mobile|ios|android|unity|unreal|community|insights)\b/.test(
-      lower,
-    )
+    /\b(qa|quality assurance|sdet|test|automation|engineer|developer|designer|artist|producer|analyst|programmer|manager|administrator|architect|scientist|specialist|consultant|coordinator|technician|support|security|product|project|program|data|devops|cloud|platform|reliability|operations|network|system|ux|ui|game|gameplay|level|narrative|economy|technical|frontend|backend|full stack|fullstack|mobile|ios|android|unity|unreal|community|insights|software|full-stack|tools|engine)\b/.test(lower)
   ) {
-    score += 3;
+    score += 4;
   }
 
-  if (words.length >= 2 && words.length <= 5) {
-    score += 1;
+  if (words.length >= 2 && words.length <= 6) {
+    score += 2;
+  }
+
+  if (/\b(full-stack|software|tools|engine|gameplay|qa|platform|support|devops|unity|technical)\b/.test(lower)) {
+    score += 2;
   }
 
   if (/\b(lead|principal|manager|director|head|chief|vp)\b/.test(lower)) {
@@ -120,28 +119,21 @@ function titleSpecificityScore(value: string) {
   }
 
   if (words.length === 1 && GENERIC_SINGLE_WORD_TITLES.has(words[0])) {
-    score -= 3;
+    score -= 4;
   }
 
-  if (value.length > 40) score -= 1;
+  if (value.length > 48) score -= 1;
   if (value.length < 4) score -= 2;
 
   return score;
 }
 
-function pickSaferProfileTitle(
-  input: BuildResumeProfileInput,
-  normalized: NormalizedResumeProfile,
-) {
-  const explicitTitle = cleanCandidateTitle(
-    (input as { title?: unknown }).title,
-  );
+function pickSaferProfileTitle(input: BuildResumeProfileInput, normalized: NormalizedResumeProfile) {
+  const explicitTitle = cleanCandidateTitle((input as { title?: unknown }).title);
   const rawTitles = toStringArray((input as { titles?: unknown }).titles)
     .map(cleanCandidateTitle)
     .filter(Boolean) as string[];
-  const normalizedTitles = toStringArray(
-    (normalized as { normalizedTitles?: unknown }).normalizedTitles,
-  )
+  const normalizedTitles = toStringArray((normalized as { normalizedTitles?: unknown }).normalizedTitles)
     .map(cleanCandidateTitle)
     .filter(Boolean) as string[];
 
@@ -153,12 +145,11 @@ function pickSaferProfileTitle(
 
   if (candidatePool.length > 0) {
     return [...candidatePool].sort((left, right) => {
-      const seniorityDiff = seniorityRank(left) - seniorityRank(right);
-      if (seniorityDiff !== 0) return seniorityDiff * 10;
-
-      const specificityDiff =
-        titleSpecificityScore(right) - titleSpecificityScore(left);
+      const specificityDiff = titleSpecificityScore(right) - titleSpecificityScore(left);
       if (specificityDiff !== 0) return specificityDiff;
+
+      const seniorityDiff = seniorityRank(left) - seniorityRank(right);
+      if (seniorityDiff !== 0) return seniorityDiff * 4;
 
       return left.length - right.length;
     })[0];
@@ -192,19 +183,14 @@ export async function buildResumeProfile(input: BuildResumeProfileInput) {
   });
 }
 
-export async function rebuildResumeProfile(
-  resumeProfileId: string,
-  input: BuildResumeProfileInput,
-) {
+export async function rebuildResumeProfile(resumeProfileId: string, input: BuildResumeProfileInput) {
   return prisma.resumeProfile.update({
     where: { id: resumeProfileId },
     data: buildProfilePayload(input),
   });
 }
 
-export async function upsertLatestResumeProfileForUser(
-  input: BuildResumeProfileInput,
-) {
+export async function upsertLatestResumeProfileForUser(input: BuildResumeProfileInput) {
   if (input.sourceDocumentId) {
     const existingForDocument = await prisma.resumeProfile.findFirst({
       where: {
