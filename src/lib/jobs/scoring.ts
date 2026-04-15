@@ -914,6 +914,72 @@ const GENERIC_SUPPORT_TOKENS = new Set([
 
 const WEAK_STANDALONE_SIGNALS = new Set(["frameworks", "languages", "programming"]);
 
+
+const GENERIC_KEYWORD_FIT_TERMS = new Set([
+  "software engineering",
+  "software development",
+  "application development",
+  "engineering",
+  "development",
+  "programming",
+  "coding",
+  "testing",
+  "quality assurance",
+  "qa",
+  "developer",
+  "engineer",
+  "systems",
+  "applications",
+  "products",
+  "services",
+]);
+
+const HIGH_SIGNAL_KEYWORD_FIT_TERMS = new Set([
+  "c#",
+  "c++",
+  "java",
+  ".net",
+  "asp.net",
+  "unity",
+  "oop",
+  "object oriented programming",
+  "design patterns",
+  "graphql",
+  "microservices",
+  "distributed systems",
+  "scalable systems",
+  "entity component system",
+  "ecs",
+  "rest api",
+  "websockets",
+  "oauth",
+  "authentication",
+  "session services",
+  "ci/cd",
+  "jenkins",
+  "jira",
+  "confluence",
+  "docker",
+  "kubernetes",
+  "typescript",
+  "javascript",
+  "react",
+  "vue",
+  "sql",
+  "postgresql",
+  "mysql",
+]);
+
+function keywordFitWeight(keyword: string): number {
+  const normalizedKeyword = canonicalizeSkill(keyword);
+  if (!normalizedKeyword) return 0;
+  if (HIGH_SIGNAL_KEYWORD_FIT_TERMS.has(normalizedKeyword)) return 1.7;
+  if (GENERIC_KEYWORD_FIT_TERMS.has(normalizedKeyword)) return 0.35;
+  if (normalizedKeyword.includes("engineer") || normalizedKeyword.includes("development")) return 0.45;
+  if (normalizedKeyword.includes("testing")) return 0.4;
+  return 1;
+}
+
 const STRONG_SIGNAL_DISPLAY_PRIORITY = [
   "c#",
   "c++",
@@ -1458,24 +1524,29 @@ export function computeKeywordScore(profile: ResumeProfileInput, job: JobForScor
 
   if (!rawJobKeywords.length) {
     if (directFamilyOverlap > 0) return 5;
-    if (bridgedFamilyOverlap > 0) return 2;
-    return Math.round(KEYWORD_WEIGHT * 0.25);
+    if (bridgedFamilyOverlap > 0) return 1;
+    return Math.round(KEYWORD_WEIGHT * 0.2);
   }
 
-  let exactHits = 0;
-  let relatedHits = 0;
+  let exactWeightedHits = 0;
+  let relatedWeightedHits = 0;
+  let totalWeight = 0;
+  let highSignalExactHits = 0;
 
   for (const keyword of rawJobKeywords) {
     const canonicalKeyword = canonicalizeSkill(keyword);
+    const weight = keywordFitWeight(keyword);
+    totalWeight += weight;
 
     if (profileKeywordPool.has(keyword) || profileKeywordPool.has(canonicalKeyword)) {
-      exactHits += 1;
+      exactWeightedHits += weight;
+      if (HIGH_SIGNAL_KEYWORD_FIT_TERMS.has(canonicalKeyword)) highSignalExactHits += 1;
       continue;
     }
 
     const keywordFamilies = getTitleFamilies([keyword]);
     if (Array.from(keywordFamilies).some((family) => profileFamilies.has(family))) {
-      relatedHits += 1;
+      relatedWeightedHits += weight * 0.45;
       continue;
     }
 
@@ -1484,27 +1555,43 @@ export function computeKeywordScore(profile: ResumeProfileInput, job: JobForScor
       return phraseSimilarity(signal, keyword) >= 0.5;
     });
 
-    if (hasRelatedMatch) relatedHits += 1;
+    if (hasRelatedMatch) relatedWeightedHits += weight * 0.35;
   }
 
-  const familySupport = directFamilyOverlap * 1 + bridgedFamilyOverlap * 0.4;
+  const familySupport = directFamilyOverlap * 2.2 + bridgedFamilyOverlap * 0.2;
 
-  if (exactHits === 0 && relatedHits === 0 && familySupport === 0) return 0;
+  if (exactWeightedHits === 0 && relatedWeightedHits === 0 && familySupport === 0) return 0;
 
-  const effectiveHits = exactHits + relatedHits * 0.6 + familySupport;
-  const ratio = Math.max(0, Math.min(1, effectiveHits / Math.max(1, rawJobKeywords.length)));
+  let effectiveHits = exactWeightedHits + relatedWeightedHits + familySupport;
+  let ratio = Math.max(0, Math.min(1, effectiveHits / Math.max(1, totalWeight)));
+
+  if (directFamilyOverlap === 0) {
+    ratio *= highSignalExactHits >= 3 ? 0.78 : 0.58;
+  } else if (highSignalExactHits >= 2) {
+    ratio = Math.min(1, ratio * 1.08);
+  }
+
   const baseFloor =
     directFamilyOverlap > 0
       ? 5
-      : bridgedFamilyOverlap > 0
-        ? 2
-        : exactHits > 0
-          ? 4
-          : relatedHits > 0
+      : highSignalExactHits >= 2
+        ? 3
+        : bridgedFamilyOverlap > 0
+          ? 1
+          : exactWeightedHits > 0
             ? 2
-            : 0;
+            : relatedWeightedHits > 0
+              ? 1
+              : 0;
 
-  return Math.min(KEYWORD_WEIGHT, Math.round(baseFloor + (KEYWORD_WEIGHT - baseFloor) * Math.sqrt(ratio)));
+  const score = Math.min(KEYWORD_WEIGHT, Math.round(baseFloor + (KEYWORD_WEIGHT - baseFloor) * Math.sqrt(ratio)));
+
+  if (directFamilyOverlap === 0) {
+    const cap = highSignalExactHits >= 3 ? 10 : 8;
+    return Math.min(score, cap);
+  }
+
+  return score;
 }
 
 export function computeLocationScore(profile: ResumeProfileInput, job: JobForScoring): number {

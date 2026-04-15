@@ -3896,6 +3896,8 @@ export default function ResumeMvp() {
   >({});
 
   const trackedResumeEntryRef = useRef("");
+  const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProfileSyncSignatureRef = useRef("");
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
 
@@ -5841,7 +5843,8 @@ useEffect(() => {
     });
   }, [liveBulletRows.length]);
 
-  const resumeHtml = useMemo(() => {
+
+const resumeHtml = useMemo(() => {
     if (!analysis || !liveBulletRows.length) return "";
     return buildResumeHtml({
       template: resumeTemplate,
@@ -5896,6 +5899,127 @@ useEffect(() => {
     return (compiledResumeHtml || "").trim();
   }, [compiledResumeHtml]);
 
+const syncResumeProfileDraft = useCallback(async () => {
+  if (status !== "authenticated" || !analysis) return;
+
+  const activeResumeProfileId = (() => {
+    if (typeof window === "undefined") return "";
+    const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+    return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+  })();
+
+  const draftSource = resumeText.trim() || htmlToPlainText(liveResumeHtml || "");
+  const normalizedDraft = normalizeResumeTextForParsing(draftSource);
+  if (normalizedDraft.length < 120) return;
+
+  const nextTitle = String(
+    profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
+  ).trim();
+
+  const nextSummary = String(profile.summary || analysis?.autoResumeProfile?.title || "").trim();
+
+  const nextTitles = uniqueTerms(
+    [
+      profile.titleLine,
+      analysis?.ats?.detectedResumeRole?.roleName,
+      analysis?.ats?.targetRole?.roleName,
+      targetPosition,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  ).slice(0, 12);
+
+  const nextKeywords = uniqueTerms([
+    ...((analysis?.presentKeywords ?? []) as string[]),
+    ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...editorExpertiseItems,
+    ...editorMetaGames,
+    ...editorMetaMetrics,
+  ]).slice(0, 80);
+
+  const nextSkills = uniqueTerms([
+    ...((analysis?.presentKeywords ?? []) as string[]),
+    ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...editorExpertiseItems,
+  ]).slice(0, 60);
+
+  const signature = JSON.stringify({
+    profileId: activeResumeProfileId || null,
+    title: nextTitle,
+    rawText: normalizedDraft,
+    template: resumeTemplate,
+    skills: nextSkills,
+    titles: nextTitles,
+    keywords: nextKeywords,
+  });
+
+  if (lastProfileSyncSignatureRef.current === signature) return;
+
+  try {
+    const response = await fetch("/api/resume-profiles/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: activeResumeProfileId || undefined,
+        title: nextTitle || undefined,
+        summary: nextSummary || undefined,
+        rawText: normalizedDraft,
+        html: liveResumeHtml || undefined,
+        template: resumeTemplate,
+        skills: nextSkills,
+        titles: nextTitles,
+        keywords: nextKeywords,
+      }),
+    });
+
+    const payload = await parseApiResponse(response);
+    if (!response.ok || typeof payload === "string" || !payload?.ok) return;
+
+    lastProfileSyncSignatureRef.current = signature;
+
+    const syncedProfileId = String(payload?.item?.id || "").trim();
+    if (typeof window !== "undefined" && syncedProfileId) {
+      window.localStorage.setItem("activeResumeProfileId", syncedProfileId);
+    }
+  } catch {
+    // silent: draft/profile sync should never interrupt editing
+  }
+}, [
+  status,
+  analysis,
+  searchParamsKey,
+  applyPackBundle,
+  resumeText,
+  liveResumeHtml,
+  resumeTemplate,
+  profile.titleLine,
+  profile.summary,
+  targetPosition,
+  editorExpertiseItems,
+  editorMetaGames,
+  editorMetaMetrics,
+]);
+
+useEffect(() => {
+  if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;
+
+  if (profileSyncTimeoutRef.current) {
+    clearTimeout(profileSyncTimeoutRef.current);
+  }
+
+  profileSyncTimeoutRef.current = setTimeout(() => {
+    void syncResumeProfileDraft();
+  }, 1600);
+
+  return () => {
+    if (profileSyncTimeoutRef.current) {
+      clearTimeout(profileSyncTimeoutRef.current);
+      profileSyncTimeoutRef.current = null;
+    }
+  };
+}, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
+
+  
   async function handleCopyOutput() {
     const html = liveResumeHtml;
     if (!html) return;

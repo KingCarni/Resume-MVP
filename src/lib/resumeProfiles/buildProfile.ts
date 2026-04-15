@@ -68,6 +68,29 @@ const CORE_ROLE_PATTERNS = [
   /\btest engineer\b/i,
 ];
 
+
+const TITLE_FAMILY_PRIORITIES: Array<{ pattern: RegExp; score: number }> = [
+  { pattern: /\bsoftware engineer\b/i, score: 16 },
+  { pattern: /\bsoftware developer\b/i, score: 14 },
+  { pattern: /\bgame engineer\b|\bgame developer\b/i, score: 12 },
+  { pattern: /\bsoftware design engineer\b/i, score: 6 },
+  { pattern: /\bsoftware engineer internship\b|\bsoftware design engineer internship\b/i, score: 2 },
+];
+
+function titleFamilyPriority(value: string) {
+  for (const entry of TITLE_FAMILY_PRIORITIES) {
+    if (entry.pattern.test(value)) return entry.score;
+  }
+  return 0;
+}
+
+function stableTitleVariant(value: string) {
+  return normalizeTitleVariant(value)
+    .replace(/\bdesign\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -156,7 +179,11 @@ function titleSpecificityScore(value: string) {
   }
 
   if (/\b(intern|internship|new grad|graduate|junior|jr)\b/.test(lower)) {
-    score -= 5;
+    score -= 8;
+  }
+
+  if (/\bsoftware design engineer\b/.test(lower)) {
+    score -= 2;
   }
 
   if (/\b(lead|principal|manager|director|head|chief|vp)\b/.test(lower)) {
@@ -173,20 +200,35 @@ function titleSpecificityScore(value: string) {
   return score;
 }
 
-function candidateTitleSupportScore(value: string, allTitles: string[]) {
+function candidateTitleSupportScore(
+  value: string,
+  rawTitles: string[],
+  normalizedTitles: string[],
+  explicitTitle?: string | null,
+) {
   const lower = value.toLowerCase();
-  const normalizedVariant = normalizeTitleVariant(value);
+  const stableVariant = stableTitleVariant(value);
   let score = 0;
 
-  const exactRepeats = allTitles.filter((title) => title.toLowerCase() === lower).length;
-  score += exactRepeats * 4;
+  const exactRawRepeats = rawTitles.filter((title) => title.toLowerCase() === lower).length;
+  const exactNormalizedRepeats = normalizedTitles.filter((title) => title.toLowerCase() === lower).length;
+  const rawVariantSupport = rawTitles.filter((title) => stableTitleVariant(title) === stableVariant).length;
+  const normalizedVariantSupport = normalizedTitles.filter((title) => stableTitleVariant(title) === stableVariant).length;
 
-  const variantSupport = allTitles.filter((title) => normalizeTitleVariant(title) === normalizedVariant).length;
-  score += variantSupport * 3;
+  score += exactRawRepeats * 7;
+  score += exactNormalizedRepeats * 3;
+  score += rawVariantSupport * 5;
+  score += normalizedVariantSupport * 2;
 
-  if (!/\b(intern|internship|new grad|graduate|junior|jr)\b/.test(lower) && variantSupport > exactRepeats) {
+  if (explicitTitle && stableTitleVariant(explicitTitle) == stableVariant) {
     score += 4;
   }
+
+  if (!/\b(intern|internship|new grad|graduate|junior|jr)\b/.test(lower) && rawVariantSupport > 0) {
+    score += 6;
+  }
+
+  score += titleFamilyPriority(value);
 
   return score;
 }
@@ -208,9 +250,19 @@ function pickSaferProfileTitle(input: BuildResumeProfileInput, normalized: Norma
 
   if (candidatePool.length > 0) {
     return [...candidatePool].sort((left, right) => {
-      const leftScore = titleSpecificityScore(left) + candidateTitleSupportScore(left, candidatePool);
-      const rightScore = titleSpecificityScore(right) + candidateTitleSupportScore(right, candidatePool);
+      const leftScore =
+        titleSpecificityScore(left) + candidateTitleSupportScore(left, rawTitles, normalizedTitles, explicitTitle);
+      const rightScore =
+        titleSpecificityScore(right) + candidateTitleSupportScore(right, rawTitles, normalizedTitles, explicitTitle);
       if (leftScore !== rightScore) return rightScore - leftScore;
+
+      const leftFamily = titleFamilyPriority(left);
+      const rightFamily = titleFamilyPriority(right);
+      if (leftFamily !== rightFamily) return rightFamily - leftFamily;
+
+      const leftStable = stableTitleVariant(left);
+      const rightStable = stableTitleVariant(right);
+      if (leftStable !== rightStable) return leftStable.length - rightStable.length;
 
       const seniorityDiff = seniorityRank(left) - seniorityRank(right);
       if (seniorityDiff !== 0) return seniorityDiff * 4;
