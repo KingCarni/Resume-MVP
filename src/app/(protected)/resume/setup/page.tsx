@@ -1,15 +1,14 @@
-// src/app/(protected)/resume/page.tsx
+// src/app/(protected)/resume/setup/page.tsx
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
 
-import CreditsPill from "@/components/Billing/CreditsPill";
 import ResumeMvp from "@/components/ResumeMvp";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-async function shouldUseSetupMode() {
+async function hasExistingResumeProfile() {
   const session = await getServerSession(authOptions);
   const email = session?.user?.email;
   if (!email) return false;
@@ -26,39 +25,31 @@ async function shouldUseSetupMode() {
     },
   });
 
-  return !!user?.id && user._count.resumeProfiles === 0;
+  return !!user?.id && user._count.resumeProfiles > 0;
 }
 
-export default async function Page() {
-  if (await shouldUseSetupMode()) {
-    redirect("/resume/setup");
+export default async function ResumeSetupPage() {
+  if (await hasExistingResumeProfile()) {
+    redirect("/resume");
   }
 
   return (
     <DashboardShell
-      title="Resume Compiler"
-      subtitle="Build, rewrite, and export a resume that matches your target job."
+      title="Resume Setup"
+      subtitle="Create your base Git-a-Job resume for free. Once this is done, you can tailor it per role from AI Job Match."
       topRight={
         <div className="flex items-center gap-2">
-          <CreditsPill />
-
-          <Link href="/buy-credits" className="shell-primary-btn">
-            Buy Credits
+          <Link href="/jobs" className="shell-primary-btn">
+            Browse Jobs
           </Link>
-
-          <a
-            href="https://git-a-job.com/donate"
-            target="_blank"
-            rel="noreferrer"
-            className="shell-secondary-btn"
-          >
-            Donate
-          </a>
+          <Link href="/account" className="shell-secondary-btn">
+            Account
+          </Link>
         </div>
       }
     >
       <div className="text-black dark:text-white">
-        <ResumeMvp />
+        <ResumeMvp mode="setup" />
       </div>
     </DashboardShell>
   );

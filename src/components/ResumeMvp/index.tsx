@@ -3817,7 +3817,12 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
   { id: "playground", label: "Playground (primary)" },
 ];
 
-export default function ResumeMvp() {
+type ResumeMvpProps = {
+  mode?: "standard" | "setup";
+};
+
+export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
+  const isSetupMode = mode === "setup";
   const { status } = useSession();
   const router = useRouter();
 
@@ -3924,6 +3929,16 @@ export default function ResumeMvp() {
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const [latestResumeMeta, setLatestResumeMeta] = useState<{ title: string; createdAt: string } | null>(null);
+  const setupModeJobText = useMemo(() => {
+    const safeTarget = targetPosition.trim() || "the user's target role";
+    return [
+      `${safeTarget} core responsibilities`,
+      "Relevant experience and transferable results",
+      "Clear execution, collaboration, and communication",
+      "Process improvement, ownership, and measurable impact",
+      "ATS-friendly phrasing without inventing experience",
+    ].join("\n");
+  }, [targetPosition]);
 
   const scrollToSection = useCallback((sectionId: string) => {
     if (typeof window === "undefined") return;
@@ -3965,10 +3980,10 @@ export default function ResumeMvp() {
 
   const canAnalyze = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
-    const hasJob = jobText.trim().length > 0;
+    const hasJob = isSetupMode || jobText.trim().length > 0;
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
-  }, [file, resumeText, jobText, targetPosition]);
+  }, [file, resumeText, jobText, targetPosition, isSetupMode]);
 
   useEffect(() => {
     if (status !== "authenticated" || latestResumeHydratedRef.current) return;
@@ -4301,6 +4316,7 @@ export default function ResumeMvp() {
       const analyticsBundle =
         analyticsParams?.get("bundle") || String(applyPackBundle?.bundle || "").trim();
       const analyticsMode = analyticsBundle === "apply-pack" ? "apply_pack" : "resume";
+      const effectiveJobText = isSetupMode ? setupModeJobText : jobText;
 
       if (analyticsJobId) {
         trackJobEvent({
@@ -4314,7 +4330,7 @@ export default function ResumeMvp() {
           meta: {
             hasResumeFile: !!file,
             hasResumeText: !!resumeText.trim(),
-            hasJobText: !!jobText.trim(),
+            hasJobText: !!effectiveJobText.trim(),
             hasTargetPosition: !!targetPosition.trim(),
           },
         });
@@ -4328,8 +4344,9 @@ export default function ResumeMvp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resumeBlobUrl: url,
-            jobText,
+            jobText: effectiveJobText,
             targetPosition,
+            isFirstTimeSetup: isSetupMode,
             onlyExperienceBullets,
             resumeText: resumeTextForApi || "",
           }),
@@ -4340,9 +4357,10 @@ export default function ResumeMvp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resumeText: resumeTextForApi || resumePlain,
-            jobText,
+            jobText: effectiveJobText,
             targetPosition,
             onlyExperienceBullets,
+            isFirstTimeSetup: isSetupMode,
           }),
         });
       }
@@ -6251,15 +6269,15 @@ useEffect(() => {
     const hasShippedProducts = editorMetaGames.some((item) => String(item || "").trim());
     const hasMetrics = editorMetaMetrics.some((item) => String(item || "").trim());
     const hasEditedBullets = liveBulletRows.length > 0;
-    const hasOutput = !!liveResumeHtml;
+    const hasOutput = !!liveResumeHtml.trim();
 
     return [
-      { id: "resume-source", label: "Resume source loaded", done: hasResumeSource, actionLabel: "Go", onAction: () => scrollToSection("resume-source") },
-      { id: "job-setup", label: "Target position / job context", done: !!targetPosition.trim() && !!jobText.trim(), actionLabel: "Go", onAction: () => scrollToSection("job-setup") },
+      { id: "resume-source", label: isSetupMode ? "Upload your base resume" : "Resume source loaded", done: hasResumeSource, actionLabel: "Go", onAction: () => scrollToSection("resume-source") },
+      { id: "job-setup", label: isSetupMode ? "Choose target position" : "Target position / job context", done: !!targetPosition.trim() && (isSetupMode || !!jobText.trim()), actionLabel: "Go", onAction: () => scrollToSection("job-setup") },
       { id: "template", label: "Choose template", done: hasTemplate, actionLabel: "Go", onAction: () => scrollToSection("resume-template") },
       { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
       { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
-      { id: "analyze", label: hasAnalyzed ? "Resume analyzed" : "Analyze resume", done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
+      { id: "analyze", label: hasAnalyzed ? (isSetupMode ? "Base resume analyzed" : "Resume analyzed") : (isSetupMode ? "Analyze base resume" : "Analyze resume"), done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
       { id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") },
       { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
       { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
@@ -6283,10 +6301,10 @@ useEffect(() => {
     liveBulletRows.length,
     liveResumeHtml,
     scrollToSection,
+    isSetupMode,
   ]);
-
   const checklistCompletedCount = checklistItems.filter((item) => item.done).length;
-  const canContinueToCoverLetter = !!analysis && !atsScoreDirty;
+  const canContinueToCoverLetter = !isSetupMode && !!analysis && !atsScoreDirty;
 
   const fileIsPdf = useMemo(() => {
     if (!file) return false;
@@ -6311,17 +6329,18 @@ useEffect(() => {
           <div className="mb-4 rounded-2xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/10">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Resume workflow checklist</div>
-                <div className="text-xs text-black/70 dark:text-black/80">
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">Resume workflow guide</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300">
                   {checklistCompletedCount}/{checklistItems.length} completed
                   {latestResumeMeta ? ` · Latest resume loaded: ${latestResumeMeta.title}` : ""}
+                  {isSetupMode ? " · First-time setup is free" : ""}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${atsScoreDirty ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${atsScoreDirty ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
                   {analysis ? (atsScoreDirty ? "ATS score needs refresh" : "ATS score current") : "Analyze to create ATS score"}
                 </span>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${profileSyncDirty ? "border-amber-300 bg-amber-50 text-amber-800" : "border-sky-200 bg-sky-50 text-sky-800"}`}>
+                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${profileSyncDirty ? "border-amber-300 bg-amber-50 text-amber-900" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
                   {analysis ? (profileSyncDirty ? "Resume profile sync pending" : "Resume profile synced") : "Resume profile not synced yet"}
                 </span>
               </div>
@@ -6329,18 +6348,18 @@ useEffect(() => {
 
             <div className="mt-3 grid gap-2">
               {checklistItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm dark:border-white/10 dark:bg-black/10">
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-black" : "bg-black/10 text-black/70 dark:bg-white/10 dark:text-black/80"}`}>
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"}`}>
                       {item.done ? "✓" : "•"}
                     </span>
-                    <span className="min-w-0 truncate font-semibold text-black/90 dark:text-black/90">{item.label}</span>
+                    <span className="min-w-0 truncate font-semibold text-slate-900 dark:text-white">{item.label}</span>
                   </div>
                   {item.onAction ? (
                     <button
                       type="button"
                       onClick={item.onAction}
-                      className="rounded-lg border border-black/10 bg-white px-2.5 py-1 text-[11px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                     >
                       {item.actionLabel || "Open"}
                     </button>
@@ -6356,7 +6375,7 @@ useEffect(() => {
                 disabled={!analysis}
                 className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
               >
-                {analysis ? "Refresh ATS + Profile Sync" : "Analyze resume first"}
+                {analysis ? "Refresh ATS + Profile Sync" : isSetupMode ? "Analyze base resume first" : "Analyze resume first"}
               </button>
               <button
                 type="button"
@@ -6370,7 +6389,10 @@ useEffect(() => {
           </div>
 
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold">Inputs</h2>
+            <div>
+              <h2 className="text-base font-extrabold">Inputs</h2>
+              <div className="text-xs text-slate-600 dark:text-slate-300">{isSetupMode ? "Setup mode · build your base resume once, then tailor per job later." : "Job-aware resume mode"}</div>
+            </div>
             <div className="flex items-center gap-2 text-xs text-black/90 dark:text-black/90">
               <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
                 {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
@@ -6380,7 +6402,10 @@ useEffect(() => {
 
           <div className="mt-3 grid gap-3">
             <div id="resume-source" className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Upload resume file</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">{isSetupMode ? "Upload your base resume" : "Upload resume file"}</div>
+              {isSetupMode ? (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">This first setup is free. DOCX is still the best source when you have it.</div>
+              ) : null}
 
               <input
                 id="resume-upload"
@@ -6423,65 +6448,86 @@ useEffect(() => {
               ) : null}
             </div>
 
-            <label id="job-setup" className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
-                  {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
-                </div>
-
-                {applyPackBundle?.job?.jobContextText ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setJobTextOverrideMode((v) => !v)}
-                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
-                    >
-                      {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={syncJobTextFromApplyPack}
-                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
-                    >
-                      Re-sync saved job
-                    </button>
+            <div id="job-setup" className="grid gap-3">
+              {isSetupMode ? (
+                <>
+                  <label className="grid gap-1.5">
+                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Target position (required)</div>
+                    <input
+                      value={targetPosition}
+                      onChange={(e) => setTargetPosition(e.target.value)}
+                      placeholder="QA Engineer, Producer, Product Manager..."
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                    />
+                  </label>
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
+                    Setup mode uses your target position to build a strong base resume first. You can compare against a specific job later from AI Job Match.
                   </div>
-                ) : null}
-              </div>
+                </>
+              ) : (
+                <>
+                  <label className="grid gap-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                        {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
+                      </div>
 
-              <textarea
-                value={jobText}
-                onChange={(e) => setJobText(e.target.value)}
-                rows={6}
-                placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Post job description/requirements here"}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
-              />
+                      {applyPackBundle?.job?.jobContextText ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setJobTextOverrideMode((v) => !v)}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={syncJobTextFromApplyPack}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            Re-sync saved job
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
 
-              <div className="text-xs text-black/70 dark:text-black/80">
-                {applyPackBundle?.job?.jobContextText
-                  ? jobTextOverrideMode
-                    ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
-                    : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
-                  : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
-              </div>
-            </label>
+                    <textarea
+                      value={jobText}
+                      onChange={(e) => setJobText(e.target.value)}
+                      rows={6}
+                      placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Post job description/requirements here"}
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                    />
 
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
-                {applyPackBundle?.job?.title ? "Target position (prefilled from saved job)" : "Target position (required)"}
-              </div>
-              <input
-                value={targetPosition}
-                onChange={(e) => setTargetPosition(e.target.value)}
-                placeholder="Production Director, QA Engineer, Product Owner..."
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-              />
-              {applyPackBundle?.job?.title ? (
-                <div className="text-xs text-black/70 dark:text-black/80">
-                  Prefilled from AI Job Match: {applyPackBundle.job.title}
-                </div>
-              ) : null}
-            </label>
+                    <div className="text-xs text-black/70 dark:text-black/80">
+                      {applyPackBundle?.job?.jobContextText
+                        ? jobTextOverrideMode
+                          ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
+                          : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
+                        : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
+                    </div>
+                  </label>
+
+                  <label className="grid gap-1.5">
+                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                      {applyPackBundle?.job?.title ? "Target position (prefilled from saved job)" : "Target position (required)"}
+                    </div>
+                    <input
+                      value={targetPosition}
+                      onChange={(e) => setTargetPosition(e.target.value)}
+                      placeholder="Production Director, QA Engineer, Product Owner..."
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                    />
+                    {applyPackBundle?.job?.title ? (
+                      <div className="text-xs text-black/70 dark:text-black/80">
+                        Prefilled from AI Job Match: {applyPackBundle.job.title}
+                      </div>
+                    ) : null}
+                  </label>
+                </>
+              )}
+            </div>
 
             {/* Template */}
             <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
@@ -6502,7 +6548,7 @@ useEffect(() => {
 
             {/* Header details */}
             <div id="header-details" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black//0 dark:text-black/90">Header details</div>
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
@@ -6671,7 +6717,7 @@ useEffect(() => {
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  {loadingAnalyze ? "Analyzing…" : analysis ? `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)` : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`}
+                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
 
                 
@@ -6852,7 +6898,7 @@ useEffect(() => {
                   disabled={!liveResumeHtml}
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                 >
-                  Download PDF (5 credits)
+                  Download PDF (5 credits if exporting)
                 </button>
 
                 <button

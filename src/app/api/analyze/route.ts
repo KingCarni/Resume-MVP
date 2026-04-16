@@ -8,7 +8,7 @@ import { computeVerbStrength } from "@/lib/verb_strength";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chargeCredits, refundCredits } from "@/lib/credits";
+import { chargeCredits, getCreditBalance, refundCredits } from "@/lib/credits";
 import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
 import { upsertLatestResumeProfileForUser } from "@/lib/resumeProfiles/buildProfile";
 
@@ -1403,7 +1403,7 @@ export async function POST(req: Request) {
     let jobText = "";
     let targetPosition = "";
     let onlyExperienceBullets = true;
-
+    let isFirstTimeSetup = false;
 
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
@@ -1424,6 +1424,11 @@ export async function POST(req: Request) {
       const flagRaw = form.get("onlyExperienceBullets");
       const parsedFlag = parseOnlyExperienceFlagFromFormData(flagRaw);
       if (typeof parsedFlag === "boolean") onlyExperienceBullets = parsedFlag;
+
+      const firstTimeSetupRaw = form.get("isFirstTimeSetup");
+      if (typeof firstTimeSetupRaw === "string") {
+        isFirstTimeSetup = ["1", "true", "yes", "on"].includes(firstTimeSetupRaw.toLowerCase());
+      }
 
       jobText = normalizeJobText(job);
       targetPosition = normalizeJobText(target);
@@ -1486,6 +1491,10 @@ export async function POST(req: Request) {
 
       if (typeof body.onlyExperienceBullets === "boolean") {
         onlyExperienceBullets = body.onlyExperienceBullets;
+      }
+
+      if (typeof body.isFirstTimeSetup === "boolean") {
+        isFirstTimeSetup = body.isFirstTimeSetup;
       }
 
       if (resumeBlobUrl) {
@@ -1554,23 +1563,32 @@ export async function POST(req: Request) {
     }
 
     const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "resume");
-    const charged = await chargeCredits({
-      userId: dbUser.id,
-      cost: chargeConfig.cost,
-      reason: chargeConfig.reason,
-      eventType: "analyze",
-      ref: chargeConfig.ref,
-      meta: {
-        cost: chargeConfig.cost,
-        jobId: jobsAnalyticsContext?.jobId ?? null,
-        resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
-        company: jobsAnalyticsContext?.company ?? null,
-        jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
-        sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
-        mode: chargeConfig.mode,
-        bundleSessionId: chargeConfig.bundleSessionId ?? null,
-      },
-    });
+    const eligibleForFreeSetup =
+      isFirstTimeSetup &&
+      chargeConfig.mode !== "apply_pack" &&
+      (await prisma.resumeProfile.count({ where: { userId: dbUser.id } })) === 0;
+
+    const charged = eligibleForFreeSetup
+      ? { ok: true, balance: await getCreditBalance(dbUser.id), alreadyApplied: true }
+      : await chargeCredits({
+          userId: dbUser.id,
+          cost: chargeConfig.cost,
+          reason: chargeConfig.reason,
+          eventType: "analyze",
+          ref: chargeConfig.ref,
+          meta: {
+            cost: chargeConfig.cost,
+            jobId: jobsAnalyticsContext?.jobId ?? null,
+            resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
+            company: jobsAnalyticsContext?.company ?? null,
+            jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
+            sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
+            mode: chargeConfig.mode,
+            bundleSessionId: chargeConfig.bundleSessionId ?? null,
+            setupMode: isFirstTimeSetup,
+            freeSetupGranted: eligibleForFreeSetup,
+          },
+        });
 
     if (!charged.ok) {
       await writeJobsAnalyticsEvent({
@@ -1579,7 +1597,8 @@ export async function POST(req: Request) {
         route: "/resume",
         context: jobsAnalyticsContext,
         meta: {
-          creditsCost: chargeConfig.cost,
+          creditsCost: eligibleForFreeSetup ? 0 : chargeConfig.cost,
+        freeSetupGranted: eligibleForFreeSetup,
           error: "OUT_OF_CREDITS",
           refunded: false,
           parserUsed,
