@@ -398,11 +398,24 @@ export function isLikelyHeading(line: string): boolean {
   return hasTerminalColon || (titleCaseLike && headingWordCount <= 6);
 }
 
-function normalizeBulletLine(line: string): string {
+function stripLeadingListMarker(line: string): string {
   return line
-    .replace(/^[-*•▪◦‣·]\s*/, "• ")
-    .replace(/^\d+[.)]\s*/, "• ")
+    .replace(/^(?:[-*•▪◦‣·]|\d+[.)])\s*/, "")
     .trim();
+}
+
+function isBulletOnlyLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  return /^(?:[-*•▪◦‣·]|\d+[.)])(?:\s*(?:[-*•▪◦‣·]|\d+[.)]))*$/.test(trimmed);
+}
+
+function normalizeBulletLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed || isBulletOnlyLine(trimmed)) return "";
+
+  const withoutMarker = stripLeadingListMarker(trimmed);
+  return withoutMarker || "";
 }
 
 function splitIntoBlocks(text: string): string[] {
@@ -451,6 +464,10 @@ export function sanitizeTextBlock(input: string | null | undefined): string {
     .trim();
 }
 
+function sanitizeSectionContent(input: string | null | undefined): string {
+  return sanitizeTextBlock(input);
+}
+
 export function extractStructuredSections(text: string, source: ParsedSectionSource = "description"): ParsedSection[] {
   if (!text.trim()) return [];
 
@@ -460,7 +477,7 @@ export function extractStructuredSections(text: string, source: ParsedSectionSou
   let currentBucket: ParsedSectionBucket = "overview";
 
   const pushSection = (heading: string, bucket: ParsedSectionBucket, content: string) => {
-    const cleaned = sanitizeTextBlock(content);
+    const cleaned = sanitizeSectionContent(content);
     if (!cleaned) return;
 
     sections.push({
