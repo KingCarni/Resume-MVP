@@ -39,6 +39,7 @@ type ReqBody = {
   jobTitle?: string;
   company?: string;
   mode?: "resume" | "cover_letter" | "apply_pack" | "browse";
+  bundleSessionId?: string;
 
   tone?: string;
   length?: "short" | "standard" | "detailed";
@@ -56,6 +57,7 @@ type JobsAnalyticsContext = {
   company?: string;
   jobTitle?: string;
   mode?: JobsAnalyticsMode;
+  bundleSessionId?: string;
 };
 
 function cleanOptionalString(value: unknown) {
@@ -70,6 +72,7 @@ function buildJobsAnalyticsContext(input: {
   company?: unknown;
   jobTitle?: unknown;
   mode?: unknown;
+  bundleSessionId?: unknown;
 }) {
   const jobId = cleanOptionalString(input.jobId);
   if (!jobId) return null;
@@ -87,6 +90,7 @@ function buildJobsAnalyticsContext(input: {
     company: cleanOptionalString(input.company),
     jobTitle: cleanOptionalString(input.jobTitle),
     mode,
+    bundleSessionId: cleanOptionalString(input.bundleSessionId),
   } satisfies JobsAnalyticsContext;
 }
 
@@ -118,10 +122,30 @@ async function writeJobsAnalyticsEvent(args: {
         company: args.context.company ?? null,
         jobTitle: args.context.jobTitle ?? null,
         mode: args.context.mode ?? null,
+        bundleSessionId: args.context.bundleSessionId ?? null,
         ...(typeof args.meta === "object" && args.meta ? toSafeJson(args.meta) : {}),
       },
     },
   });
+}
+
+
+const COST_GENERATE_COVER_LETTER = 5;
+const COST_APPLY_PACK = 8;
+
+function buildJobsChargeConfig(context: JobsAnalyticsContext | null, fallbackMode: JobsAnalyticsMode) {
+  const mode = context?.mode === "apply_pack" ? "apply_pack" : fallbackMode;
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  const isApplyPack = mode === "apply_pack" && !!bundleSessionId;
+
+  return {
+    mode,
+    isApplyPack,
+    cost: isApplyPack ? COST_APPLY_PACK : COST_GENERATE_COVER_LETTER,
+    reason: isApplyPack ? "job_apply_pack" : "job_generate_cover_letter",
+    ref: isApplyPack ? `job_apply_pack:${bundleSessionId}` : undefined,
+    bundleSessionId,
+  } as const;
 }
 
 function okJson(payload: any, init?: ResponseInit) {
@@ -493,6 +517,7 @@ export async function POST(req: Request) {
         company: form.get("company") ?? form.get("targetCompany"),
         jobTitle: form.get("jobTitle") ?? form.get("roleTitle"),
         mode: form.get("mode"),
+        bundleSessionId: form.get("bundleSessionId"),
       });
 
       tone = toStr(form.get("tone") || tone).trim() || tone;
@@ -526,6 +551,7 @@ export async function POST(req: Request) {
         company: body.company ?? body.targetCompany,
         jobTitle: body.jobTitle ?? body.roleTitle,
         mode: body.mode,
+        bundleSessionId: body.bundleSessionId,
       });
 
       tone = toStr(body.tone || tone).trim() || tone;
@@ -558,16 +584,24 @@ export async function POST(req: Request) {
     }
 
     // ✅ Charge credits AFTER validation
-    const COST_COVER_LETTER = 5;
+    const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "cover_letter");
     const charged = await chargeCredits({
       userId: dbUser.id,
-      cost: COST_COVER_LETTER,
-      reason: "cover_letter",
+      cost: chargeConfig.cost,
+      reason: chargeConfig.reason,
       eventType: "cover_letter",
+      ref: chargeConfig.ref,
       meta: {
-        cost: COST_COVER_LETTER,
+        cost: chargeConfig.cost,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
+        jobId: jobsAnalyticsContext?.jobId ?? null,
+        resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
+        company: jobsAnalyticsContext?.company ?? null,
+        jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
+        sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
+        mode: chargeConfig.mode,
+        bundleSessionId: chargeConfig.bundleSessionId ?? null,
       },
     });
 
@@ -578,7 +612,7 @@ export async function POST(req: Request) {
         route: "/cover-letter",
         context: jobsAnalyticsContext,
         meta: {
-          creditsCost: COST_COVER_LETTER,
+          creditsCost: chargeConfig.cost,
           error: "OUT_OF_CREDITS",
           refunded: false,
         },
@@ -592,7 +626,7 @@ export async function POST(req: Request) {
           context: jobsAnalyticsContext,
           meta: {
             step: "cover_letter",
-            creditsCost: COST_COVER_LETTER,
+            creditsCost: chargeConfig.cost,
             error: "OUT_OF_CREDITS",
             refunded: false,
           },
@@ -603,7 +637,7 @@ export async function POST(req: Request) {
     }
 
     chargedUserId = dbUser.id;
-    chargedCost = COST_COVER_LETTER;
+    chargedCost = charged.alreadyApplied ? 0 : chargeConfig.cost;
 
     await writeJobsAnalyticsEvent({
       userId: dbUser.id,
@@ -611,7 +645,7 @@ export async function POST(req: Request) {
       route: "/api/cover-letter",
       context: jobsAnalyticsContext,
       meta: {
-        creditsCost: COST_COVER_LETTER,
+        creditsCost: chargeConfig.cost,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
       },
@@ -751,7 +785,7 @@ export async function POST(req: Request) {
       route: "/api/cover-letter",
       context: jobsAnalyticsContext,
       meta: {
-        creditsCost: COST_COVER_LETTER,
+        creditsCost: chargeConfig.cost,
         textLength: text.length,
       },
     });
@@ -763,7 +797,7 @@ export async function POST(req: Request) {
         route: "/api/cover-letter",
         context: jobsAnalyticsContext,
         meta: {
-          creditsCost: COST_COVER_LETTER,
+          creditsCost: chargeConfig.cost,
           step: "cover_letter",
           textLength: text.length,
         },
@@ -780,7 +814,7 @@ export async function POST(req: Request) {
         jobLen: jobText.length,
         maxFileMb: MAX_FILE_MB,
         minResumeChars: MIN_RESUME_CHARS,
-        cost: COST_COVER_LETTER,
+        cost: chargeConfig.cost,
       },
     });
   } catch (err: any) {

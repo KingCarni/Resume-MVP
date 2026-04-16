@@ -290,6 +290,8 @@ export default function SavedJobsPage() {
             jobId: job.id,
             resumeProfileId: selectedProfileId,
             createdAt: new Date().toISOString(),
+            bundleSessionId: createApplyPackSessionId(),
+            sourceSlug: job.source.slug,
             nextStep: mode === "cover_letter" ? "cover-letter" : "resume",
             job: json.item,
           }),
@@ -652,7 +654,7 @@ export default function SavedJobsPage() {
                       >
                         {launchingMode === "resume"
                           ? "Starting Tailor Resume..."
-                          : "Tailor Resume"}
+                          : "Tailor Resume (5 credits)"}
                       </button>
                       <button
                         type="button"
@@ -668,7 +670,7 @@ export default function SavedJobsPage() {
                       >
                         {launchingMode === "cover_letter"
                           ? "Starting Cover Letter..."
-                          : "Generate Cover Letter"}
+                          : "Generate Cover Letter (5 credits)"}
                       </button>
                       <button
                         type="button"
@@ -684,7 +686,7 @@ export default function SavedJobsPage() {
                       >
                         {launchingMode === "apply_pack"
                           ? "Starting Tailor Both..."
-                          : "Tailor Both"}
+                          : "Tailor Both (8 credits)"}
                       </button>
                       <button
                         type="button"

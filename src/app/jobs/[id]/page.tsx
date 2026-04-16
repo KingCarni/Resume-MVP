@@ -214,6 +214,10 @@ function feedbackClasses(tone: FeedbackTone) {
     return "border-rose-400/30 bg-rose-500/10 text-rose-100";
   return "border-cyan-400/30 bg-cyan-500/10 text-cyan-100";
 }
+function createApplyPackSessionId() {
+  return `applypack_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function overallFitBand(score: number) {
   if (score >= 78) return "Strong match";
   if (score >= 62) return "Good match";
@@ -581,6 +585,8 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
             jobId: job.id,
             resumeProfileId,
             createdAt: new Date().toISOString(),
+            bundleSessionId: createApplyPackSessionId(),
+            sourceSlug: job.source.slug,
             nextStep: mode === "cover_letter" ? "cover-letter" : "resume",
             job: json.item,
           }),
@@ -1012,7 +1018,7 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
               >
                 {launchMode === "apply_pack"
                   ? "Starting Tailor Both..."
-                  : "Tailor Both for This Job"}
+                  : "Tailor Both for This Job (8 credits)"}
               </button>
               <button
                 type="button"
@@ -1028,7 +1034,7 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
               >
                 {launchMode === "resume"
                   ? "Starting Tailor Resume..."
-                  : "Tailor Resume"}
+                  : "Tailor Resume (5 credits)"}
               </button>
               <button
                 type="button"
@@ -1044,7 +1050,7 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
               >
                 {launchMode === "cover_letter"
                   ? "Starting Cover Letter..."
-                  : "Generate Cover Letter"}
+                  : "Generate Cover Letter (5 credits)"}
               </button>
               <button
                 type="button"

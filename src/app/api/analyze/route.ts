@@ -62,6 +62,7 @@ type JobsAnalyticsContext = {
   company?: string;
   jobTitle?: string;
   mode?: JobsAnalyticsMode;
+  bundleSessionId?: string;
 };
 
 function cleanOptionalString(value: unknown) {
@@ -76,6 +77,7 @@ function buildJobsAnalyticsContext(input: {
   company?: unknown;
   jobTitle?: unknown;
   mode?: unknown;
+  bundleSessionId?: unknown;
 }) {
   const jobId = cleanOptionalString(input.jobId);
   if (!jobId) return null;
@@ -93,6 +95,7 @@ function buildJobsAnalyticsContext(input: {
     company: cleanOptionalString(input.company),
     jobTitle: cleanOptionalString(input.jobTitle),
     mode,
+    bundleSessionId: cleanOptionalString(input.bundleSessionId),
   } satisfies JobsAnalyticsContext;
 }
 
@@ -120,6 +123,7 @@ async function writeJobsAnalyticsEvent(args: {
         company: args.context.company ?? null,
         jobTitle: args.context.jobTitle ?? null,
         mode: args.context.mode ?? null,
+        bundleSessionId: args.context.bundleSessionId ?? null,
         ...(typeof args.meta === "object" && args.meta ? toSafeJson(args.meta) : {}),
       },
     },
@@ -128,6 +132,25 @@ async function writeJobsAnalyticsEvent(args: {
 
 function toSafeJson(value: unknown) {
   return JSON.parse(JSON.stringify(value ?? null));
+}
+
+
+const COST_TAILOR_RESUME = 5;
+const COST_APPLY_PACK = 8;
+
+function buildJobsChargeConfig(context: JobsAnalyticsContext | null, fallbackMode: JobsAnalyticsMode) {
+  const mode = context?.mode === "apply_pack" ? "apply_pack" : fallbackMode;
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  const isApplyPack = mode === "apply_pack" && !!bundleSessionId;
+
+  return {
+    mode,
+    isApplyPack,
+    cost: isApplyPack ? COST_APPLY_PACK : COST_TAILOR_RESUME,
+    reason: isApplyPack ? "job_apply_pack" : "job_tailor_resume",
+    ref: isApplyPack ? `job_apply_pack:${bundleSessionId}` : undefined,
+    bundleSessionId,
+  } as const;
 }
 
 function okJson(payload: any, init?: ResponseInit) {
@@ -1412,6 +1435,7 @@ export async function POST(req: Request) {
         company: form.get("company"),
         jobTitle: form.get("jobTitle") ?? target,
         mode: form.get("mode"),
+        bundleSessionId: form.get("bundleSessionId"),
       });
 
       if (file && file instanceof File) {
@@ -1457,6 +1481,7 @@ export async function POST(req: Request) {
         company: body.company,
         jobTitle: body.jobTitle ?? body.targetPosition,
         mode: body.mode,
+        bundleSessionId: body.bundleSessionId,
       });
 
       if (typeof body.onlyExperienceBullets === "boolean") {
@@ -1528,13 +1553,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const COST_ANALYZE = 3;
+    const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "resume");
     const charged = await chargeCredits({
       userId: dbUser.id,
-      cost: COST_ANALYZE,
-      reason: "analyze",
+      cost: chargeConfig.cost,
+      reason: chargeConfig.reason,
       eventType: "analyze",
-      meta: { cost: COST_ANALYZE },
+      ref: chargeConfig.ref,
+      meta: {
+        cost: chargeConfig.cost,
+        jobId: jobsAnalyticsContext?.jobId ?? null,
+        resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
+        company: jobsAnalyticsContext?.company ?? null,
+        jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
+        sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
+        mode: chargeConfig.mode,
+        bundleSessionId: chargeConfig.bundleSessionId ?? null,
+      },
     });
 
     if (!charged.ok) {
@@ -1544,7 +1579,7 @@ export async function POST(req: Request) {
         route: "/resume",
         context: jobsAnalyticsContext,
         meta: {
-          creditsCost: COST_ANALYZE,
+          creditsCost: chargeConfig.cost,
           error: "OUT_OF_CREDITS",
           refunded: false,
           parserUsed,
@@ -1560,7 +1595,7 @@ export async function POST(req: Request) {
           context: jobsAnalyticsContext,
           meta: {
             step: "resume_analyze",
-            creditsCost: COST_ANALYZE,
+            creditsCost: chargeConfig.cost,
             error: "OUT_OF_CREDITS",
             refunded: false,
           },
@@ -1571,7 +1606,7 @@ export async function POST(req: Request) {
     }
 
     chargedUserId = dbUser.id;
-    chargedCost = COST_ANALYZE;
+    chargedCost = charged.alreadyApplied ? 0 : chargeConfig.cost;
 
     await writeJobsAnalyticsEvent({
       userId: dbUser.id,
@@ -1579,7 +1614,7 @@ export async function POST(req: Request) {
       route: "/api/analyze",
       context: jobsAnalyticsContext,
       meta: {
-        creditsCost: COST_ANALYZE,
+        creditsCost: chargeConfig.cost,
         parserUsed,
         detectedType,
         targetPosition,
@@ -1916,7 +1951,7 @@ export async function POST(req: Request) {
       route: "/api/analyze",
       context: jobsAnalyticsContext,
       meta: {
-        creditsCost: COST_ANALYZE,
+        creditsCost: chargeConfig.cost,
         parserUsed,
         detectedType,
         targetPosition,

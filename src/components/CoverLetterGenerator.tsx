@@ -80,6 +80,8 @@ type ApplyPackBundle = {
   resumeProfileId?: string;
   nextStep?: string;
   createdAt?: string;
+  bundleSessionId?: string;
+  sourceSlug?: string;
   job?: {
     id?: string;
     title?: string;
@@ -1902,6 +1904,10 @@ export default function CoverLetterGenerator() {
                 queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
               createdAt: new Date().toISOString(),
               nextStep: parsed?.nextStep || "cover-letter",
+              bundleSessionId:
+                String(parsed?.bundleSessionId || "").trim() ||
+                `applypack_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+              sourceSlug: String(parsed?.sourceSlug || "").trim() || undefined,
               job: json.item,
             };
 
@@ -2026,6 +2032,8 @@ export default function CoverLetterGenerator() {
           : "") ||
         String(applyPackBundle?.resumeProfileId || "").trim();
 
+      const analyticsSourceSlug = String(applyPackBundle?.sourceSlug || "").trim();
+
       const analyticsMode =
         String(
           (typeof window !== "undefined"
@@ -2067,12 +2075,26 @@ export default function CoverLetterGenerator() {
         fd.append("tone", tone.trim());
         fd.append("length", length);
         fd.append("includeBullets", String(includeBullets));
+        if (analyticsJobId) fd.append("jobId", analyticsJobId);
+        if (analyticsResumeProfileId) fd.append("resumeProfileId", analyticsResumeProfileId);
+        if (analyticsSourceSlug) fd.append("sourceSlug", analyticsSourceSlug);
+        if (applyPackBundle?.job?.company) fd.append("company", String(applyPackBundle.job.company));
+        if (applyPackBundle?.job?.title) fd.append("jobTitle", String(applyPackBundle.job.title));
+        fd.append("mode", analyticsMode);
+        if (applyPackBundle?.bundleSessionId) fd.append("bundleSessionId", String(applyPackBundle.bundleSessionId));
 
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
         const body = {
           resumeText: safeResumeText,
           jobText: safeJobText,
+          jobId: analyticsJobId || undefined,
+          resumeProfileId: analyticsResumeProfileId || undefined,
+          sourceSlug: analyticsSourceSlug || undefined,
+          company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+          jobTitle: String(applyPackBundle?.job?.title || "").trim() || undefined,
+          mode: analyticsMode,
+          bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
 
           fullName: profile.fullName,
           locationLine: profile.locationLine,

@@ -5,7 +5,7 @@ import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 import { upload } from "@vercel/blob/client";
 import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 
 /** ---------------- Types ---------------- */
@@ -41,6 +41,27 @@ type RewritePlanItem = {
 
   verbStrength?: VerbStrength; // BEFORE (from analyze)
   jobId?: string; // server-provided mapping
+};
+
+type LatestResumePayload = {
+  ok?: boolean;
+  item?: {
+    id: string;
+    title: string | null;
+    template: string | null;
+    text: string | null;
+    html: string | null;
+    createdAt: string;
+  } | null;
+  error?: string;
+};
+
+type WorkflowChecklistItem = {
+  id: string;
+  label: string;
+  done: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 type ResumeTemplateId =
@@ -544,7 +565,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   return (
     <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
+        <div id="resume-output" className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
       </div>
 
       <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
@@ -3798,6 +3819,7 @@ const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
 
 export default function ResumeMvp() {
   const { status } = useSession();
+  const router = useRouter();
 
   // ✅ Credits UI state
   const [creditsBalance, setCreditsBalance] = useState<number | null>(null);
@@ -3898,9 +3920,35 @@ export default function ResumeMvp() {
   const trackedResumeEntryRef = useRef("");
   const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProfileSyncSignatureRef = useRef("");
+  const latestResumeHydratedRef = useRef(false);
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+  const [latestResumeMeta, setLatestResumeMeta] = useState<{ title: string; createdAt: string } | null>(null);
 
+  const scrollToSection = useCallback((sectionId: string) => {
+    if (typeof window === "undefined") return;
+    const node = document.getElementById(sectionId);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const continueToCoverLetter = useCallback(() => {
+    if (typeof window !== "undefined" && applyPackBundle) {
+      const nextBundle = {
+        ...applyPackBundle,
+        nextStep: "cover-letter",
+      };
+      window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+    }
+
+    const params = new URLSearchParams();
+    if (applyPackBundle?.jobId) params.set("jobId", applyPackBundle.jobId);
+    if (applyPackBundle?.resumeProfileId) params.set("resumeProfileId", applyPackBundle.resumeProfileId);
+    params.set("bundle", "apply-pack");
+    params.set("next", "cover-letter");
+
+    router.push(`/cover-letter?${params.toString()}`);
+  }, [applyPackBundle, router]);
 
   function createRewriteSessionId() {
     try {
@@ -3921,6 +3969,43 @@ export default function ResumeMvp() {
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
   }, [file, resumeText, jobText, targetPosition]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || latestResumeHydratedRef.current) return;
+    if (file || resumeText.trim() || analysis) return;
+
+    let cancelled = false;
+
+    async function hydrateLatestResume() {
+      try {
+        const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
+        const payload = (await parseApiResponse(response)) as LatestResumePayload | string;
+        if (!response.ok || typeof payload === "string" || !payload?.ok || !payload.item || cancelled) return;
+
+        const latest = payload.item;
+        const nextText = String(latest.text || "").trim();
+        if (!nextText) return;
+
+        latestResumeHydratedRef.current = true;
+        setResumeText(nextText);
+        if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
+          setResumeTemplate(latest.template as ResumeTemplateId);
+        }
+        setLatestResumeMeta({
+          title: String(latest.title || "Latest saved resume"),
+          createdAt: latest.createdAt,
+        });
+      } catch {
+        // silent: resume hydration should not block the editor
+      }
+    }
+
+    void hydrateLatestResume();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, file, resumeText, analysis]);
 
 
   useEffect(() => {
@@ -4290,6 +4375,13 @@ export default function ResumeMvp() {
 
       const data = payload as AnalyzeResponse;
       setAnalysis(data);
+
+      if (typeof window !== "undefined") {
+        const autoProfileId = String(data?.autoResumeProfile?.id || "").trim();
+        if (autoProfileId) {
+          window.localStorage.setItem("activeResumeProfileId", autoProfileId);
+        }
+      }
 
       const rewritePlanLocal = Array.isArray(data?.rewritePlan) ? data.rewritePlan! : [];
       const planLen = rewritePlanLocal.length;
@@ -5830,11 +5922,73 @@ useEffect(() => {
     setAtsScoreInitialized(true);
   }, [analysis, liveBulletRows.length, liveAtsScore, atsScoreInitialized]);
 
-  const handleRefreshAtsScore = useCallback(() => {
-    setConfirmedAtsScore(liveAtsScore);
-    setAtsScoreUpdatedAt(Date.now());
-    setAtsScoreInitialized(true);
-  }, [liveAtsScore]);
+  const resumeProfileSyncSignature = useMemo(() => {
+    const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+    const normalizedDraft = normalizeResumeTextForParsing(draftSource);
+    if (normalizedDraft.length < 120) return "";
+
+    const activeResumeProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+    })();
+
+    const nextTitle = String(
+      profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
+    ).trim();
+
+    const nextTitles = uniqueTerms(
+      [
+        profile.titleLine,
+        analysis?.ats?.detectedResumeRole?.roleName,
+        analysis?.ats?.targetRole?.roleName,
+        targetPosition,
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    ).slice(0, 12);
+
+    const nextKeywords = uniqueTerms([
+      ...((analysis?.presentKeywords ?? []) as string[]),
+      ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...editorExpertiseItems,
+      ...editorMetaGames,
+      ...editorMetaMetrics,
+    ]).slice(0, 80);
+
+    const nextSkills = uniqueTerms([
+      ...((analysis?.presentKeywords ?? []) as string[]),
+      ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...editorExpertiseItems,
+    ]).slice(0, 60);
+
+    return JSON.stringify({
+      profileId: activeResumeProfileId || null,
+      title: nextTitle,
+      rawText: normalizedDraft,
+      template: resumeTemplate,
+      skills: nextSkills,
+      titles: nextTitles,
+      keywords: nextKeywords,
+    });
+  }, [
+    resumeText,
+    resumeHtmlDraft,
+    searchParamsKey,
+    applyPackBundle,
+    profile.titleLine,
+    analysis,
+    targetPosition,
+    editorExpertiseItems,
+    editorMetaGames,
+    editorMetaMetrics,
+    resumeTemplate,
+  ]);
+
+  const profileSyncDirty = useMemo(() => {
+    if (!analysis || !resumeProfileSyncSignature) return false;
+    return lastProfileSyncSignatureRef.current !== resumeProfileSyncSignature;
+  }, [analysis, resumeProfileSyncSignature]);
 
   useEffect(() => {
     setSelectedBulletIdx((prev) => {
@@ -5908,7 +6062,7 @@ const syncResumeProfileDraft = useCallback(async () => {
     return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
   })();
 
-  const draftSource = resumeText.trim() || htmlToPlainText(liveResumeHtml || "");
+  const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
   if (normalizedDraft.length < 120) return;
 
@@ -5943,17 +6097,9 @@ const syncResumeProfileDraft = useCallback(async () => {
     ...editorExpertiseItems,
   ]).slice(0, 60);
 
-  const signature = JSON.stringify({
-    profileId: activeResumeProfileId || null,
-    title: nextTitle,
-    rawText: normalizedDraft,
-    template: resumeTemplate,
-    skills: nextSkills,
-    titles: nextTitles,
-    keywords: nextKeywords,
-  });
+  const signature = resumeProfileSyncSignature;
 
-  if (lastProfileSyncSignatureRef.current === signature) return;
+  if (!signature || lastProfileSyncSignatureRef.current === signature) return;
 
   try {
     const response = await fetch("/api/resume-profiles/sync", {
@@ -6018,6 +6164,13 @@ useEffect(() => {
     }
   };
 }, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
+
+  const handleRefreshAtsScore = useCallback(() => {
+    setConfirmedAtsScore(liveAtsScore);
+    setAtsScoreUpdatedAt(Date.now());
+    setAtsScoreInitialized(true);
+    void syncResumeProfileDraft();
+  }, [liveAtsScore, syncResumeProfileDraft]);
 
   
   async function handleCopyOutput() {
@@ -6088,6 +6241,53 @@ useEffect(() => {
     return Array.from(new Set(hits));
   }, [effectivePlan, guardrailTerms]);
 
+  const checklistItems = useMemo<WorkflowChecklistItem[]>(() => {
+    const hasResumeSource = !!file || resumeText.trim().length > 0;
+    const hasTemplate = !!resumeTemplate;
+    const hasHeader = [profile.fullName, profile.titleLine, profile.email].some((value) => String(value || "").trim());
+    const hasSummary = profile.summary.trim().length > 0;
+    const hasAnalyzed = !!analysis;
+    const hasKeywordReview = !analysis || showAtsKeywords;
+    const hasShippedProducts = editorMetaGames.some((item) => String(item || "").trim());
+    const hasMetrics = editorMetaMetrics.some((item) => String(item || "").trim());
+    const hasEditedBullets = liveBulletRows.length > 0;
+    const hasOutput = !!liveResumeHtml;
+
+    return [
+      { id: "resume-source", label: "Resume source loaded", done: hasResumeSource, actionLabel: "Go", onAction: () => scrollToSection("resume-source") },
+      { id: "job-setup", label: "Target position / job context", done: !!targetPosition.trim() && !!jobText.trim(), actionLabel: "Go", onAction: () => scrollToSection("job-setup") },
+      { id: "template", label: "Choose template", done: hasTemplate, actionLabel: "Go", onAction: () => scrollToSection("resume-template") },
+      { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
+      { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
+      { id: "analyze", label: hasAnalyzed ? "Resume analyzed" : "Analyze resume", done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
+      { id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") },
+      { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
+      { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
+      { id: "bullets", label: "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
+      { id: "output", label: "View / print / download resume", done: hasOutput, actionLabel: "Go", onAction: () => scrollToSection("resume-output") },
+    ];
+  }, [
+    file,
+    resumeText,
+    targetPosition,
+    jobText,
+    resumeTemplate,
+    profile.fullName,
+    profile.titleLine,
+    profile.email,
+    profile.summary,
+    analysis,
+    showAtsKeywords,
+    editorMetaGames,
+    editorMetaMetrics,
+    liveBulletRows.length,
+    liveResumeHtml,
+    scrollToSection,
+  ]);
+
+  const checklistCompletedCount = checklistItems.filter((item) => item.done).length;
+  const canContinueToCoverLetter = !!analysis && !atsScoreDirty;
+
   const fileIsPdf = useMemo(() => {
     if (!file) return false;
     const name = String(file.name || "").toLowerCase();
@@ -6108,6 +6308,67 @@ useEffect(() => {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div className="mb-4 rounded-2xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/10">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Resume workflow checklist</div>
+                <div className="text-xs text-black/70 dark:text-black/80">
+                  {checklistCompletedCount}/{checklistItems.length} completed
+                  {latestResumeMeta ? ` · Latest resume loaded: ${latestResumeMeta.title}` : ""}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${atsScoreDirty ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                  {analysis ? (atsScoreDirty ? "ATS score needs refresh" : "ATS score current") : "Analyze to create ATS score"}
+                </span>
+                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${profileSyncDirty ? "border-amber-300 bg-amber-50 text-amber-800" : "border-sky-200 bg-sky-50 text-sky-800"}`}>
+                  {analysis ? (profileSyncDirty ? "Resume profile sync pending" : "Resume profile synced") : "Resume profile not synced yet"}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {checklistItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm dark:border-white/10 dark:bg-black/10">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-black" : "bg-black/10 text-black/70 dark:bg-white/10 dark:text-black/80"}`}>
+                      {item.done ? "✓" : "•"}
+                    </span>
+                    <span className="min-w-0 truncate font-semibold text-black/90 dark:text-black/90">{item.label}</span>
+                  </div>
+                  {item.onAction ? (
+                    <button
+                      type="button"
+                      onClick={item.onAction}
+                      className="rounded-lg border border-black/10 bg-white px-2.5 py-1 text-[11px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    >
+                      {item.actionLabel || "Open"}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleRefreshAtsScore}
+                disabled={!analysis}
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+              >
+                {analysis ? "Refresh ATS + Profile Sync" : "Analyze resume first"}
+              </button>
+              <button
+                type="button"
+                onClick={continueToCoverLetter}
+                disabled={!canContinueToCoverLetter}
+                className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Continue to Cover Letter
+              </button>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <h2 className="text-base font-extrabold">Inputs</h2>
             <div className="flex items-center gap-2 text-xs text-black/90 dark:text-black/90">
@@ -6118,7 +6379,7 @@ useEffect(() => {
           </div>
 
           <div className="mt-3 grid gap-3">
-            <div className="grid gap-1.5">
+            <div id="resume-source" className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Upload resume file</div>
 
               <input
@@ -6162,7 +6423,7 @@ useEffect(() => {
               ) : null}
             </div>
 
-            <label className="grid gap-1.5">
+            <label id="job-setup" className="grid gap-1.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
                   {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
@@ -6223,7 +6484,7 @@ useEffect(() => {
             </label>
 
             {/* Template */}
-            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+            <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Template</div>
 
               <select
@@ -6240,7 +6501,7 @@ useEffect(() => {
             </div>
 
             {/* Header details */}
-            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+            <div id="header-details" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 text-sm font-extrabold text-black//0 dark:text-black/90">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -6393,7 +6654,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="mt-3">
+              <div id="summary-section" className="mt-3">
                 <textarea
                   value={profile.summary}
                   onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
@@ -6403,14 +6664,14 @@ useEffect(() => {
                 />
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div id="analyze-resume" className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={handleAnalyze}
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
+                  {loadingAnalyze ? "Analyzing…" : analysis ? `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)` : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`}
                 </button>
 
                 
@@ -6659,7 +6920,7 @@ useEffect(() => {
                   onClick={handleRefreshAtsScore}
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  Update ATS Score
+                  Refresh ATS + Profile Sync
                 </button>
               </div>
 
@@ -6713,7 +6974,13 @@ useEffect(() => {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowAtsKeywords((prev) => !prev)}
+                  onClick={() => {
+                    setShowAtsKeywords((prev) => {
+                      const next = !prev;
+                      if (next) setShowExpertiseEditor(true);
+                      return next;
+                    });
+                  }}
                   className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
                   {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
@@ -6821,7 +7088,7 @@ useEffect(() => {
             </div>
 
             <div className="grid gap-3">
-              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div id="shipped-products" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Shipped label</div>
                   <div className="inline-flex rounded-xl border border-black/10 bg-white p-1 dark:border-white/10 dark:bg-black/20">
@@ -6897,7 +7164,7 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div id="key-metrics" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
                     <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
@@ -6953,7 +7220,7 @@ useEffect(() => {
 
       {/* ✅ BULLETS PANEL */}
       {analysis && liveBulletRows.length ? (
-        <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+        <section id="bullets-panel" className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
