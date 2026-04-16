@@ -923,15 +923,9 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
                 max={10}
                 loading={matchLoading && !noProfileSelected}
               />
-              <ScoreRow
-                label="Keyword fit"
-                value={match?.keywordScore ?? 0}
-                max={15}
-                loading={matchLoading && !noProfileSelected}
-              />
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-400">
-              Component bars show the percentage earned inside each category, not a share of the full 100-point score.
+              Component bars show the percentage earned inside each category, not a share of the full 100-point score. Strong signals and likely gaps prefer hard skills and tools first, then role-relevant workflow concepts when the job is light on explicit tools.
             </p>
             <div className="mt-6">
               <h3 className="text-sm font-semibold text-white">

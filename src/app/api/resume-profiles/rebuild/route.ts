@@ -44,7 +44,7 @@ function formatRebuiltProfile(profile: {
   normalizedSkills: unknown;
   normalizedTitles: unknown;
   keywords: unknown;
-  updatedAt: Date;
+  updatedAt?: Date;
 }) {
   return {
     id: profile.id,
@@ -55,7 +55,7 @@ function formatRebuiltProfile(profile: {
     normalizedSkills: toStringArray(profile.normalizedSkills),
     normalizedTitles: toStringArray(profile.normalizedTitles),
     keywords: toStringArray(profile.keywords),
-    updatedAt: profile.updatedAt,
+    updatedAt: profile.updatedAt ?? new Date(0),
   };
 }
 
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       keywords: true,
       yearsExperience: true,
       seniority: true,
+      updatedAt: true,
       sourceDocument: {
         select: {
           title: true,

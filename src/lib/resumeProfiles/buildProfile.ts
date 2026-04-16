@@ -22,12 +22,17 @@ const TITLE_STOP_WORDS = new Set([
   "experience",
   "job experience",
   "areas of expertise",
+  "professional summary",
+  "technical skills",
 ]);
 
 const TITLE_NOISE_PATTERNS = [
-  /\b(job experience|areas of expertise|key metrics|skills|resume|profile)\b/i,
+  /\b(job experience|areas of expertise|key metrics|skills|resume|profile|employment history)\b/i,
   /^[A-Z\s&/+.-]{12,}$/,
   /\b(?:pdfjs|mammoth)\b/i,
+  /^(phone|mobile|email|address|linkedin|github|portfolio):/i,
+  /^\+?\d[\d\s().-]{6,}$/,
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
 ];
 
 const GENERIC_SINGLE_WORD_TITLES = new Set([
@@ -68,11 +73,13 @@ const CORE_ROLE_PATTERNS = [
   /\btest engineer\b/i,
 ];
 
-
 const TITLE_FAMILY_PRIORITIES: Array<{ pattern: RegExp; score: number }> = [
   { pattern: /\bsoftware engineer\b/i, score: 16 },
   { pattern: /\bsoftware developer\b/i, score: 14 },
   { pattern: /\bgame engineer\b|\bgame developer\b/i, score: 12 },
+  { pattern: /\btools engineer\b|\btools programmer\b/i, score: 11 },
+  { pattern: /\bengine programmer\b|\bengine developer\b/i, score: 11 },
+  { pattern: /\bqa engineer\b|\bqa tester\b|\btest engineer\b/i, score: 10 },
   { pattern: /\bsoftware design engineer\b/i, score: 6 },
   { pattern: /\bsoftware engineer internship\b|\bsoftware design engineer internship\b/i, score: 2 },
 ];
@@ -120,10 +127,14 @@ function stripResumeSuffix(value: string) {
     .trim();
 }
 
+function compactCandidateText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function cleanCandidateTitle(value: unknown): string | null {
   if (typeof value !== "string") return null;
 
-  const cleaned = stripResumeSuffix(value);
+  const cleaned = compactCandidateText(stripResumeSuffix(value));
   if (!cleaned) return null;
 
   const lower = cleaned.toLowerCase();
@@ -131,6 +142,7 @@ function cleanCandidateTitle(value: unknown): string | null {
   if (/^[a-z\s]+$/.test(lower) && lower.length <= 8) return null;
   if (/\d{4}/.test(cleaned)) return null;
   if (TITLE_NOISE_PATTERNS.some((pattern) => pattern.test(cleaned))) return null;
+  if (cleaned.length > 70) return null;
 
   return cleaned;
 }
@@ -161,13 +173,15 @@ function titleSpecificityScore(value: string) {
   let score = 0;
 
   if (
-    /\b(qa|quality assurance|sdet|test|automation|engineer|developer|designer|artist|producer|analyst|programmer|manager|administrator|architect|scientist|specialist|consultant|coordinator|technician|support|security|product|project|program|data|devops|cloud|platform|reliability|operations|network|system|ux|ui|game|gameplay|level|narrative|economy|technical|frontend|backend|full stack|fullstack|mobile|ios|android|unity|unreal|community|insights|software|full-stack|tools|engine)\b/.test(lower)
+    /\b(qa|quality assurance|sdet|test|automation|engineer|developer|designer|artist|producer|analyst|programmer|manager|administrator|architect|scientist|specialist|consultant|coordinator|technician|support|security|product|project|program|data|devops|cloud|platform|reliability|operations|network|system|ux|ui|game|gameplay|level|narrative|economy|technical|frontend|backend|full stack|fullstack|mobile|ios|android|unity|unreal|community|insights|software|full-stack|tools|engine)\b/.test(
+      lower,
+    )
   ) {
     score += 4;
   }
 
   if (CORE_ROLE_PATTERNS.some((pattern) => pattern.test(value))) {
-    score += 5;
+    score += 6;
   }
 
   if (words.length >= 2 && words.length <= 5) {
@@ -220,7 +234,7 @@ function candidateTitleSupportScore(
   score += rawVariantSupport * 5;
   score += normalizedVariantSupport * 2;
 
-  if (explicitTitle && stableTitleVariant(explicitTitle) == stableVariant) {
+  if (explicitTitle && stableTitleVariant(explicitTitle) === stableVariant) {
     score += 4;
   }
 
