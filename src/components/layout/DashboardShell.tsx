@@ -1,20 +1,13 @@
-// src/components/layout/DashboardShell.tsx
 import Link from "next/link";
 import React from "react";
 
 type Props = {
   title: string;
   subtitle?: string;
-  topRight?: React.ReactNode; // e.g. Credits pill / buy credits / donate
-  hideHeader?: boolean; // ✅ new
+  topRight?: React.ReactNode;
+  hideHeader?: boolean;
   children: React.ReactNode;
 };
-
-const shellCard =
-  "rounded-3xl border border-white/30 bg-white/35 backdrop-blur-xl shadow-xl";
-
-const navBtn =
-  "rounded-xl bg-black px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-neutral-800";
 
 export default function DashboardShell({
   title,
@@ -24,46 +17,47 @@ export default function DashboardShell({
   children,
 }: Props) {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-emerald-400 via-emerald-300 to-blue-500">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className={`${shellCard} p-6 sm:p-10 text-black`}>
-          {/* Header */}
+    <main className="min-h-screen pb-10">
+      <div className="shell-wrap py-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/" className="shell-nav-link">
+              Home
+            </Link>
+            <Link href="/jobs" className="shell-nav-link">
+              Jobs
+            </Link>
+            <Link href="/resume" className="shell-nav-link">
+              Resume
+            </Link>
+            <Link href="/cover-letter" className="shell-nav-link">
+              Cover Letter
+            </Link>
+            <Link href="/account" className="shell-nav-link">
+              Account
+            </Link>
+          </div>
+
+          {topRight ? <div className="flex flex-wrap items-center justify-end gap-2">{topRight}</div> : null}
+        </div>
+
+        <section className="shell-panel overflow-hidden">
           {!hideHeader ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h1 className="text-3xl font-black tracking-tight">{title}</h1>
-                {subtitle ? <p className="mt-2 text-sm text-black/90">{subtitle}</p> : null}
-              </div>
+            <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(15,23,42,0.05)_52%,rgba(8,145,178,0.06))] px-6 py-8 sm:px-8 lg:px-10">
+              <p className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Workspace</p>
+              <h1 className="mt-4 max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                {title}
+              </h1>
+              {subtitle ? (
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+                  {subtitle}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
-          {/* Top nav row + credits */}
-          <div className={`${hideHeader ? "" : "mt-6"} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`}>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/" className={navBtn}>
-                Home
-              </Link>
-              <Link href="/resume" className={navBtn}>
-                Resume
-              </Link>
-              <Link href="/cover-letter" className={navBtn}>
-                Cover Letter
-              </Link>
-              <Link href="/account" className={navBtn}>
-                Account
-              </Link>
-            </div>
-
-            {topRight ? (
-              <div className="flex items-center justify-start gap-2 sm:justify-end">
-                {topRight}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Page content */}
-          <div className="mt-8">{children}</div>
-        </div>
+          <div className="px-4 py-6 sm:px-6 lg:px-8">{children}</div>
+        </section>
       </div>
     </main>
   );

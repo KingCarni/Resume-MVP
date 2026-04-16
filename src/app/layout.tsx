@@ -1,7 +1,18 @@
 // src/app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import Providers from "./providers";
+
+const bodySans = Manrope({
+  subsets: ["latin"],
+  variable: "--font-body",
+});
+
+const displaySans = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://git-a-job.com"),
@@ -49,7 +60,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className={`${bodySans.variable} ${displaySans.variable} bg-slate-950 text-slate-100 antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>

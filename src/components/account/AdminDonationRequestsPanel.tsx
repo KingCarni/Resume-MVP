@@ -13,6 +13,11 @@ type AdminRow = {
   reason: string;
   status: DonationRequestStatus;
   reviewNote: string | null;
+  reviewedAt: string | null;
+  reviewedByEmail: string | null;
+  fulfilledAt: string | null;
+  fulfilledByEmail: string | null;
+  fulfillRef: string | null;
   createdAt: string;
   updatedAt: string;
   user?: { email?: string | null; name?: string | null };
@@ -126,9 +131,9 @@ export default function AdminDonationRequestsPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Admin requests</p>
-            <h4 className="mt-2 text-xl font-semibold text-white">Review first. Fulfill only after approval.</h4>
+            <h4 className="mt-2 text-xl font-semibold text-white">Approval now applies credits immediately.</h4>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Keep the pool lane explicit: review note, approve/reject, then fulfill only when the request is eligible.
+              Review notes stay attached. Older already-approved rows can still be fulfilled from here if needed.
             </p>
           </div>
 
@@ -194,13 +199,31 @@ export default function AdminDonationRequestsPanel() {
                   </div>
                 ) : null}
 
+                {(r.reviewedAt || r.fulfilledAt) ? (
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/70 p-3 text-xs leading-6 text-slate-300">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Audit</div>
+                    {r.reviewedAt ? (
+                      <div className="mt-2">
+                        Reviewed: {fmt(r.reviewedAt)}
+                        {r.reviewedByEmail ? ` by ${r.reviewedByEmail}` : ""}
+                      </div>
+                    ) : null}
+                    {r.fulfilledAt ? (
+                      <div>
+                        Applied: {fmt(r.fulfilledAt)}
+                        {r.fulfilledByEmail ? ` by ${r.fulfilledByEmail}` : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     disabled={!canAct(r.id) || r.status !== "pending"}
                     onClick={() => act(r.id, "approve")}
                     className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Approve
+                    Approve + Apply
                   </button>
 
                   <button

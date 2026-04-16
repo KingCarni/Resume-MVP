@@ -1,40 +1,45 @@
-// src/components/landing/LandingFooter.tsx
 import Link from "next/link";
 
 export default function LandingFooter() {
   return (
-    <footer className="rounded-3xl border border-white/30 bg-white/25 p-6 shadow-sm backdrop-blur-xl">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-sm font-black text-black/90">
-            © {new Date().getFullYear()} Git-a-Job
+    <footer className="shell-panel px-6 py-8 sm:px-8">
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-xl">
+          <div className="font-[var(--font-display)] text-lg font-bold tracking-[0.2em] text-white uppercase">
+            Git-a-Job
           </div>
-          <div className="mt-1 text-xs font-semibold text-black/85">
-            Built to help tech &amp; gaming applicants write clearer, stronger applications.
-          </div>
+          <p className="mt-3 max-w-lg text-sm leading-7 text-slate-300">
+            Match against real roles, understand the fit, and tailor faster without losing trust in the process.
+          </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-sm font-extrabold">
-          <Link
-            href="/feedback"
-            className="rounded-xl bg-blue-600 px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-blue-700 hover:shadow-lg"
-          >
-            Feedback
-          </Link>
+        <div className="grid gap-6 sm:grid-cols-3">
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 uppercase">Workflow</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div><Link href="/jobs" className="transition hover:text-cyan-200">Job match</Link></div>
+              <div><Link href="/resume" className="transition hover:text-cyan-200">Resume compiler</Link></div>
+              <div><Link href="/cover-letter" className="transition hover:text-cyan-200">Cover letter</Link></div>
+            </div>
+          </div>
 
-          <Link
-            href="/resume"
-            className="rounded-xl bg-black px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
-          >
-            Resume Tool
-          </Link>
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 uppercase">Account</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div><Link href="/account" className="transition hover:text-cyan-200">Profile hub</Link></div>
+              <div><Link href="/buy-credits" className="transition hover:text-cyan-200">Buy credits</Link></div>
+              <div><a href="https://git-a-job.com/donate" className="transition hover:text-cyan-200">Donate</a></div>
+            </div>
+          </div>
 
-          <Link
-            href="/cover-letter"
-            className="rounded-xl bg-black px-4 py-2 text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
-          >
-            Cover Letter
-          </Link>
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 uppercase">Product</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-300">
+              <div><Link href="/feedback" className="transition hover:text-cyan-200">Feedback</Link></div>
+              <div className="text-slate-500">Built for tech and game hiring.</div>
+              <div className="text-slate-500">© {new Date().getFullYear()} Git-a-Job</div>
+            </div>
+          </div>
         </div>
       </div>
     </footer>

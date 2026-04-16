@@ -1,114 +1,62 @@
-// src/components/landing/LandingTopBar.tsx
 "use client";
 
 import Link from "next/link";
-import React from "react";
 
 type Props = {
   isAuthed: boolean;
   credits: number;
-  signOutHref: string; // keep server-generated /api/auth/signout?... so callbackUrl is correct
+  signOutHref: string;
 };
 
-export default function LandingTopBar({
-  isAuthed,
-  credits,
-  signOutHref,
-}: Props) {
-  // Logged out: keep marketing-style header (simple)
-  if (!isAuthed) {
-    return (
-      <div className="mx-auto max-w-6xl px-6 pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <Link
-            href="/"
-            className="text-xl font-black tracking-tight text-black transition-opacity hover:opacity-80"
-          >
+export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props) {
+  return (
+    <header className="shell-wrap pt-5">
+      <div className="flex items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+        <div className="flex items-center gap-4">
+          <Link href="/" className="font-[var(--font-display)] text-lg font-bold tracking-[0.2em] text-white uppercase">
             Git-a-Job
           </Link>
-
-          <Link
-            href="/resume"
-            className="rounded-xl bg-black px-4 py-2 text-sm font-black text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
-          >
-            Sign in
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Logged in: app-style nav + credits + actions, plus Sign Out on the left
-  return (
-    <div className="mx-auto max-w-6xl px-6 pt-6">
-      <div className="flex items-center justify-between gap-4">
-        {/* Left */}
-        <Link
-          href={signOutHref}
-          className="rounded-xl border border-white/40 bg-white/25 px-4 py-2 text-sm font-black text-black shadow-sm backdrop-blur transition-all duration-200 hover:bg-white/35 hover:scale-[1.02]"
-        >
-          Sign Out
-        </Link>
-
-        {/* Center + Right */}
-        <div className="flex flex-1 items-center justify-between gap-4">
-          {/* App nav (pill buttons) */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/resume"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
+          <div className="hidden items-center gap-2 md:flex">
+            <Link href="/jobs" className="shell-nav-link">
+              Jobs
+            </Link>
+            <Link href="/resume" className="shell-nav-link">
               Resume
             </Link>
-            <Link
-              href="/cover-letter"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
+            <Link href="/cover-letter" className="shell-nav-link">
               Cover Letter
             </Link>
-            <Link
-              href="/account"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
+            <Link href="/account" className="shell-nav-link">
               Account
             </Link>
           </div>
+        </div>
 
-          {/* Credits + actions */}
-          <div className="flex items-center gap-2">
-            <div className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md">
-              Credits: {credits}
-            </div>
-
-            {/* Reload */}
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              aria-label="Reload credits"
-              title="Reload"
-              className="rounded-full bg-black px-3 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
-              ↻
-            </button>
-
-            <Link
-              href="/buy-credits"
-              className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-emerald-800"
-            >
-              Buy Credits
-            </Link>
-
-            <a
-              href="https://git-a-job.com/donate"
-              className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-emerald-800"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Donate
-            </a>
-          </div>
+        <div className="flex items-center gap-2">
+          {isAuthed ? (
+            <>
+              <div className="hidden rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold tracking-[0.18em] text-cyan-100 uppercase sm:block">
+                Credits {credits}
+              </div>
+              <Link href="/jobs" className="shell-primary-btn">
+                Open Jobs
+              </Link>
+              <Link href={signOutHref} className="shell-secondary-btn">
+                Sign Out
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/jobs" className="shell-secondary-btn">
+                Browse Jobs
+              </Link>
+              <Link href="/resume" className="shell-primary-btn">
+                Start Free
+              </Link>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </header>
   );
 }

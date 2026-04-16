@@ -16,7 +16,7 @@ export default function Page() {
           {/* Simple header button (NOT the big component) */}
           <Link
           href="/buy-credits"
-          className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black hover:bg-emerald-700"
+          className="shell-primary-btn"
         >
           Buy Credits
         </Link>
@@ -25,7 +25,7 @@ export default function Page() {
             href="https://git-a-job.com/donate"
             target="_blank"
             rel="noreferrer"
-            className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black hover:bg-emerald-700"
+            className="shell-secondary-btn"
           >
             Donate
           </a>
