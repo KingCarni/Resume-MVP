@@ -13,7 +13,7 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
     <header className="shell-wrap pt-5">
       <div className="flex items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
         <div className="flex items-center gap-4">
-          <Link href="/" className="font-[var(--font-display)] text-lg font-bold tracking-[0.2em] text-white uppercase">
+          <Link href="/" className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl">
             Git-a-Job
           </Link>
           <div className="hidden items-center gap-2 md:flex">
