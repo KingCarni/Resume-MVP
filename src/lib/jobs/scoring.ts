@@ -4,7 +4,9 @@ import {
   collectCanonicalSkills,
   extractCanonicalSkillsFromText,
   extractConceptSignalsFromText,
+  getSignalSpecificity,
   normalizeRegistryText,
+  pruneGenericSignals,
   sortCanonicalSkills,
   sortConceptSignals,
 } from "@/lib/jobs/skillRegistry";
@@ -318,15 +320,36 @@ function computeTitleScore(profile: ResumeProfileInput, job: JobForScoring): num
   return 0;
 }
 
-function sliceSignals(primary: string[], secondary: string[], tertiary: string[], limit: number): string[] {
-  const results: string[] = [];
-  for (const bucket of [primary, secondary, tertiary]) {
-    for (const item of bucket) {
-      if (!results.includes(item)) results.push(item);
-      if (results.length >= limit) return results;
+function selectSurfacedSignals(
+  buckets: Array<{ values: string[]; confidence: number }>,
+  limit: number,
+): string[] {
+  const deduped: Array<{ value: string; confidence: number }> = [];
+  const seen = new Set<string>();
+
+  for (const bucket of buckets) {
+    for (const rawValue of bucket.values) {
+      const value = normalizeRegistryText(rawValue);
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      deduped.push({ value, confidence: bucket.confidence });
     }
   }
-  return results;
+
+  const kept = new Set(pruneGenericSignals(deduped.map((item) => item.value)));
+
+  return deduped
+    .filter((item) => kept.has(item.value))
+    .sort((left, right) => {
+      if (right.confidence !== left.confidence) return right.confidence - left.confidence;
+
+      const specificityDelta = getSignalSpecificity(right.value) - getSignalSpecificity(left.value);
+      if (specificityDelta !== 0) return specificityDelta;
+
+      return left.value.localeCompare(right.value);
+    })
+    .slice(0, limit)
+    .map((item) => item.value);
 }
 
 function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
@@ -356,18 +379,16 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
 
   return {
     score: Math.round(SKILL_WEIGHT * ratio),
-    matching: sliceSignals(
-      sortCanonicalSkills(matchingCore),
-      sortCanonicalSkills(matchingSupport),
-      sortConceptSignals(conceptMatches),
-      SIGNAL_LIMIT,
-    ),
-    missing: sliceSignals(
-      sortCanonicalSkills(missingCore),
-      sortCanonicalSkills(missingSupport),
-      sortConceptSignals(conceptMissing),
-      GAP_LIMIT,
-    ),
+    matching: selectSurfacedSignals([
+      { values: sortCanonicalSkills(matchingCore), confidence: 3 },
+      { values: sortCanonicalSkills(matchingSupport), confidence: 2 },
+      { values: sortConceptSignals(conceptMatches), confidence: 1 },
+    ], SIGNAL_LIMIT),
+    missing: selectSurfacedSignals([
+      { values: sortCanonicalSkills(missingCore), confidence: 3 },
+      { values: sortCanonicalSkills(missingSupport), confidence: 2 },
+      { values: sortConceptSignals(conceptMissing), confidence: 1 },
+    ], GAP_LIMIT),
     conceptMatches: sortConceptSignals(conceptMatches),
     conceptMissing: sortConceptSignals(conceptMissing),
   };

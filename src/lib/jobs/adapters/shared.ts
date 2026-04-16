@@ -398,16 +398,18 @@ export function isLikelyHeading(line: string): boolean {
   return hasTerminalColon || (titleCaseLike && headingWordCount <= 6);
 }
 
+const LIST_MARKER_PATTERN = /(?:[-*•▪◦‣·]|\d+[.)])/;
+
 function stripLeadingListMarker(line: string): string {
   return line
-    .replace(/^(?:[-*•▪◦‣·]|\d+[.)])\s*/, "")
+    .replace(/^(?:(?:[-*•▪◦‣·]|\d+[.)])\s*)+/, "")
     .trim();
 }
 
 function isBulletOnlyLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return true;
-  return /^(?:[-*•▪◦‣·]|\d+[.)])(?:\s*(?:[-*•▪◦‣·]|\d+[.)]))*$/.test(trimmed);
+  return /^(?:(?:[-*•▪◦‣·]|\d+[.)])\s*)+$/.test(trimmed);
 }
 
 function normalizeBulletLine(line: string): string {
@@ -415,7 +417,8 @@ function normalizeBulletLine(line: string): string {
   if (!trimmed || isBulletOnlyLine(trimmed)) return "";
 
   const withoutMarker = stripLeadingListMarker(trimmed);
-  return withoutMarker || "";
+  if (!withoutMarker || isBulletOnlyLine(withoutMarker)) return "";
+  return withoutMarker;
 }
 
 function splitIntoBlocks(text: string): string[] {
@@ -496,7 +499,7 @@ export function extractStructuredSections(text: string, source: ParsedSectionSou
     if (lines.length === 1 && isLikelyHeading(lines[0])) {
       currentHeading = lines[0].replace(/[:\s]+$/g, "").trim();
       const classified = classifySectionHeading(currentHeading);
-      currentBucket = classified === "other" ? currentBucket : classified;
+      currentBucket = classified === "other" ? "other" : classified;
       continue;
     }
 
@@ -506,7 +509,7 @@ export function extractStructuredSections(text: string, source: ParsedSectionSou
       const content = lines.slice(1).join("\n");
       pushSection(heading, classified === "other" ? inferBucketFromContent(content) : classified, content);
       currentHeading = heading;
-      currentBucket = classified === "other" ? currentBucket : classified;
+      currentBucket = classified === "other" ? "other" : classified;
       continue;
     }
 

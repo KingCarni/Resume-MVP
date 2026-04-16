@@ -175,14 +175,38 @@ function sanitizeJobText(value: string | null | undefined) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+const LIST_MARKER_ONLY_PATTERN = /^(?:(?:[-*•▪◦‣·]|\d+[.)])\s*)+$/;
+
+function cleanSectionLine(line: string) {
+  const normalized = line
+    .trim()
+    .replace(/^(?:(?:[-*•▪◦‣·]|\d+[.)])\s*)+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+  if (LIST_MARKER_ONLY_PATTERN.test(normalized)) return "";
+  if (!/[a-zA-Z0-9]/.test(normalized)) return "";
+  return normalized;
+}
+
 function sectionLines(value: string | null | undefined) {
   const cleaned = sanitizeJobText(value);
   if (!cleaned) return [];
+
+  const seen = new Set<string>();
   return cleaned
     .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .map((line) => cleanSectionLine(line))
+    .filter((line) => {
+      if (!line) return false;
+      const key = line.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
+
 function feedbackClasses(tone: FeedbackTone) {
   if (tone === "success")
     return "border-emerald-400/30 bg-emerald-500/10 text-emerald-100";
