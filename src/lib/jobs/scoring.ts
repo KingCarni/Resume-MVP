@@ -469,13 +469,34 @@ function computeSameFamilyTitleScore(profileTitle: string, jobTitle: string): nu
   return Math.min(score, 22);
 }
 
+function getPrimaryNormalizedTitles(values: string[]): string[] {
+  return uniqueStrings(values.slice(0, 1).map(normalizeTitleText).filter(Boolean));
+}
+
 function computeTitleScore(profile: ResumeProfileInput, job: JobForScoring): number {
   const profileTitles = uniqueStrings(profile.normalizedTitles.map(normalizeTitleText).filter(Boolean));
+  const primaryProfileTitles = getPrimaryNormalizedTitles(profile.normalizedTitles);
   const jobTitles = uniqueStrings([job.titleNormalized ?? "", job.title].map(normalizeTitleText).filter(Boolean));
   if (!profileTitles.length || !jobTitles.length) return 0;
 
-  if (profileTitles.some((title) => !GENERIC_TITLE_PHRASES.has(title) && jobTitles.includes(title))) {
+  if (primaryProfileTitles.some((title) => !GENERIC_TITLE_PHRASES.has(title) && jobTitles.includes(title))) {
     return TITLE_WEIGHT;
+  }
+
+  if (profileTitles.some((title) => !GENERIC_TITLE_PHRASES.has(title) && jobTitles.includes(title))) {
+    return 20;
+  }
+
+  if (
+    primaryProfileTitles.some((profileTitle) =>
+      jobTitles.some((jobTitle) =>
+        !GENERIC_TITLE_PHRASES.has(profileTitle) &&
+        !GENERIC_TITLE_PHRASES.has(jobTitle) &&
+        (profileTitle.includes(jobTitle) || jobTitle.includes(profileTitle)),
+      ),
+    )
+  ) {
+    return 21;
   }
 
   if (
@@ -487,8 +508,16 @@ function computeTitleScore(profile: ResumeProfileInput, job: JobForScoring): num
       ),
     )
   ) {
-    return 21;
+    return 16;
   }
+
+  let bestPrimarySameFamilyScore = 0;
+  for (const profileTitle of primaryProfileTitles) {
+    for (const jobTitle of jobTitles) {
+      bestPrimarySameFamilyScore = Math.max(bestPrimarySameFamilyScore, computeSameFamilyTitleScore(profileTitle, jobTitle));
+    }
+  }
+  if (bestPrimarySameFamilyScore > 0) return bestPrimarySameFamilyScore;
 
   let bestSameFamilyScore = 0;
   for (const profileTitle of profileTitles) {
@@ -496,16 +525,25 @@ function computeTitleScore(profile: ResumeProfileInput, job: JobForScoring): num
       bestSameFamilyScore = Math.max(bestSameFamilyScore, computeSameFamilyTitleScore(profileTitle, jobTitle));
     }
   }
-  if (bestSameFamilyScore > 0) return bestSameFamilyScore;
+  if (bestSameFamilyScore > 0) return Math.max(12, Math.round(bestSameFamilyScore * 0.75));
 
+  const primaryProfileFamilies = extractRoleFamilies(primaryProfileTitles);
   const profileFamilies = extractRoleFamilies(profileTitles);
   const jobFamilies = extractRoleFamilies(jobTitles);
-  const directOverlap = Array.from(profileFamilies).filter((family) => jobFamilies.has(family));
-  if (directOverlap.length > 0) return directOverlap.length > 1 ? 18 : 15;
+
+  const primaryDirectOverlap = Array.from(primaryProfileFamilies).filter((family) => jobFamilies.has(family));
+  if (primaryDirectOverlap.length > 0) return primaryDirectOverlap.length > 1 ? 18 : 16;
+
+  const secondaryDirectOverlap = Array.from(profileFamilies).filter((family) => jobFamilies.has(family));
+  if (secondaryDirectOverlap.length > 0) return secondaryDirectOverlap.length > 1 ? 14 : 12;
+
+  const primaryBridges = buildBridgeFamilies(primaryProfileFamilies);
+  const primaryBridgedOverlap = Array.from(jobFamilies).filter((family) => primaryBridges.has(family));
+  if (primaryBridgedOverlap.length > 0) return 6;
 
   const profileBridges = buildBridgeFamilies(profileFamilies);
   const bridgedOverlap = Array.from(jobFamilies).filter((family) => profileBridges.has(family));
-  if (bridgedOverlap.length > 0) return 8;
+  if (bridgedOverlap.length > 0) return 4;
 
   return 0;
 }
@@ -591,28 +629,41 @@ function computeRoleFamilyRelevance(profile: ResumeProfileInput, job: JobForScor
   bridgedOverlap: boolean;
   relevance: number;
 } {
+  const primaryProfileTitles = getPrimaryNormalizedTitles(profile.normalizedTitles);
   const profileFamilies = extractRoleFamilies(profile.normalizedTitles);
+  const primaryProfileFamilies = extractRoleFamilies(primaryProfileTitles);
   const jobFamilies = extractRoleFamilies([
     job.titleNormalized ?? "",
     job.title,
   ]);
 
-  const directOverlap = Array.from(profileFamilies).some((family) => jobFamilies.has(family));
-  if (directOverlap) {
+  const primaryDirectOverlap = Array.from(primaryProfileFamilies).some((family) => jobFamilies.has(family));
+  if (primaryDirectOverlap) {
     return { directOverlap: true, bridgedOverlap: false, relevance: 1 };
+  }
+
+  const secondaryDirectOverlap = Array.from(profileFamilies).some((family) => jobFamilies.has(family));
+  if (secondaryDirectOverlap) {
+    return { directOverlap: true, bridgedOverlap: false, relevance: 0.82 };
+  }
+
+  const primaryBridges = buildBridgeFamilies(primaryProfileFamilies);
+  const primaryBridgedOverlap = Array.from(jobFamilies).some((family) => primaryBridges.has(family));
+  if (primaryBridgedOverlap) {
+    return { directOverlap: false, bridgedOverlap: true, relevance: 0.52 };
   }
 
   const profileBridges = buildBridgeFamilies(profileFamilies);
   const bridgedOverlap = Array.from(jobFamilies).some((family) => profileBridges.has(family));
   if (bridgedOverlap) {
-    return { directOverlap: false, bridgedOverlap: true, relevance: 0.76 };
+    return { directOverlap: false, bridgedOverlap: true, relevance: 0.4 };
   }
 
   if (!profileFamilies.size || !jobFamilies.size) {
-    return { directOverlap: false, bridgedOverlap: false, relevance: 0.9 };
+    return { directOverlap: false, bridgedOverlap: false, relevance: 0.72 };
   }
 
-  return { directOverlap: false, bridgedOverlap: false, relevance: 0.42 };
+  return { directOverlap: false, bridgedOverlap: false, relevance: 0.22 };
 }
 
 function specificityWeight(value: string): number {
@@ -712,7 +763,7 @@ function computeConceptScore(profile: ResumeProfileInput, job: JobForScoring): n
 
   const ratio = weightedMatchRatio(matched, missing, 1, {
     ...familyRelevance,
-    relevance: familyRelevance.directOverlap ? 1 : familyRelevance.bridgedOverlap ? 0.68 : 0.32,
+    relevance: familyRelevance.directOverlap ? familyRelevance.relevance : familyRelevance.bridgedOverlap ? Math.min(0.46, familyRelevance.relevance) : 0.16,
   });
 
   return Math.round(KEYWORD_WEIGHT * Math.min(1, ratio));
