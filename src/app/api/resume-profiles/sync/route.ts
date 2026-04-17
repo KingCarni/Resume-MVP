@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
 import { buildResumeProfile, rebuildResumeProfile } from "@/lib/resumeProfiles/buildProfile";
+import { sanitizeResumeSourceMeta, sanitizeStructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -22,6 +23,8 @@ type SyncBody = {
   keywords?: string[];
   yearsExperience?: number | null;
   seniority?: string | null;
+  structuredData?: unknown;
+  sourceMeta?: unknown;
 };
 
 async function getUserIdFromSession() {
@@ -81,6 +84,8 @@ export async function POST(request: NextRequest) {
   }
 
   const profileId = String(body?.profileId ?? "").trim();
+  const structuredData = sanitizeStructuredResumeSnapshot(body?.structuredData);
+  const sourceMeta = sanitizeResumeSourceMeta(body?.sourceMeta);
   const existingProfile = await prisma.resumeProfile.findFirst({
     where: profileId ? { userId, id: profileId } : { userId },
     orderBy: { updatedAt: "desc" },
@@ -111,6 +116,11 @@ export async function POST(request: NextRequest) {
     template: String(body?.template ?? "").trim() || null,
     html: String(body?.html ?? "").trim() || null,
     text: rawText,
+    structuredData,
+    sourceFileName: sourceMeta?.fileName ?? null,
+    sourceMimeType: sourceMeta?.mimeType ?? null,
+    sourceFileExtension: sourceMeta?.extension ?? null,
+    sourceKind: sourceMeta?.sourceKind ?? null,
   };
 
   if (sourceDocumentId) {

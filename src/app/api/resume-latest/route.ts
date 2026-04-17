@@ -37,6 +37,11 @@ export async function GET() {
       template: true,
       text: true,
       html: true,
+      structuredData: true,
+      sourceFileName: true,
+      sourceMimeType: true,
+      sourceFileExtension: true,
+      sourceKind: true,
       createdAt: true,
     },
   });

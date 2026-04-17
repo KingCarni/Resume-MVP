@@ -7,6 +7,7 @@ import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
+import { sanitizeStructuredResumeSnapshot, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 
 /** ---------------- Types ---------------- */
 
@@ -29,9 +30,9 @@ type TruthRisk = {
 };
 
 type RewritePlanItem = {
-  originalBullet?: any;
-  suggestedKeywords?: any;
-  rewrittenBullet?: any;
+  originalBullet?: string;
+  suggestedKeywords?: string[];
+  rewrittenBullet?: string;
 
   needsMoreInfo?: boolean;
   notes?: string[];
@@ -51,6 +52,11 @@ type LatestResumePayload = {
     template: string | null;
     text: string | null;
     html: string | null;
+    structuredData?: StructuredResumeSnapshot | null;
+    sourceFileName?: string | null;
+    sourceMimeType?: string | null;
+    sourceFileExtension?: string | null;
+    sourceKind?: string | null;
     createdAt: string;
   } | null;
   error?: string;
@@ -153,6 +159,17 @@ type ExperienceJobFromApi = {
   bullets: string[];
   rawHeader?: string;
 };
+
+function inferExtension(fileName: string, mimeType?: string | null) {
+  const fromName = String(fileName || "").trim().split(".").pop() || "";
+  if (fromName && fromName !== fileName) return fromName.toLowerCase();
+  const lowerMime = String(mimeType || "").toLowerCase();
+  if (lowerMime.includes("pdf")) return "pdf";
+  if (lowerMime.includes("wordprocessingml")) return "docx";
+  if (lowerMime == "application/msword") return "doc";
+  if (lowerMime.includes("plain")) return "txt";
+  return "";
+}
 
 type AnalyzeAtsPayload = {
   detectedResumeRole?: {
@@ -3929,6 +3946,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const [latestResumeMeta, setLatestResumeMeta] = useState<{ title: string; createdAt: string } | null>(null);
+  const [resumeSourceMeta, setResumeSourceMeta] = useState<ResumeSourceMeta | null>(null);
   const setupModeJobText = useMemo(() => {
     const safeTarget = targetPosition.trim() || "the user's target role";
     return [
@@ -3985,6 +4003,41 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return hasResume && hasJob && hasTargetPosition;
   }, [file, resumeText, jobText, targetPosition, isSetupMode]);
 
+  const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
+    const next = sanitizeStructuredResumeSnapshot(snapshot);
+    if (!next) return;
+
+    setTargetPosition(next.targetPosition || "");
+    if (TEMPLATE_OPTIONS.some((option) => option.id === next.template)) {
+      setResumeTemplate(next.template as ResumeTemplateId);
+    }
+    setProfile({
+      fullName: next.profile.fullName,
+      titleLine: next.profile.titleLine,
+      locationLine: next.profile.locationLine,
+      email: next.profile.email,
+      phone: next.profile.phone,
+      linkedin: next.profile.linkedin,
+      portfolio: next.profile.portfolio,
+      summary: next.profile.summary,
+    });
+    setSections(next.sections.length ? next.sections : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+    setEditorEducationItems(next.educationItems);
+    setEditorExpertiseItems(next.expertiseItems);
+    setEditorMetaGames(next.metaGames);
+    setEditorMetaMetrics(next.metaMetrics);
+    setShippedLabelMode(next.shippedLabelMode === "apps" ? "apps" : "games");
+    setIncludeMetaInResumeDoc(next.includeMetaInResumeDoc);
+    setShowShippedBlock(next.showShippedBlock);
+    setShowMetricsBlock(next.showMetricsBlock);
+    setShowEducationOnResume(next.showEducationOnResume);
+    setShowExpertiseOnResume(next.showExpertiseOnResume);
+    setShowProfilePhoto(next.showProfilePhoto);
+    setProfilePhotoDataUrl(next.profilePhotoDataUrl);
+    setProfilePhotoShape(next.profilePhotoShape);
+    setProfilePhotoSize(next.profilePhotoSize);
+  }, []);
+
   useEffect(() => {
     if (status !== "authenticated" || latestResumeHydratedRef.current) return;
     if (file || resumeText.trim() || analysis) return;
@@ -4003,11 +4056,18 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
         latestResumeHydratedRef.current = true;
         setResumeText(nextText);
+        applyStructuredSnapshot(latest.structuredData || null);
         if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
           setResumeTemplate(latest.template as ResumeTemplateId);
         }
+        setResumeSourceMeta({
+          fileName: latest.sourceFileName || null,
+          mimeType: latest.sourceMimeType || null,
+          extension: latest.sourceFileExtension || null,
+          sourceKind: latest.sourceKind || "saved_resume",
+        });
         setLatestResumeMeta({
-          title: String(latest.title || "Latest saved resume"),
+          title: String(latest.title || latest.sourceFileName || "Latest saved resume"),
           createdAt: latest.createdAt,
         });
       } catch {
@@ -4020,7 +4080,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return () => {
       cancelled = true;
     };
-  }, [status, file, resumeText, analysis]);
+  }, [status, file, resumeText, analysis, applyStructuredSnapshot]);
 
 
   useEffect(() => {
@@ -5290,6 +5350,47 @@ if (typeof planIndex === "number") {
   const [editorExpertiseItems, setEditorExpertiseItems] = useState<string[]>([]);
   const [editorEducationItems, setEditorEducationItems] = useState<string[]>([]);
 
+  const structuredResumeSnapshot = useMemo<StructuredResumeSnapshot>(() => ({
+    version: 1,
+    targetPosition: targetPosition.trim(),
+    template: resumeTemplate,
+    profile,
+    sections,
+    educationItems: editorEducationItems.filter((x) => String(x ?? "").trim()),
+    expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
+    metaGames: editorMetaGames.filter((x) => String(x ?? "").trim()),
+    metaMetrics: editorMetaMetrics.filter((x) => String(x ?? "").trim()),
+    shippedLabelMode,
+    includeMetaInResumeDoc,
+    showShippedBlock,
+    showMetricsBlock,
+    showEducationOnResume,
+    showExpertiseOnResume,
+    showProfilePhoto,
+    profilePhotoDataUrl,
+    profilePhotoShape,
+    profilePhotoSize,
+  }), [
+    targetPosition,
+    resumeTemplate,
+    profile,
+    sections,
+    editorEducationItems,
+    editorExpertiseItems,
+    editorMetaGames,
+    editorMetaMetrics,
+    shippedLabelMode,
+    includeMetaInResumeDoc,
+    showShippedBlock,
+    showMetricsBlock,
+    showEducationOnResume,
+    showExpertiseOnResume,
+    showProfilePhoto,
+    profilePhotoDataUrl,
+    profilePhotoShape,
+    profilePhotoSize,
+  ]);
+
   useEffect(() => {
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -6133,6 +6234,8 @@ const syncResumeProfileDraft = useCallback(async () => {
         skills: nextSkills,
         titles: nextTitles,
         keywords: nextKeywords,
+        structuredData: structuredResumeSnapshot,
+        sourceMeta: resumeSourceMeta,
       }),
     });
 
@@ -6162,6 +6265,8 @@ const syncResumeProfileDraft = useCallback(async () => {
   editorExpertiseItems,
   editorMetaGames,
   editorMetaMetrics,
+  structuredResumeSnapshot,
+  resumeSourceMeta,
 ]);
 
 useEffect(() => {
@@ -6413,7 +6518,18 @@ useEffect(() => {
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
                 onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
+                  const nextFile = e.target.files?.[0] ?? null;
+                  setFile(nextFile);
+                  setResumeSourceMeta(
+                    nextFile
+                      ? {
+                          fileName: nextFile.name,
+                          mimeType: nextFile.type || null,
+                          extension: inferExtension(nextFile.name, nextFile.type),
+                          sourceKind: "upload",
+                        }
+                      : null
+                  );
                   resetDerivedState();
                 }}
                 className="block w-full text-sm text-black
