@@ -162,6 +162,74 @@ function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
 }
 
+async function getCanonicalJobContextText(jobId: string) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      status: "active",
+    },
+    select: {
+      title: true,
+      company: true,
+      location: true,
+      remoteType: true,
+      seniority: true,
+      employmentType: true,
+      description: true,
+      requirementsText: true,
+      responsibilitiesText: true,
+    },
+  });
+
+  if (!job) return "";
+
+  return [
+    `${job.title} at ${job.company}`,
+    job.location ? `Location: ${job.location}` : null,
+    `Remote type: ${job.remoteType}`,
+    `Seniority: ${job.seniority}`,
+    `Employment type: ${job.employmentType}`,
+    job.description || null,
+    job.requirementsText || null,
+    job.responsibilitiesText || null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function resolveEffectiveJobsAnalyticsContext(
+  context: JobsAnalyticsContext | null,
+  currentJobText: string,
+  fallbackMode: JobsAnalyticsMode
+) {
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  if (!context?.jobId || context?.mode !== "apply_pack" || !bundleSessionId) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  const canonicalJobText = await getCanonicalJobContextText(context.jobId);
+  const matchesCanonical = !!canonicalJobText && normalizeJobText(canonicalJobText) === normalizeJobText(currentJobText);
+
+  if (matchesCanonical) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  return {
+    context: {
+      ...context,
+      mode: fallbackMode,
+      bundleSessionId: undefined,
+    },
+    bundleOverrideInvalidated: true,
+  } as const;
+}
+
 function normalizeResumeText(input: unknown) {
   const raw = String(input ?? "");
   return raw
@@ -584,6 +652,13 @@ export async function POST(req: Request) {
     }
 
     // ✅ Charge credits AFTER validation
+    const effectiveJobsContextResult = await resolveEffectiveJobsAnalyticsContext(
+      jobsAnalyticsContext,
+      jobText,
+      "cover_letter"
+    );
+    jobsAnalyticsContext = effectiveJobsContextResult.context;
+
     const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "cover_letter");
     const charged = await chargeCredits({
       userId: dbUser.id,
@@ -602,6 +677,7 @@ export async function POST(req: Request) {
         sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
         mode: chargeConfig.mode,
         bundleSessionId: chargeConfig.bundleSessionId ?? null,
+        bundleOverrideInvalidated: effectiveJobsContextResult.bundleOverrideInvalidated,
       },
     });
 

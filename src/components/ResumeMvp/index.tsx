@@ -3986,8 +3986,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const applyPackPricingEligible = useMemo(() => {
     if (!isApplyPackFlow || jobTextOverrideMode) return false;
     const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
-    return !!activeJobId;
-  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle]);
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    const currentJobText = String(jobText || "").trim();
+    return !!activeJobId && !!savedJobText && currentJobText === savedJobText;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
 
 
   const continueToCoverLetter = useCallback(() => {

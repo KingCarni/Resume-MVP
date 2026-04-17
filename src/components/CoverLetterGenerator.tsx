@@ -1819,21 +1819,24 @@ export default function CoverLetterGenerator() {
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
+  const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
+  const trackedCoverLetterEntryRef = useRef("");
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
 
   const isApplyPackFlow = useMemo(() => {
     const queryBundle = String(searchParams.get("bundle") || "").trim();
-    return String(queryBundle || applyPackBundle?.bundle || "").trim() === "apply-pack";
+    const storedBundle = String(applyPackBundle?.bundle || "").trim();
+    return queryBundle === "apply-pack" || storedBundle === "apply-pack";
   }, [searchParams, applyPackBundle]);
 
   const applyPackPricingEligible = useMemo(() => {
     if (!isApplyPackFlow || jobTextOverrideMode) return false;
     const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
-    return !!activeJobId;
-  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle]);
-  const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
-  const trackedCoverLetterEntryRef = useRef("");
-  const searchParams = useSearchParams();
-  const searchParamsKey = searchParams.toString();
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    const currentJobText = String(jobText || "").trim();
+    return !!activeJobId && !!savedJobText && currentJobText === savedJobText;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
 
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
