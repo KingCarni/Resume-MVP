@@ -75,6 +75,17 @@ const LOW_VALUE_LOW_FIT_SIGNALS = new Set([
   "compliance",
 ]);
 
+const LOW_CONFIDENCE_CONCEPT_GAPS = new Set([
+  "communication",
+  "teamwork",
+  "documentation",
+  "reporting",
+  "monitoring",
+  "stakeholder management",
+  "workflow optimization",
+]);
+
+
 const GENERIC_TITLE_PHRASES = new Set([
   "engineer",
   "developer",
@@ -726,27 +737,40 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
     matchingCore.flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
   );
   const explicitProfileSupportMatches = uniqueStrings(
-    matchingSupport.flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
+    matchingSupport
+      .filter((skill) => familyRelevance.directOverlap || getSignalSpecificity(skill) >= 3)
+      .flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
   );
 
   const coreRatio = weightedMatchRatio(matchingCore, missingCore, 3, familyRelevance);
-  const supportRatio = weightedMatchRatio(matchingSupport, missingSupport, 1.4, familyRelevance);
-  const combinedRatio = (coreRatio * 0.85) + (supportRatio * 0.15);
+  const supportRatio = weightedMatchRatio(matchingSupport, missingSupport, 1.2, familyRelevance);
+  const combinedRatio = familyRelevance.directOverlap
+    ? (coreRatio * 0.87) + (supportRatio * 0.13)
+    : familyRelevance.bridgedOverlap
+      ? (coreRatio * 0.92) + (supportRatio * 0.08)
+      : (coreRatio * 0.96) + (supportRatio * 0.04);
+
+  const actionableConceptMissing = conceptMissing.filter((signal) => {
+    const normalized = normalizeRegistryText(signal);
+    if (!normalized) return false;
+    if (LOW_CONFIDENCE_CONCEPT_GAPS.has(normalized)) return false;
+    return getSignalSpecificity(normalized) >= 2;
+  });
 
   return {
     score: Math.round(SKILL_WEIGHT * Math.min(1, combinedRatio)),
     matchingBuckets: [
       { values: explicitProfileCoreMatches, confidence: 3 },
-      { values: explicitProfileSupportMatches, confidence: 2 },
+      { values: explicitProfileSupportMatches, confidence: familyRelevance.directOverlap ? 2 : 1 },
     ],
     matching: [],
     missing: selectSurfacedSignals([
       { values: sortCanonicalSkills(missingCore), confidence: 3 },
-      { values: sortCanonicalSkills(missingSupport), confidence: 2 },
-      { values: sortConceptSignals(conceptMissing), confidence: 1 },
+      { values: sortCanonicalSkills(missingSupport), confidence: familyRelevance.directOverlap ? 2 : 1 },
+      { values: sortConceptSignals(actionableConceptMissing), confidence: familyRelevance.directOverlap ? 1 : 0 },
     ], GAP_LIMIT),
     conceptMatches: sortConceptSignals(conceptMatches),
-    conceptMissing: sortConceptSignals(conceptMissing),
+    conceptMissing: sortConceptSignals(actionableConceptMissing),
   };
 }
 
@@ -763,7 +787,7 @@ function computeConceptScore(profile: ResumeProfileInput, job: JobForScoring): n
 
   const ratio = weightedMatchRatio(matched, missing, 1, {
     ...familyRelevance,
-    relevance: familyRelevance.directOverlap ? familyRelevance.relevance : familyRelevance.bridgedOverlap ? Math.min(0.46, familyRelevance.relevance) : 0.16,
+    relevance: familyRelevance.directOverlap ? familyRelevance.relevance : familyRelevance.bridgedOverlap ? Math.min(0.34, familyRelevance.relevance) : 0.08,
   });
 
   return Math.round(KEYWORD_WEIGHT * Math.min(1, ratio));
@@ -806,23 +830,28 @@ function buildShortReasons(args: {
   matchingSkills: string[];
   matchingConcepts: string[];
   missingSkills: string[];
+  directOverlap: boolean;
+  bridgedOverlap: boolean;
   remoteType?: string | null;
 }): string[] {
   const reasons: string[] = [];
 
   if (args.titleScore >= 18) reasons.push("Strong title fit");
   else if (args.titleScore >= 12) reasons.push("Relevant role family");
+  else if (args.bridgedOverlap && args.skillScore >= 10) reasons.push("Related adjacent experience");
 
   if (args.matchingSkills.length >= 2) {
     reasons.push(`Skills match: ${args.matchingSkills.slice(0, 2).join(", ")}`);
-  } else if (args.skillScore >= 12) {
-    reasons.push("Useful technical overlap");
+  } else if (args.skillScore >= 14) {
+    reasons.push(args.directOverlap ? "Useful technical overlap" : "Selective technical overlap");
   }
 
-  if (args.matchingConcepts.length >= 2) {
+  if (args.directOverlap && args.matchingConcepts.length >= 2) {
     reasons.push(`Workflow overlap: ${args.matchingConcepts.slice(0, 2).join(", ")}`);
-  } else if (args.conceptScore >= 6) {
+  } else if (args.directOverlap && args.conceptScore >= 6) {
     reasons.push("Relevant responsibilities overlap");
+  } else if (args.bridgedOverlap && args.conceptScore >= 6) {
+    reasons.push("Some transferable overlap");
   }
 
   if (args.seniorityScore >= 12) reasons.push("Seniority aligned");
@@ -840,17 +869,29 @@ function buildExplanationShort(result: {
   matchingSkills: string[];
   missingSkills: string[];
   shortReasons: string[];
+  titleScore: number;
+  directOverlap: boolean;
+  bridgedOverlap: boolean;
 }): string {
   if (result.totalScore >= 80) return `Strong fit. ${result.shortReasons.join(". ")}.`;
   if (result.totalScore >= 60) return `Promising fit with some gaps. ${result.shortReasons.join(". ")}.`;
-  if (result.shortReasons.length > 0) return `Worth a look. ${result.shortReasons.join(". ")}.`;
+  if (result.shortReasons.length > 0) {
+    if (!result.directOverlap && result.titleScore < 12) {
+      return `Limited fit. ${result.shortReasons.join(". ")}.`;
+    }
+    return `Worth a look. ${result.shortReasons.join(". ")}.`;
+  }
   if (result.missingSkills.length > 0) {
+    if (!result.directOverlap && !result.bridgedOverlap) {
+      return `Limited fit. Stronger alignment is possible if you address ${result.missingSkills.slice(0, 2).join(" and ")}.`;
+    }
     return `Partial match. Stronger alignment is possible if you address ${result.missingSkills.slice(0, 2).join(" and ")}.`;
   }
   return "Partial match. Review this role before spending credits on tailoring.";
 }
 
 export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring): MatchResult {
+  const familyRelevance = computeRoleFamilyRelevance(profile, job);
   const titleScore = computeTitleScore(profile, job);
   const skillResult = computeSkillScore(profile, job);
   const seniorityScore = computeSeniorityScore(profile, job);
@@ -874,6 +915,8 @@ export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring
     matchingSkills,
     matchingConcepts: skillResult.conceptMatches,
     missingSkills: skillResult.missing,
+    directOverlap: familyRelevance.directOverlap,
+    bridgedOverlap: familyRelevance.bridgedOverlap,
     remoteType: job.remoteType,
   });
 
@@ -892,6 +935,9 @@ export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring
       matchingSkills,
       missingSkills: skillResult.missing,
       shortReasons,
+      titleScore,
+      directOverlap: familyRelevance.directOverlap,
+      bridgedOverlap: familyRelevance.bridgedOverlap,
     }),
   };
 }
