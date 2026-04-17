@@ -277,7 +277,7 @@ type AnalyzeResponse = {
  * Keep them aligned with server charging (api routes / lib/credits).
  */
 const CREDIT_COSTS = {
-  analyze: 3, // matches /api/analyze COST_ANALYZE
+  analyze: 5, // matches /api/analyze COST_TAILOR_RESUME in standard job-aware mode
   rewriteBullet: 1, // set to whatever /api/rewrite-bullet charges
 } as const;
 
@@ -528,8 +528,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
-          : "border-black/10 bg-black/10 text-black/90 dark:border-white/10 dark:bg-white/10 dark:text-black/90",
+          ? "border-black/10 bg-black/5 text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
+          : "border-black/10 bg-black/10 text-black/90 dark:border-white/10 dark:bg-white/10 dark:text-slate-100/90",
       ].join(" ")}
     >
       {text}
@@ -593,7 +593,7 @@ function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNo
   return (
     <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div id="resume-output" className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
+        <div id="resume-output" className="text-sm font-extrabold text-black/80 dark:text-slate-100/85">Document Preview (HTML)</div>
       </div>
 
       <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
@@ -6303,6 +6303,34 @@ const resumeHtml = useMemo(() => {
     return (compiledResumeHtml || "").trim();
   }, [compiledResumeHtml]);
 
+  const refreshCurrentJobMatch = useCallback(async (resumeProfileIdOverride?: string | null) => {
+    if (typeof window === "undefined") return null;
+
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    const storedResumeProfileId = window.localStorage.getItem("activeResumeProfileId") || "";
+    const activeResumeProfileId = String(
+      resumeProfileIdOverride ||
+      searchParams.get("resumeProfileId") ||
+      applyPackBundle?.resumeProfileId ||
+      storedResumeProfileId
+    ).trim();
+
+    if (!activeJobId || !activeResumeProfileId) return null;
+
+    try {
+      const response = await fetch(
+        `/api/jobs/${encodeURIComponent(activeJobId)}/match?resumeProfileId=${encodeURIComponent(activeResumeProfileId)}`,
+        { method: "GET", cache: "no-store" }
+      );
+      const payload = await parseApiResponse(response);
+      if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
+      return payload?.item ?? null;
+    } catch {
+      return null;
+    }
+  }, [searchParamsKey, applyPackBundle]);
+
+
 const syncResumeProfileDraft = useCallback(async () => {
   if (status !== "authenticated" || !analysis) return null;
 
@@ -6390,7 +6418,9 @@ const syncResumeProfileDraft = useCallback(async () => {
     if (typeof window !== "undefined" && syncedProfileId) {
       window.localStorage.setItem("activeResumeProfileId", syncedProfileId);
     }
-    return syncedProfileId || activeResumeProfileId || null;
+    const nextProfileId = syncedProfileId || activeResumeProfileId || null;
+    await refreshCurrentJobMatch(nextProfileId);
+    return nextProfileId;
   } catch {
     return null;
   } finally {
@@ -6413,6 +6443,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   editorMetaMetrics,
   structuredResumeSnapshot,
   resumeSourceMeta,
+  refreshCurrentJobMatch,
 ]);
 
 
@@ -6447,12 +6478,13 @@ useEffect(() => {
   };
 }, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
 
-  const handleRefreshAtsScore = useCallback(() => {
+  const handleRefreshAtsScore = useCallback(async () => {
     setConfirmedAtsScore(liveAtsScore);
     setAtsScoreUpdatedAt(Date.now());
     setAtsScoreInitialized(true);
-    void syncResumeProfileDraft();
-  }, [liveAtsScore, syncResumeProfileDraft]);
+    const syncedProfileId = await syncResumeProfileDraft();
+    await refreshCurrentJobMatch(syncedProfileId);
+  }, [liveAtsScore, syncResumeProfileDraft, refreshCurrentJobMatch]);
 
   
   async function handleCopyOutput() {
@@ -6577,7 +6609,7 @@ useEffect(() => {
   }, [file]);
 
   return (
-    <main className="mx-auto max-w-[1900px] px-2 py-6 md:px-3 xl:px-4 2xl:px-5 text-black dark:text-black">
+    <main className="mx-auto max-w-[1900px] px-2 py-6 md:px-3 xl:px-4 2xl:px-5 text-black dark:text-slate-100">
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -6637,7 +6669,7 @@ useEffect(() => {
                 type="button"
                 onClick={handleRefreshAtsScore}
                 disabled={!analysis}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
               >
                 {analysis ? "Refresh ATS + Profile Sync" : isSetupMode ? "Analyze base resume first" : "Analyze resume first"}
               </button>
@@ -6668,7 +6700,7 @@ useEffect(() => {
               <h2 className="text-base font-extrabold">Inputs</h2>
               <div className="text-xs text-slate-600 dark:text-slate-300">{isSetupMode ? "Setup mode · build your base resume once, then tailor per job later." : "Job-aware resume mode"}</div>
             </div>
-            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-black/90">
+            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-slate-100/90">
               <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
                 {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
               </span>
@@ -6677,7 +6709,7 @@ useEffect(() => {
 
           <div className="mt-3 grid gap-3">
             <div id="resume-source" className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">{isSetupMode ? "Upload your base resume" : "Upload resume file"}</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">{isSetupMode ? "Upload your base resume" : "Upload resume file"}</div>
               {isSetupMode ? (
                 <div className="text-[11px] text-slate-600 dark:text-slate-300">This first setup is free. DOCX is still the best source when you have it.</div>
               ) : null}
@@ -6706,7 +6738,7 @@ useEffect(() => {
                   file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
                   file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
                   file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                  dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                  dark:text-slate-100 dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
               />
 
               {/* ✅ Exact wording you asked for when PDFs are sketchy */}
@@ -6739,7 +6771,7 @@ useEffect(() => {
                 <>
                   <label className="grid gap-1.5">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                      <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                         {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
                       </div>
 
@@ -6771,7 +6803,7 @@ useEffect(() => {
                       className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                     />
 
-                    <div className="text-xs text-black/70 dark:text-black/80">
+                    <div className="text-xs text-black/70 dark:text-slate-200/80">
                       {applyPackBundle?.job?.jobContextText
                         ? jobTextOverrideMode
                           ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
@@ -6781,17 +6813,17 @@ useEffect(() => {
                   </label>
 
                   <label className="grid gap-1.5">
-                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       {applyPackBundle?.job?.title ? "Target position (prefilled from saved job)" : "Target position (required)"}
                     </div>
                     <input
                       value={targetPosition}
                       onChange={(e) => setTargetPosition(e.target.value)}
                       placeholder="Production Director, QA Engineer, Product Owner..."
-                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                     />
                     {applyPackBundle?.job?.title ? (
-                      <div className="text-xs text-black/70 dark:text-black/80">
+                      <div className="text-xs text-black/70 dark:text-slate-200/80">
                         Prefilled from AI Job Match: {applyPackBundle.job.title}
                       </div>
                     ) : null}
@@ -6802,12 +6834,12 @@ useEffect(() => {
 
             {/* Template */}
             <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Template</div>
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Template</div>
 
               <select
                 value={resumeTemplate}
                 onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -6819,41 +6851,41 @@ useEffect(() => {
 
             {/* Header details */}
             <div id="header-details" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Header details</div>
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.titleLine}
                   onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
                   placeholder="Professional Title (e.g. QA Lead | Game & VR Systems)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.locationLine}
                   onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.email}
                   onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.phone}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
               </div>
 
@@ -6862,18 +6894,18 @@ useEffect(() => {
                   value={profile.linkedin}
                   onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.portfolio}
                   onChange={(e) => setProfile((p) => ({ ...p, portfolio: e.target.value }))}
                   placeholder="Portfolio / Website"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
               </div>
 
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Profile photo (Optional)</div>
+                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Profile photo (Optional)</div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="grid gap-2">
@@ -6908,7 +6940,7 @@ useEffect(() => {
                       ) : null}
                     </div>
 
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       <input
                         type="checkbox"
                         checked={showProfilePhoto}
@@ -6934,7 +6966,7 @@ useEffect(() => {
                               : "rounded-none",
                           ].join(" ")}
                         />
-                        <div className="text-xs text-black/90 dark:text-black/90">
+                        <div className="text-xs text-black/90 dark:text-slate-100/90">
                           Preview only. Final size/shape comes from the controls below.
                         </div>
                       </div>
@@ -6942,11 +6974,11 @@ useEffect(() => {
 
                     <div className="grid grid-cols-2 gap-3">
                       <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Shape</span>
+                        <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Shape</span>
                         <select
                           value={profilePhotoShape}
                           onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
-                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         >
                           <option value="circle">Circle</option>
                           <option value="rounded">Rounded</option>
@@ -6955,11 +6987,11 @@ useEffect(() => {
                       </label>
 
                       <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Size</span>
+                        <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Size</span>
                         <select
                           value={String(profilePhotoSize)}
                           onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
-                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         >
                           <option value="88">Small</option>
                           <option value="112">Medium</option>
@@ -6977,7 +7009,7 @@ useEffect(() => {
                   onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
                   rows={3}
                   placeholder="Summary (optional)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
               </div>
 
@@ -6992,7 +7024,7 @@ useEffect(() => {
                 </button>
 
                 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input
                     type="checkbox"
                     checked={showEducationOnResume}
@@ -7002,7 +7034,7 @@ useEffect(() => {
                   Show Education on resume
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input
                     type="checkbox"
                     checked={showExpertiseOnResume}
@@ -7019,7 +7051,7 @@ useEffect(() => {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Only experience bullets</span>
+                <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Only experience bullets</span>
               </label>
                                 
               </div>
@@ -7028,8 +7060,8 @@ useEffect(() => {
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Education (Editable)</div>
-                    <div className="text-xs text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Education (Editable)</div>
+                    <div className="text-xs text-black/90 dark:text-slate-100/90">
                       {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
                     </div>
                   </div>
@@ -7037,7 +7069,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={addEducationItem}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     + Add
                   </button>
@@ -7050,7 +7082,7 @@ useEffect(() => {
                         <input
                           value={item}
                           onChange={(e) => updateEducationItem(i, e.target.value)}
-                          className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-black"
+                          className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-slate-100"
                           placeholder="Education or certification"
                         />
                         <button
@@ -7065,7 +7097,7 @@ useEffect(() => {
                     ))}
                   </div>
                 ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
+                  <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
                     No education detected yet. Add it manually here if the parser misses anything.
                   </div>
                 )}
@@ -7074,8 +7106,8 @@ useEffect(() => {
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Areas of Expertise (Editable)</div>
-                    <div className="text-xs text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Areas of Expertise (Editable)</div>
+                    <div className="text-xs text-black/90 dark:text-slate-100/90">
                       {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
                     </div>
                   </div>
@@ -7093,7 +7125,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={addExpertiseItem}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                       >
                         + Add
                       </button>
@@ -7102,7 +7134,7 @@ useEffect(() => {
                 </div>
 
                 {!showExpertiseEditor ? (
-                  <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                  <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                     Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
                   </div>
                 ) : editorExpertiseItems.length ? (
@@ -7115,7 +7147,7 @@ useEffect(() => {
                         <input
                           value={item}
                           onChange={(e) => updateExpertiseItem(i, e.target.value)}
-                          className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-black"
+                          className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-slate-100"
                           placeholder="Expertise"
                         />
                         <button
@@ -7130,7 +7162,7 @@ useEffect(() => {
                     ))}
                   </div>
                 ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
+                  <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
                     No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
                   </div>
                 )}
@@ -7173,7 +7205,7 @@ useEffect(() => {
                     {profileSyncSaving ? "Finishing setup…" : "Update Profile & Go to Job Board"}
                   </button>
 
-                  <div className="text-xs text-black/70 dark:text-black/80">
+                  <div className="text-xs text-black/70 dark:text-slate-200/80">
                     PDF export unlocks after you tailor this resume for a real role.
                   </div>
                 </div>
@@ -7198,7 +7230,7 @@ useEffect(() => {
                       }
                     }}
                     disabled={!liveResumeHtml}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     Preview
                   </button>
@@ -7207,7 +7239,7 @@ useEffect(() => {
                     type="button"
                     onClick={handlePrintPdf}
                     disabled={!liveResumeHtml}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     Print
                   </button>
@@ -7218,17 +7250,17 @@ useEffect(() => {
 
 
           {analysis && !isSetupMode ? (
-            <div className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+            <div id="ats-panel" className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">
                     ATS Score
                   </div>
                   <div className="mt-1 flex items-end gap-3">
-                    <div className="text-3xl font-black text-black dark:text-black">
+                    <div className="text-3xl font-black text-black dark:text-slate-100">
                       {confirmedAtsScore?.overall ?? liveAtsScore.overall}
                     </div>
-                    <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-black/90">
+                    <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-slate-100/90">
                       {confirmedAtsScore?.label ?? liveAtsScore.label}
                     </div>
                     {atsScoreDirty ? (
@@ -7241,10 +7273,10 @@ useEffect(() => {
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
+                  <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
                     Live estimate: {liveAtsScore.overall} · Last updated: {formatAtsUpdatedAt(atsScoreUpdatedAt) || "Not saved yet"}
                   </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
+                  <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
                     Role focus: {liveAtsScore.roleFocus[0] || "General"}
                   </div>
                 </div>
@@ -7260,10 +7292,10 @@ useEffect(() => {
 
               {liveAtsScore.notes.length ? (
                 <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">
                     ATS Notes
                   </div>
-                  <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-black/90">
+                  <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-slate-100/90">
                     {liveAtsScore.notes.slice(0, 4).map((note) => (
                       <li key={note}>{note}</li>
                     ))}
@@ -7273,29 +7305,29 @@ useEffect(() => {
 
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Keyword Coverage</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Keyword Coverage</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
                     {Math.round(liveAtsScore.keywordCoverage * 100)}%
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Metrics</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Metrics</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
                     {liveAtsScore.metricsCount}
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Bullet Quality</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Bullet Quality</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
                     {liveAtsScore.bulletQualityAverage}/100
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Complete-ness</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Complete-ness</div>
+                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
                     {Math.round(liveAtsScore.sectionCompleteness * 100)}%
                   </div>
                 </div>
@@ -7303,8 +7335,8 @@ useEffect(() => {
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">ATS Keywords</div>
-                  <div className="text-[11px] text-black/90 dark:text-black/90">Matched keywords and job-post-relevant missing terms are minimized by default.</div>
+                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">ATS Keywords</div>
+                  <div className="text-[11px] text-black/90 dark:text-slate-100/90">Matched keywords and job-post-relevant missing terms are minimized by default.</div>
                 </div>
                 <button
                   type="button"
@@ -7331,7 +7363,7 @@ useEffect(() => {
                       {liveAtsScore.matchedKeywords.length ? (
                         liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
                       ) : (
-                        <span className="text-xs text-black/90 dark:text-black/90">No strong keyword matches yet.</span>
+                        <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
                       )}
                     </div>
                   </div>
@@ -7345,13 +7377,13 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={clearIgnoredMissingKeywords}
-                          className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                          className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                         >
                           Reset removed
                         </button>
                       ) : null}
                     </div>
-                    <div className="mb-2 text-[11px] text-black/90 dark:text-black/90">
+                    <div className="mb-2 text-[11px] text-black/90 dark:text-slate-100/90">
                       Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -7359,7 +7391,7 @@ useEffect(() => {
                         liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
                           <div
                             key={`missing-${term}`}
-                            className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
+                            className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
                           >
                             <button
                               type="button"
@@ -7381,7 +7413,7 @@ useEffect(() => {
                           </div>
                         ))
                       ) : (
-                        <span className="text-xs text-black/90 dark:text-black/90">Coverage looks solid.</span>
+                        <span className="text-xs text-black/90 dark:text-slate-100/90">Coverage looks solid.</span>
                       )}
                     </div>
                     {ignoredMissingKeywords.length ? (
@@ -7406,7 +7438,7 @@ useEffect(() => {
                   </div>
                 </div>
               ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                   ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
                 </div>
               )}
@@ -7414,17 +7446,17 @@ useEffect(() => {
           ) : null}
 
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
               Edit highlight blocks
             </div>
-            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
+            <div className="mb-3 text-xs text-black/90 dark:text-slate-100/90">
               Update the highlight cards shown in the resume preview. Toggle between Games and Apps for the shipped label.
             </div>
 
             <div className="grid gap-3">
               <div id="shipped-products" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Shipped label</div>
+                  <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Shipped label</div>
                   <div className="inline-flex rounded-xl border border-black/10 bg-white p-1 dark:border-white/10 dark:bg-black/20">
                     {(["Games", "Apps"] as const).map((mode) => (
                       <button
@@ -7434,7 +7466,7 @@ useEffect(() => {
                         className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
                           shippedLabelMode === mode
                             ? "bg-emerald-600 text-black"
-                            : "text-black hover:bg-black/5 dark:text-black"
+                            : "text-black hover:bg-black/5 dark:text-slate-100"
                         }`}
                       >
                         {mode}
@@ -7442,7 +7474,7 @@ useEffect(() => {
                     ))}
                   </div>
                 </div>
-                <div className="text-xs text-black/90 dark:text-black/80">
+                <div className="text-xs text-black/90 dark:text-slate-200/80">
                   Preview title: {shippedLabelMode} Shipped
                 </div>
               </div>
@@ -7450,8 +7482,8 @@ useEffect(() => {
               <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">{shippedLabelMode} Shipped</div>
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">{shippedLabelMode} Shipped</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       <input
                         type="checkbox"
                         checked={showShippedBlock}
@@ -7464,7 +7496,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => setEditorMetaGames((prev) => [...prev, ""])}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     + Add item
                   </button>
@@ -7479,7 +7511,7 @@ useEffect(() => {
                             setEditorMetaGames((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
                           }
                                 rows={2}
-                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         />
                         <button
                           type="button"
@@ -7491,7 +7523,7 @@ useEffect(() => {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                       No shipped items yet.
                     </div>
                   )}
@@ -7501,8 +7533,8 @@ useEffect(() => {
               <div id="key-metrics" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Key Metrics</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       <input
                         type="checkbox"
                         checked={showMetricsBlock}
@@ -7515,7 +7547,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => setEditorMetaMetrics((prev) => [...prev, ""])}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     + Add metric
                   </button>
@@ -7530,7 +7562,7 @@ useEffect(() => {
                             setEditorMetaMetrics((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
                           }
                                 rows={2}
-                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         />
                         <button
                           type="button"
@@ -7542,7 +7574,7 @@ useEffect(() => {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                       No key metrics yet.
                     </div>
                   )}
@@ -7567,7 +7599,7 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={() => selectAll(liveBulletRows.length)}
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                 >
                   Select all
                 </button>
@@ -7575,7 +7607,7 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={selectNone}
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                 >
                   Select none
                 </button>
@@ -7595,7 +7627,7 @@ useEffect(() => {
                     : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
                 </button>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input
                     type="checkbox"
                     checked={showRewriteScorecard}
@@ -7605,7 +7637,7 @@ useEffect(() => {
                   Show scorecard
                 </label>
 
-                <div className="text-xs text-black/90 dark:text-black/90">
+                <div className="text-xs text-black/90 dark:text-slate-100/90">
                   Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
                 </div>
               </div>
@@ -7665,7 +7697,7 @@ useEffect(() => {
                           }));
                         }}
                         disabled={row.planIndex === null}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-slate-100"
                       >
                         {sections.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -7680,7 +7712,7 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() => handleUndoRewrite(i)}
-                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                         >
                           Restore Original
                         </button>
@@ -7689,7 +7721,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => goToEditorBullet(row.sectionId, row.bulletIndex)}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                       >
                         Go To Bullet
                       </button>
@@ -7697,7 +7729,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => editSectionHeader(row.sectionId)}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                       >
                         Edit Header
                       </button>
@@ -7717,7 +7749,7 @@ useEffect(() => {
                             type="button"
                             onClick={() => handleRewriteBullet(i, { safer: true })}
                             disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                           >
                             Safer Rewrite
                           </button>
@@ -7727,7 +7759,7 @@ useEffect(() => {
                   </div>
 
                   <div className="mt-2 grid gap-2">
-                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Original</div>
+                    <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Original</div>
                     <div className="whitespace-pre-wrap text-sm">{original}</div>
 
                     {rewritten ? (
@@ -7744,14 +7776,14 @@ useEffect(() => {
                             </div>
                             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                               <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
-                                <div className="font-extrabold text-black/90 dark:text-black/90">Score</div>
+                                <div className="font-extrabold text-black/90 dark:text-slate-100/90">Score</div>
                                 <div className="mt-1 text-sm font-black text-emerald-700 dark:text-emerald-700">
                                   {scorecard.total}/100
                                 </div>
                               </div>
                               <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
-                                <div className="font-extrabold text-black/90 dark:text-black/90">Confidence</div>
-                                <div className="mt-1 text-sm font-black text-black/90 dark:text-black/90">
+                                <div className="font-extrabold text-black/90 dark:text-slate-100/90">Confidence</div>
+                                <div className="mt-1 text-sm font-black text-black/90 dark:text-slate-100/90">
                                   {scorecard.confidence}
                                 </div>
                               </div>
@@ -7759,7 +7791,7 @@ useEffect(() => {
                           </div>
                         ) : null}
 
-                        <div className="text-xs font-extrabold text-black/80 dark:text-black/80">
+                        <div className="text-xs font-extrabold text-black/80 dark:text-slate-200/80">
                           What changed
                         </div>
                         <RewriteDiff original={original} rewritten={rewritten} />
@@ -7772,10 +7804,10 @@ useEffect(() => {
           </div>
 
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
               Edit resume bullets (live preview)
             </div>
-            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
+            <div className="mb-3 text-xs text-black/90 dark:text-slate-100/90">
               Drag bullets to reorder them, edit text inline, or add and remove bullets per section.
             </div>
 
@@ -7793,15 +7825,15 @@ useEffect(() => {
                     className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
                   >
                     <div className="min-w-0">
-                      <div className="text-lg font-black text-black dark:text-black">
+                      <div className="text-lg font-black text-black dark:text-slate-100">
                         {getSectionDisplayHeader(s)} {s.dates ? `| ${s.dates}` : ""}
                       </div>
-                      <div className="text-sm text-black/90 dark:text-black/90">
+                      <div className="text-sm text-black/90 dark:text-slate-100/90">
                         {(editorBulletsBySection[s.id] || []).length} bullets
                       </div>
                     </div>
 
-                    <div className="shrink-0 text-sm font-extrabold text-black/90 dark:text-black/90">
+                    <div className="shrink-0 text-sm font-extrabold text-black/90 dark:text-slate-100/90">
                       {collapsedSections[s.id] ? "Expand" : "Collapse"}
                     </div>
                   </button>
@@ -7810,7 +7842,7 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={() => addEditorBullet(s.id)}
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                     >
                       + Add bullet
                     </button>
@@ -7851,7 +7883,7 @@ useEffect(() => {
                               ].join(" ")}
                             >
                               <div className="mb-2 flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                                <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                                   <span className="cursor-grab select-none">⋮⋮</span>
                                   <span>Bullet {i + 1}</span>
                                 </div>
@@ -7860,7 +7892,7 @@ useEffect(() => {
                                   <button
                                     type="button"
                                     onClick={() => goToRewrite(s.id, i)}
-                                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                                   >
                                     Go To Rewrite
                                   </button>
@@ -7887,12 +7919,12 @@ useEffect(() => {
                                 value={b}
                                 onChange={(e) => updateEditorBullet(s.id, i, e.target.value)}
                                 rows={3}
-                                className="w-full rounded-lg border border-black/10 bg-white p-2.5 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                                className="w-full rounded-lg border border-black/10 bg-white p-2.5 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                               />
                             </div>
                           ))
                         ) : (
-                          <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                          <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                             No bullets in this section yet.
                           </div>
                         )}
