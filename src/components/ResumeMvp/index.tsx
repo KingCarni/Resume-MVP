@@ -3951,6 +3951,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   >({});
 
   const trackedResumeEntryRef = useRef("");
+  const [profileSyncSaving, setProfileSyncSaving] = useState(false);
   const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProfileSyncSignatureRef = useRef("");
   const latestResumeHydratedRef = useRef(false);
@@ -6193,6 +6194,8 @@ const resumeHtml = useMemo(() => {
 const syncResumeProfileDraft = useCallback(async () => {
   if (status !== "authenticated" || !analysis) return;
 
+  setProfileSyncSaving(true);
+
   const activeResumeProfileId = (() => {
     if (typeof window === "undefined") return "";
     const stored = window.localStorage.getItem("activeResumeProfileId") || "";
@@ -6268,6 +6271,8 @@ const syncResumeProfileDraft = useCallback(async () => {
     }
   } catch {
     // silent: draft/profile sync should never interrupt editing
+  } finally {
+    setProfileSyncSaving(false);
   }
 }, [
   status,
@@ -6285,6 +6290,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   editorMetaMetrics,
   structuredResumeSnapshot,
   resumeSourceMeta,
+  setProfileSyncSaving,
 ]);
 
 useEffect(() => {
