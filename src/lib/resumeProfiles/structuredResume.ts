@@ -15,6 +15,7 @@ export type StructuredResumeSection = {
   title: string;
   dates: string;
   location?: string;
+  bullets?: string[];
 };
 
 export type StructuredResumeSnapshot = {
@@ -64,6 +65,59 @@ function cleanNumber(value: unknown, fallback: number) {
   return Number.isFinite(next) ? next : fallback;
 }
 
+
+export function hasStructuredResumeBullets(snapshot: StructuredResumeSnapshot | null | undefined): boolean {
+  if (!snapshot) return false;
+  return snapshot.sections.some((section) => Array.isArray(section.bullets) && section.bullets.some((bullet) => cleanString(bullet)));
+}
+
+export function structuredSnapshotToResumeText(snapshot: StructuredResumeSnapshot | null | undefined): string {
+  if (!snapshot) return "";
+
+  const lines: string[] = [];
+  const push = (value: unknown = "") => {
+    const next = cleanString(value);
+    if (next) lines.push(next);
+  };
+
+  push(snapshot.profile.fullName);
+  push(snapshot.profile.titleLine);
+  push(snapshot.profile.locationLine);
+  push(snapshot.profile.email);
+  push(snapshot.profile.phone);
+  push(snapshot.profile.linkedin);
+  push(snapshot.profile.portfolio);
+  push(snapshot.profile.summary);
+
+  snapshot.sections.forEach((section) => {
+    const header = [section.title, section.company, section.dates, section.location].map(cleanString).filter(Boolean).join(' | ');
+    push(header);
+    (section.bullets || []).forEach((bullet) => push(`- ${bullet}`));
+  });
+
+  if (snapshot.educationItems.length) {
+    push('Education');
+    snapshot.educationItems.forEach((item) => push(`- ${item}`));
+  }
+
+  if (snapshot.expertiseItems.length) {
+    push('Areas of Expertise');
+    snapshot.expertiseItems.forEach((item) => push(`- ${item}`));
+  }
+
+  if (snapshot.metaGames.length) {
+    push('Games Shipped');
+    snapshot.metaGames.forEach((item) => push(`- ${item}`));
+  }
+
+  if (snapshot.metaMetrics.length) {
+    push('Key Metrics');
+    snapshot.metaMetrics.forEach((item) => push(`- ${item}`));
+  }
+
+  return lines.join('\n').trim();
+}
+
 export function sanitizeResumeSourceMeta(value: unknown): ResumeSourceMeta | null {
   if (!value || typeof value !== "object") return null;
   const input = value as Record<string, unknown>;
@@ -93,6 +147,7 @@ export function sanitizeStructuredResumeSnapshot(value: unknown): StructuredResu
         title: cleanString(section.title),
         dates: cleanString(section.dates),
         location: cleanString(section.location),
+        bullets: cleanStringArray(section.bullets),
       };
     })
     .filter((section) => section.company || section.title || section.dates || section.location);

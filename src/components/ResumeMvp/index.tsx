@@ -7378,7 +7378,7 @@ useEffect(() => {
               </div>
             </div>
           </div>
-        </section>      </div>
+        </section>
 
       {/* ✅ BULLETS PANEL */}
       {analysis && liveBulletRows.length ? (
