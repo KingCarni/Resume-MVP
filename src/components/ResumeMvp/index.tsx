@@ -3997,12 +3997,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }
 
   const canAnalyze = useMemo(() => {
-    const hasResume = !!file || resumeText.trim().length > 0 || !!liveResumeHtml.trim();
+    const hasResume = !!file || resumeText.trim().length > 0 || !!resumeHtmlDraft.trim();
     if (isSetupMode) return hasResume;
     const hasJob = jobText.trim().length > 0;
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
-  }, [file, resumeText, liveResumeHtml, jobText, targetPosition, isSetupMode]);
+  }, [file, resumeText, resumeHtmlDraft, jobText, targetPosition, isSetupMode]);
 
   const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
