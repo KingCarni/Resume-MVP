@@ -4034,7 +4034,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       portfolio: next.profile.portfolio,
       summary: next.profile.summary,
     });
-    setSections(next.sections.length ? next.sections : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+    const nextSections = next.sections.length ? next.sections : [{ id: "default", company: "Experience", title: "", dates: "", location: "", bullets: [] }];
+    setSections(nextSections.map(({ bullets: _bullets, ...section }) => section));
+    setEditorBulletsBySection(
+      nextSections.reduce<Record<string, string[]>>((acc, section) => {
+        acc[section.id] = Array.isArray(section.bullets) ? section.bullets.map((bullet) => String(bullet ?? "")) : [];
+        return acc;
+      }, {})
+    );
     setEditorEducationItems(next.educationItems);
     setEditorExpertiseItems(next.expertiseItems);
     setEditorMetaGames(next.metaGames);
@@ -5374,7 +5381,10 @@ if (typeof planIndex === "number") {
     targetPosition: targetPosition.trim(),
     template: resumeTemplate,
     profile,
-    sections,
+    sections: sections.map((section) => ({
+      ...section,
+      bullets: (editorBulletsBySection[section.id] || []).map((bullet) => String(bullet ?? "").trim()).filter(Boolean),
+    })),
     educationItems: editorEducationItems.filter((x) => String(x ?? "").trim()),
     expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
     metaGames: editorMetaGames.filter((x) => String(x ?? "").trim()),
@@ -5394,9 +5404,11 @@ if (typeof planIndex === "number") {
     resumeTemplate,
     profile,
     sections,
+    editorBulletsBySection,
     editorEducationItems,
     editorExpertiseItems,
     editorMetaGames,
+    structuredResumeSnapshot,
     editorMetaMetrics,
     shippedLabelMode,
     includeMetaInResumeDoc,
@@ -6061,7 +6073,10 @@ useEffect(() => {
   }, [analysis, liveBulletRows.length, liveAtsScore, atsScoreInitialized]);
 
   const resumeProfileSyncSignature = useMemo(() => {
-    const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+    const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+      ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+      : "";
+    const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
     const normalizedDraft = normalizeResumeTextForParsing(draftSource);
     if (normalizedDraft.length < 120) return "";
 
@@ -6192,7 +6207,7 @@ const resumeHtml = useMemo(() => {
   }, [compiledResumeHtml]);
 
 const syncResumeProfileDraft = useCallback(async () => {
-  if (status !== "authenticated" || !analysis) return;
+  if (status !== "authenticated" || !analysis) return null;
 
   setProfileSyncSaving(true);
 
@@ -6202,9 +6217,12 @@ const syncResumeProfileDraft = useCallback(async () => {
     return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
   })();
 
-  const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+  const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+    ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+    : "";
+  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
-  if (normalizedDraft.length < 120) return;
+  if (normalizedDraft.length < 120) return null;
 
   const nextTitle = String(
     profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
@@ -6261,7 +6279,7 @@ const syncResumeProfileDraft = useCallback(async () => {
     });
 
     const payload = await parseApiResponse(response);
-    if (!response.ok || typeof payload === "string" || !payload?.ok) return;
+    if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
 
     lastProfileSyncSignatureRef.current = signature;
 
@@ -6269,8 +6287,11 @@ const syncResumeProfileDraft = useCallback(async () => {
     if (typeof window !== "undefined" && syncedProfileId) {
       window.localStorage.setItem("activeResumeProfileId", syncedProfileId);
     }
+
+    return syncedProfileId || null;
   } catch {
     // silent: draft/profile sync should never interrupt editing
+    return null;
   } finally {
     setProfileSyncSaving(false);
   }
@@ -6292,6 +6313,13 @@ const syncResumeProfileDraft = useCallback(async () => {
   resumeSourceMeta,
   setProfileSyncSaving,
 ]);
+
+const handleProfileSyncClick = useCallback(async () => {
+  const syncedProfileId = await syncResumeProfileDraft();
+  if (isSetupMode && syncedProfileId) {
+    router.push("/jobs");
+  }
+}, [syncResumeProfileDraft, isSetupMode, router]);
 
 useEffect(() => {
   if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;
@@ -6407,7 +6435,7 @@ useEffect(() => {
       { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
       { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
       { id: "analyze", label: hasAnalyzed ? (isSetupMode ? "Base resume analyzed" : "Resume analyzed") : (isSetupMode ? "Analyze base resume" : "Analyze resume"), done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
-      { id: "ats", label: isSetupMode ? "Review Areas of Expertise" : "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection(isSetupMode ? "expertise-editor" : "ats-panel") },
+      ...(isSetupMode ? [] : [{ id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") }]),
       { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
       { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
       { id: "bullets", label: isSetupMode ? "Edit bullets" : "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
@@ -7020,7 +7048,7 @@ useEffect(() => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={syncResumeProfileDraft}
+                    onClick={handleProfileSyncClick}
                     disabled={!analysis || profileSyncSaving || !liveResumeHtml}
                     className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                   >
@@ -7405,6 +7433,7 @@ useEffect(() => {
             </div>
           </div>
         </section>
+      </div>
 
       {/* ✅ BULLETS PANEL */}
       {analysis && liveBulletRows.length ? (
@@ -7759,7 +7788,6 @@ useEffect(() => {
           </div>
         </section>
       ) : null}
-      </div>
     </main>
   );
 }
