@@ -233,8 +233,6 @@ type ApplyPackBundle = {
   resumeProfileId?: string;
   nextStep?: string;
   createdAt?: string;
-  bundleSessionId?: string;
-  sourceSlug?: string;
   job?: {
     id?: string;
     title?: string;
@@ -3889,7 +3887,6 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const [jobText, setJobText] = useState("");
   const [targetPosition, setTargetPosition] = useState("");
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
-  const [applyPackStatus, setApplyPackStatus] = useState<{ loaded: boolean; charged: boolean; resumeIncludedAvailable: boolean; coverLetterIncludedAvailable: boolean } | null>(null);
   const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -3986,73 +3983,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return queryBundle === "apply-pack" || storedBundle === "apply-pack";
   }, [searchParams, applyPackBundle]);
 
+  const applyPackPricingEligible = useMemo(() => {
+    if (!isApplyPackFlow || jobTextOverrideMode) return false;
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    return !!activeJobId;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle]);
 
-  useEffect(() => {
-    if (!isApplyPackFlow) {
-      setApplyPackStatus(null);
-      return;
-    }
-
-    const bundleSessionId = String(applyPackBundle?.bundleSessionId || "").trim();
-    if (!bundleSessionId) {
-      setApplyPackStatus(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function hydrateApplyPackStatus() {
-      try {
-        const response = await fetch(`/api/apply-pack/status?bundleSessionId=${encodeURIComponent(bundleSessionId)}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const json = (await response.json().catch(() => null)) as
-          | {
-              ok?: boolean;
-              charged?: boolean;
-              resumeIncludedAvailable?: boolean;
-              coverLetterIncludedAvailable?: boolean;
-            }
-          | null;
-
-        if (cancelled) return;
-
-        if (response.ok && json?.ok) {
-          setApplyPackStatus({
-            loaded: true,
-            charged: !!json.charged,
-            resumeIncludedAvailable: !!json.resumeIncludedAvailable,
-            coverLetterIncludedAvailable: !!json.coverLetterIncludedAvailable,
-          });
-          return;
-        }
-
-        setApplyPackStatus({
-          loaded: true,
-          charged: false,
-          resumeIncludedAvailable: false,
-          coverLetterIncludedAvailable: false,
-        });
-      } catch {
-        if (cancelled) return;
-        setApplyPackStatus({
-          loaded: true,
-          charged: false,
-          resumeIncludedAvailable: false,
-          coverLetterIncludedAvailable: false,
-        });
-      }
-    }
-
-    void hydrateApplyPackStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isApplyPackFlow, applyPackBundle?.bundleSessionId]);
-
-  const isResumeApplyPackIncludedAvailable = !!(isApplyPackFlow && applyPackStatus?.resumeIncludedAvailable);
 
   const continueToCoverLetter = useCallback(() => {
     if (typeof window !== "undefined" && applyPackBundle) {
@@ -4534,7 +4470,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         analyticsParams?.get("resumeProfileId") || String(applyPackBundle?.resumeProfileId || "").trim();
       const analyticsBundle =
         analyticsParams?.get("bundle") || String(applyPackBundle?.bundle || "").trim();
-      const analyticsMode = analyticsBundle === "apply-pack" ? "apply_pack" : "resume";
+      const analyticsMode = analyticsBundle === "apply-pack" && applyPackPricingEligible ? "apply_pack" : "resume";
       const effectiveJobText = isSetupMode ? setupModeJobText : jobText;
 
       if (analyticsJobId) {
@@ -4574,7 +4510,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             company: String(applyPackBundle?.job?.company || "").trim() || undefined,
             jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
             mode: analyticsMode,
-            bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
+            bundleSessionId: analyticsMode === "apply_pack" ? String(applyPackBundle?.bundleSessionId || "").trim() || undefined : undefined,
           }),
         });
       } else {
@@ -4593,7 +4529,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             company: String(applyPackBundle?.job?.company || "").trim() || undefined,
             jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
             mode: analyticsMode,
-            bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
+            bundleSessionId: analyticsMode === "apply_pack" ? String(applyPackBundle?.bundleSessionId || "").trim() || undefined : undefined,
           }),
         });
       }
@@ -7111,7 +7047,7 @@ useEffect(() => {
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : isResumeApplyPackIncludedAvailable ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : isResumeApplyPackIncludedAvailable ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
+                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : applyPackPricingEligible ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : applyPackPricingEligible ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
 
                 

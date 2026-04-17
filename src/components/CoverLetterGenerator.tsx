@@ -1819,17 +1819,21 @@ export default function CoverLetterGenerator() {
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
-  const [applyPackStatus, setApplyPackStatus] = useState<{ loaded: boolean; charged: boolean; resumeIncludedAvailable: boolean; coverLetterIncludedAvailable: boolean } | null>(null);
+
+  const isApplyPackFlow = useMemo(() => {
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    return String(queryBundle || applyPackBundle?.bundle || "").trim() === "apply-pack";
+  }, [searchParams, applyPackBundle]);
+
+  const applyPackPricingEligible = useMemo(() => {
+    if (!isApplyPackFlow || jobTextOverrideMode) return false;
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    return !!activeJobId;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle]);
   const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const trackedCoverLetterEntryRef = useRef("");
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
-
-  const isApplyPackFlow = useMemo(() => {
-    const queryBundle = String(searchParams.get("bundle") || "").trim();
-    const storedBundle = String(applyPackBundle?.bundle || "").trim();
-    return queryBundle === "apply-pack" || storedBundle === "apply-pack";
-  }, [searchParams, applyPackBundle]);
 
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
@@ -1856,73 +1860,6 @@ export default function CoverLetterGenerator() {
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
   const applyPackActive = !!applyPackBundle?.job?.jobContextText;
-
-  useEffect(() => {
-    if (!isApplyPackFlow) {
-      setApplyPackStatus(null);
-      return;
-    }
-
-    const bundleSessionId = String(applyPackBundle?.bundleSessionId || "").trim();
-    if (!bundleSessionId) {
-      setApplyPackStatus(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function hydrateApplyPackStatus() {
-      try {
-        const response = await fetch(`/api/apply-pack/status?bundleSessionId=${encodeURIComponent(bundleSessionId)}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const json = (await response.json().catch(() => null)) as
-          | {
-              ok?: boolean;
-              charged?: boolean;
-              resumeIncludedAvailable?: boolean;
-              coverLetterIncludedAvailable?: boolean;
-            }
-          | null;
-
-        if (cancelled) return;
-
-        if (response.ok && json?.ok) {
-          setApplyPackStatus({
-            loaded: true,
-            charged: !!json.charged,
-            resumeIncludedAvailable: !!json.resumeIncludedAvailable,
-            coverLetterIncludedAvailable: !!json.coverLetterIncludedAvailable,
-          });
-          return;
-        }
-
-        setApplyPackStatus({
-          loaded: true,
-          charged: false,
-          resumeIncludedAvailable: false,
-          coverLetterIncludedAvailable: false,
-        });
-      } catch {
-        if (cancelled) return;
-        setApplyPackStatus({
-          loaded: true,
-          charged: false,
-          resumeIncludedAvailable: false,
-          coverLetterIncludedAvailable: false,
-        });
-      }
-    }
-
-    void hydrateApplyPackStatus();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isApplyPackFlow, applyPackBundle?.bundleSessionId]);
-
-  const isCoverLetterApplyPackIncludedAvailable = !!(isApplyPackFlow && applyPackStatus?.coverLetterIncludedAvailable);
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -2108,14 +2045,7 @@ export default function CoverLetterGenerator() {
 
       const analyticsSourceSlug = String(applyPackBundle?.sourceSlug || "").trim();
 
-      const analyticsMode =
-        String(
-          (typeof window !== "undefined"
-            ? new URLSearchParams(window.location.search).get("bundle")
-            : "") || applyPackBundle?.bundle || ""
-        ).trim() === "apply-pack"
-          ? "apply_pack"
-          : "cover_letter";
+      const analyticsMode = applyPackPricingEligible ? "apply_pack" : "cover_letter";
 
       if (analyticsJobId) {
         trackJobEvent({
@@ -2155,7 +2085,7 @@ export default function CoverLetterGenerator() {
         if (applyPackBundle?.job?.company) fd.append("company", String(applyPackBundle.job.company));
         if (applyPackBundle?.job?.title) fd.append("jobTitle", String(applyPackBundle.job.title));
         fd.append("mode", analyticsMode);
-        if (applyPackBundle?.bundleSessionId) fd.append("bundleSessionId", String(applyPackBundle.bundleSessionId));
+        if (applyPackPricingEligible && applyPackBundle?.bundleSessionId) fd.append("bundleSessionId", String(applyPackBundle.bundleSessionId));
 
         res = await fetch("/api/cover-letter", { method: "POST", body: fd });
       } else {
@@ -2168,7 +2098,7 @@ export default function CoverLetterGenerator() {
           company: String(applyPackBundle?.job?.company || "").trim() || undefined,
           jobTitle: String(applyPackBundle?.job?.title || "").trim() || undefined,
           mode: analyticsMode,
-          bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
+          bundleSessionId: applyPackPricingEligible ? String(applyPackBundle?.bundleSessionId || "").trim() || undefined : undefined,
 
           fullName: profile.fullName,
           locationLine: profile.locationLine,
@@ -2538,7 +2468,7 @@ export default function CoverLetterGenerator() {
                 disabled={!canGenerate || loading}
                 className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-90"
               >
-                {loading ? "Generating…" : isCoverLetterApplyPackIncludedAvailable ? "Generate Cover Letter (included in 8-credit pack)" : "Generate Cover Letter (5 credits)"}
+                {loading ? "Generating…" : applyPackPricingEligible ? "Generate Cover Letter (included in 8-credit pack)" : "Generate Cover Letter (5 credits)"}
               </button>
 
               <div className="ml-auto text-xs font-extrabold text-black/90 dark:text-black/90">
