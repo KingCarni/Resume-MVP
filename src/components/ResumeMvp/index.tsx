@@ -4080,13 +4080,20 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         const latest = payload.item;
         const nextText = String(latest.text || "").trim();
         const structuredApplied = applyStructuredSnapshot(latest.structuredData || null);
+        const structuredText = structuredApplied && latest.structuredData
+          ? structuredSnapshotToResumeText(latest.structuredData)
+          : "";
+        const htmlText = String(latest.html || "").trim()
+          ? htmlToPlainText(String(latest.html || ""))
+          : "";
+        const preferredText = structuredText || nextText || htmlText;
 
-        if (!nextText && !structuredApplied) return null;
+        if (!preferredText && !structuredApplied) return null;
 
         latestResumeHydratedRef.current = true;
 
-        if (nextText) {
-          setResumeText(nextText);
+        if (preferredText) {
+          setResumeText(preferredText);
         }
 
         if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
@@ -4104,16 +4111,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           createdAt: latest.createdAt,
         });
 
-        const structuredText = structuredApplied && latest.structuredData
-          ? structuredSnapshotToResumeText(latest.structuredData)
-          : "";
-
-        const htmlText = String(latest.html || "").trim()
-          ? htmlToPlainText(String(latest.html || ""))
-          : "";
-
         return {
-          text: nextText,
+          text: preferredText,
           structuredText,
           htmlText,
         };
@@ -4298,6 +4297,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setLoadingRewriteIndex(null);
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+    setEditorBulletsBySection({});
     setResumeBlobUrl("");
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
@@ -4536,6 +4536,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
       const data = payload as AnalyzeResponse;
       setAnalysis(data);
+      if (resumeTextForApi.trim()) {
+        setResumeText(resumeTextForApi);
+      }
 
       if (typeof window !== "undefined") {
         const autoProfileId = String(data?.autoResumeProfile?.id || "").trim();
@@ -4564,6 +4567,32 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
       const knownSectionIds = new Set(nextSections.map((s) => s.id));
       const fallbackId = nextSections[0]?.id || "default";
+
+      const analyzedEditorBullets: Record<string, string[]> = {};
+      const apiBulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : [];
+      const apiBullets = Array.isArray(data?.bullets) ? data.bullets : [];
+
+      apiBullets.forEach((bullet, index) => {
+        const cleanBullet = String(bullet ?? "").trim();
+        if (!cleanBullet) return;
+        const sectionId = String(apiBulletJobIds[index] || fallbackId).trim() || fallbackId;
+        if (!analyzedEditorBullets[sectionId]) analyzedEditorBullets[sectionId] = [];
+        analyzedEditorBullets[sectionId].push(cleanBullet);
+      });
+
+      if (!Object.keys(analyzedEditorBullets).length && jobs.length) {
+        jobs.forEach((job) => {
+          const sectionId = String(job?.id || fallbackId).trim() || fallbackId;
+          const sectionBullets = Array.isArray(job?.bullets)
+            ? job.bullets.map((bullet) => String(bullet ?? "").trim()).filter(Boolean)
+            : [];
+          if (sectionBullets.length) {
+            analyzedEditorBullets[sectionId] = sectionBullets;
+          }
+        });
+      }
+
+      setEditorBulletsBySection(analyzedEditorBullets);
 
       if (planLen) {
         const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
@@ -5553,18 +5582,30 @@ useEffect(() => {
     window.setTimeout(() => setHighlightedNavTarget((prev) => (prev === `rewrite:${key}` ? null : prev)), 1800);
   }, []);
 
-  useEffect(() => {
-    setEditorBulletsBySection((prev) => {
-      const hasExisting = Object.keys(prev).length > 0;
-      if (hasExisting) return prev;
+  const analysisSeedKey = useMemo(() => {
+    if (!analysis) return "";
+    const jobIds = Array.isArray(analysis?.bulletJobIds) ? analysis.bulletJobIds.join("|") : "";
+    const bullets = Array.isArray(analysis?.bullets) ? analysis.bullets.join("|") : "";
+    const jobs = Array.isArray(analysis?.experienceJobs)
+      ? analysis.experienceJobs
+          .map((job) => `${String(job?.id || "")}:${Array.isArray(job?.bullets) ? job.bullets.join("|") : ""}`)
+          .join("||")
+      : "";
+    return `${jobIds}::${bullets}::${jobs}`;
+  }, [analysis]);
 
-      const seeded: Record<string, string[]> = {};
-      Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
-        seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
-      });
-      return seeded;
+  useEffect(() => {
+    if (!analysisSeedKey) return;
+
+    const seeded: Record<string, string[]> = {};
+    Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
+      seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
     });
-  }, [bulletsBySection]);
+
+    if (Object.keys(seeded).length) {
+      setEditorBulletsBySection(seeded);
+    }
+  }, [analysisSeedKey, bulletsBySection]);
 
   useEffect(() => {
     setEditorMetaGames(metaGames);
@@ -6129,7 +6170,10 @@ useEffect(() => {
   }, [analysis, liveBulletRows.length, liveAtsScore, atsScoreInitialized]);
 
   const resumeProfileSyncSignature = useMemo(() => {
-    const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+    const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+      ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+      : "";
+    const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
     const normalizedDraft = normalizeResumeTextForParsing(draftSource);
     if (normalizedDraft.length < 120) return "";
 
@@ -6270,7 +6314,10 @@ const syncResumeProfileDraft = useCallback(async () => {
     return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
   })();
 
-  const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+  const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+    ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+    : "";
+  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
   if (normalizedDraft.length < 120) {
     setProfileSyncSaving(false);
@@ -7507,7 +7554,7 @@ useEffect(() => {
 
       {/* ✅ BULLETS PANEL */}
       {analysis && liveBulletRows.length ? (
-        <section id="bullets-panel" className="mt-4 xl:col-span-2 2xl:col-span-2 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+        <section id="bullets-panel" className="col-span-full mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
