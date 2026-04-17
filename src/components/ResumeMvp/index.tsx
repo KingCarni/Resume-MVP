@@ -7,7 +7,7 @@ import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
-import { sanitizeStructuredResumeSnapshot, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 
 /** ---------------- Types ---------------- */
 
@@ -3997,11 +3997,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }
 
   const canAnalyze = useMemo(() => {
-    const hasResume = !!file || resumeText.trim().length > 0;
-    const hasJob = isSetupMode || jobText.trim().length > 0;
+    const hasResume = !!file || resumeText.trim().length > 0 || !!liveResumeHtml.trim();
+    if (isSetupMode) return hasResume;
+    const hasJob = jobText.trim().length > 0;
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
-  }, [file, resumeText, jobText, targetPosition, isSetupMode]);
+  }, [file, resumeText, liveResumeHtml, jobText, targetPosition, isSetupMode]);
 
   const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
@@ -4349,7 +4350,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }
 
   async function handleAnalyze() {
-    if (!targetPosition.trim()) {
+    if (!isSetupMode && !targetPosition.trim()) {
       setError("Target position is required for ATS analysis.");
       return;
     }
@@ -4363,9 +4364,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     try {
       let res: Response;
 
-      const resumeInput = resumeText.trim();
+      const structuredSnapshotText = hasStructuredResumeBullets(structuredResumeSnapshot)
+        ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+        : "";
+      const htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
+      const resumeInput = file ? resumeText.trim() : (structuredSnapshotText || htmlDraftPlain || resumeText.trim());
       const resumePlain = looksLikeHtmlInput(resumeInput) ? htmlToPlainText(resumeInput) : resumeInput;
       const resumeTextForApi = resumePlain ? normalizeResumeTextForParsing(resumePlain) : "";
+      const effectiveTargetPosition = isSetupMode ? "Professional Resume" : targetPosition.trim();
 
       const analyticsParams =
         typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
@@ -4384,14 +4390,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           jobId: analyticsJobId,
           resumeProfileId: analyticsResumeProfileId || undefined,
           company: String(applyPackBundle?.job?.company || "").trim() || undefined,
-          jobTitle: String(applyPackBundle?.job?.title || targetPosition || "").trim() || undefined,
+          jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
           route: "/resume",
           mode: analyticsMode,
           meta: {
             hasResumeFile: !!file,
             hasResumeText: !!resumeText.trim(),
             hasJobText: !!effectiveJobText.trim(),
-            hasTargetPosition: !!targetPosition.trim(),
+            hasTargetPosition: !!effectiveTargetPosition.trim(),
           },
         });
       }
@@ -4405,7 +4411,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           body: JSON.stringify({
             resumeBlobUrl: url,
             jobText: effectiveJobText,
-            targetPosition,
+            targetPosition: effectiveTargetPosition,
             isFirstTimeSetup: isSetupMode,
             onlyExperienceBullets,
             resumeText: resumeTextForApi || "",
@@ -4418,7 +4424,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           body: JSON.stringify({
             resumeText: resumeTextForApi || resumePlain,
             jobText: effectiveJobText,
-            targetPosition,
+            targetPosition: effectiveTargetPosition,
             onlyExperienceBullets,
             isFirstTimeSetup: isSetupMode,
           }),
@@ -6378,16 +6384,16 @@ useEffect(() => {
 
     return [
       { id: "resume-source", label: isSetupMode ? "Upload your base resume" : "Resume source loaded", done: hasResumeSource, actionLabel: "Go", onAction: () => scrollToSection("resume-source") },
-      { id: "job-setup", label: isSetupMode ? "Choose target position" : "Target position / job context", done: !!targetPosition.trim() && (isSetupMode || !!jobText.trim()), actionLabel: "Go", onAction: () => scrollToSection("job-setup") },
+      ...(isSetupMode ? [] : [{ id: "job-setup", label: "Target position / job context", done: !!targetPosition.trim() && !!jobText.trim(), actionLabel: "Go", onAction: () => scrollToSection("job-setup") }]),
       { id: "template", label: "Choose template", done: hasTemplate, actionLabel: "Go", onAction: () => scrollToSection("resume-template") },
       { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
       { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
       { id: "analyze", label: hasAnalyzed ? (isSetupMode ? "Base resume analyzed" : "Resume analyzed") : (isSetupMode ? "Analyze base resume" : "Analyze resume"), done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
-      { id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") },
+      { id: "ats", label: isSetupMode ? "Review Areas of Expertise" : "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection(isSetupMode ? "expertise-editor" : "ats-panel") },
       { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
       { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
-      { id: "bullets", label: "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
-      { id: "output", label: "View / print / download resume", done: hasOutput, actionLabel: "Go", onAction: () => scrollToSection("resume-output") },
+      { id: "bullets", label: isSetupMode ? "Edit bullets" : "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
+      { id: "output", label: isSetupMode ? "Update profile" : "View / print / download resume", done: hasOutput, actionLabel: "Go", onAction: () => scrollToSection("resume-output") },
     ];
   }, [
     file,
@@ -6564,23 +6570,8 @@ useEffect(() => {
               ) : null}
             </div>
 
-            <div id="job-setup" className="grid gap-3">
-              {isSetupMode ? (
-                <>
-                  <label className="grid gap-1.5">
-                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Target position (required)</div>
-                    <input
-                      value={targetPosition}
-                      onChange={(e) => setTargetPosition(e.target.value)}
-                      placeholder="QA Engineer, Producer, Product Manager..."
-                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-                    />
-                  </label>
-                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
-                    Setup mode uses your target position to build a strong base resume first. You can compare against a specific job later from AI Job Match.
-                  </div>
-                </>
-              ) : (
+            {!isSetupMode ? (
+              <div id="job-setup" className="grid gap-3">
                 <>
                   <label className="grid gap-1.5">
                     <div className="flex items-center justify-between gap-3">
@@ -6642,8 +6633,8 @@ useEffect(() => {
                     ) : null}
                   </label>
                 </>
-              )}
-            </div>
+              </div>
+            ) : null}
 
             {/* Template */}
             <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
@@ -7007,45 +6998,62 @@ useEffect(() => {
           <HtmlDocPreview
             html={liveResumeHtml}
             footer={
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                >
-                  Download PDF (5 credits if exporting)
-                </button>
+              isSetupMode ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={syncResumeProfileDraft}
+                    disabled={!analysis || profileSyncSaving || !liveResumeHtml}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                  >
+                    {profileSyncSaving ? "Updating Profile…" : "Update Profile"}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
-                    } catch (e: any) {
-                      setError(e?.message || "Preview failed");
-                    }
-                  }}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                >
-                  Preview
-                </button>
+                  <div className="text-xs text-black/70 dark:text-black/80">
+                    PDF export unlocks after you tailor this resume for a real role.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                  >
+                    Download PDF (5 credits if exporting)
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={handlePrintPdf}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                >
-                  Print
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
+                      } catch (e: any) {
+                        setError(e?.message || "Preview failed");
+                      }
+                    }}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    Preview
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintPdf}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  >
+                    Print
+                  </button>
+                </div>
+              )
             }
           />
 
 
-          {analysis ? (
+          {analysis && !isSetupMode ? (
             <div className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -7386,52 +7394,58 @@ useEffect(() => {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => selectAll(liveBulletRows.length)}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-              >
-                Select all
-              </button>
-
-              <button
-                type="button"
-                onClick={selectNone}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-              >
-                Select none
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRewriteSelected}
-                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                  selectedCount === 0
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
-                    : "bg-emerald-300 text-black hover:bg-gray-800 active:scale-95 shadow-md"
-                }`}
-              >
-                {loadingBatchRewrite
-                  ? "Rewriting…"
-                  : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
-              </button>
-
-              <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                <input
-                  type="checkbox"
-                  checked={showRewriteScorecard}
-                  onChange={(e) => setShowRewriteScorecard(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Show scorecard
-              </label>
-
-              <div className="text-xs text-black/90 dark:text-black/90">
-                Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
+            {isSetupMode ? (
+              <div className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-extrabold text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
+                Setup mode uses manual bullet editing only. AI rewrites unlock during job tailoring.
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectAll(liveBulletRows.length)}
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Select all
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selectNone}
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                >
+                  Select none
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRewriteSelected}
+                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+                    selectedCount === 0
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
+                      : "bg-emerald-300 text-black hover:bg-gray-800 active:scale-95 shadow-md"
+                  }`}
+                >
+                  {loadingBatchRewrite
+                    ? "Rewriting…"
+                    : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
+                </button>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                  <input
+                    type="checkbox"
+                    checked={showRewriteScorecard}
+                    onChange={(e) => setShowRewriteScorecard(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show scorecard
+                </label>
+
+                <div className="text-xs text-black/90 dark:text-black/90">
+                  Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 grid gap-3">
@@ -7464,37 +7478,41 @@ useEffect(() => {
                 >
                   <div className="flex flex-col gap-2">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleSelected(i)}
-                        className="h-4 w-4"
-                      />
+                      {!isSetupMode ? (
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleSelected(i)}
+                          className="h-4 w-4"
+                        />
+                      ) : null}
                       <span className="text-sm font-extrabold">Bullet {i + 1}</span>
                       {rewritten ? <Chip text="Has rewrite" /> : <Chip text="Original" muted />}
                     </label>
 
-                    <select
-                      value={assigned}
-                      onChange={(e) => {
-                        if (row.planIndex === null) return;
-                        setAssignments((prev) => ({
-                          ...prev,
-                          [row.planIndex as number]: { sectionId: e.target.value },
-                        }));
-                      }}
-                      disabled={row.planIndex === null}
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
-                    >
-                      {sections.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {getSectionDisplayHeader(s)}
-                        </option>
-                      ))}
-                    </select>
+                    {!isSetupMode ? (
+                      <select
+                        value={assigned}
+                        onChange={(e) => {
+                          if (row.planIndex === null) return;
+                          setAssignments((prev) => ({
+                            ...prev,
+                            [row.planIndex as number]: { sectionId: e.target.value },
+                          }));
+                        }}
+                        disabled={row.planIndex === null}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
+                      >
+                        {sections.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {getSectionDisplayHeader(s)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {rewritten ? (
+                      {!isSetupMode && rewritten ? (
                         <button
                           type="button"
                           onClick={() => handleUndoRewrite(i)}
@@ -7520,23 +7538,27 @@ useEffect(() => {
                         Edit Header
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i)}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                      >
-                        {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
-                      </button>
+                      {!isSetupMode ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRewriteBullet(i)}
+                            disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                            className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                          >
+                            {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i, { safer: true })}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                      >
-                        Safer Rewrite
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRewriteBullet(i, { safer: true })}
+                            disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                          >
+                            Safer Rewrite
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
 
