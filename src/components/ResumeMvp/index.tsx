@@ -256,9 +256,9 @@ type AnalyzeResponse = {
   error?: string;
   matchScore?: number;
   missingKeywords?: string[];
-  bullets?: any[];
+  bullets?: unknown[];
   rewritePlan?: RewritePlanItem[];
-  debug?: any;
+  debug?: unknown;
   ats?: AnalyzeAtsPayload;
 
   metaBlocks?: {
@@ -308,31 +308,36 @@ function looksLikeHtmlInput(s: string) {
   return /<\s*(html|head|body|div|span|ul|li|style|script)\b/i.test(t);
 }
 
-function bulletToText(b: any): string {
+function bulletToText(b: unknown): string {
   if (typeof b === "string") return b;
   if (b && typeof b === "object") {
-    const v = b.text ?? b.value ?? b.bullet ?? b.originalBullet ?? b.content;
+    const record = b as Record<string, unknown>;
+    const v = record.text ?? record.value ?? record.bullet ?? record.originalBullet ?? record.content;
     if (typeof v === "string") return v;
     return String(v ?? "");
   }
   return String(b ?? "");
 }
 
-function planItemToText(item: any): string {
+function planItemToText(item: unknown): string {
   if (!item) return "";
-  const raw = item.originalBullet ?? item.bullet ?? item.original ?? item.text ?? item;
-  return bulletToText(raw).trim();
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    const raw = record.originalBullet ?? record.bullet ?? record.original ?? record.text ?? item;
+    return bulletToText(raw).trim();
+  }
+  return bulletToText(item).trim();
 }
 
-function keywordsToArray(k: any): string[] {
+function keywordsToArray(k: unknown): string[] {
   if (Array.isArray(k)) return k.map((x) => String(x).trim()).filter(Boolean);
   if (typeof k === "string")
     return k
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-  if (k && typeof k === "object" && Array.isArray((k as any).keywords)) {
-    return (k as any).keywords.map((x: any) => String(x).trim()).filter(Boolean);
+  if (k && typeof k === "object" && Array.isArray((k as { keywords?: unknown }).keywords)) {
+    return (k as { keywords?: unknown[] }).keywords?.map((x: unknown) => String(x).trim()).filter(Boolean) || [];
   }
   return [];
 }
@@ -346,6 +351,12 @@ function csvToArray(s: string): string[] {
 
 function normalizeForMatch(s: string) {
   return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
 }
 
 function findInjectedTerms(text: string, terms: string[]) {
@@ -4292,8 +4303,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       setProfilePhotoDataUrl(dataUrl);
       setShowProfilePhoto(true);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message || "Could not load profile photo.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Could not load profile photo."));
     }
   }, []);
 
@@ -4445,9 +4456,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       if (!res.ok) {
-        const errMsg = typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed";
-        if ((payload as any)?.error === "OUT_OF_CREDITS") {
-          const bal = (payload as any)?.balance;
+        const apiError = typeof payload === "object" && payload !== null ? payload as { error?: string; balance?: number } : null;
+        const errMsg = typeof payload === "string" ? payload : apiError?.error || "Analyze failed";
+        if (apiError?.error === "OUT_OF_CREDITS") {
+          const bal = apiError?.balance;
           throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
         }
         throw new Error(errMsg);
@@ -4504,15 +4516,15 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       refreshCredits();
-    } catch (e: any) {
-      setError(e?.message || "Analyze failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Analyze failed"));
       refreshCredits();
     } finally {
       setLoadingAnalyze(false);
     }
   }
 
-  async function postRewriteWithFallback(body: any) {
+  async function postRewriteWithFallback(body: Record<string, unknown>) {
     const safeBody = {
       ...buildRewriteBulletPayload(body),
       rewriteSessionId: body?.rewriteSessionId,
@@ -4667,7 +4679,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const blockedTerms = csvToArray(blockedTermsCsv);
       const jobTextCapped = String(jobText ?? "").slice(0, 6000);
 
-      const norm = (s: any) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
       const extractOpenerVerb = (bullet: string) => {
         const s = String(bullet ?? "")
@@ -5110,8 +5122,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       refreshCredits();
-    } catch (e: any) {
-      setError(e?.message || "Rewrite failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Rewrite failed"));
       refreshCredits();
     } finally {
       setLoadingRewriteIndex(null);
@@ -6351,8 +6363,8 @@ useEffect(() => {
       a.remove();
 
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setError(e?.message || "PDF download failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "PDF download failed"));
     }
   }
 
@@ -7029,8 +7041,8 @@ useEffect(() => {
                     onClick={() => {
                       try {
                         openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
-                      } catch (e: any) {
-                        setError(e?.message || "Preview failed");
+                      } catch (e: unknown) {
+                        setError(getErrorMessage(e, "Preview failed"));
                       }
                     }}
                     disabled={!liveResumeHtml}
