@@ -585,18 +585,84 @@ function selectLowFitStrongSignals(
     .map((item) => item.value);
 }
 
+
+function computeRoleFamilyRelevance(profile: ResumeProfileInput, job: JobForScoring): {
+  directOverlap: boolean;
+  bridgedOverlap: boolean;
+  relevance: number;
+} {
+  const profileFamilies = extractRoleFamilies(profile.normalizedTitles);
+  const jobFamilies = extractRoleFamilies([
+    job.titleNormalized ?? "",
+    job.title,
+  ]);
+
+  const directOverlap = Array.from(profileFamilies).some((family) => jobFamilies.has(family));
+  if (directOverlap) {
+    return { directOverlap: true, bridgedOverlap: false, relevance: 1 };
+  }
+
+  const profileBridges = buildBridgeFamilies(profileFamilies);
+  const bridgedOverlap = Array.from(jobFamilies).some((family) => profileBridges.has(family));
+  if (bridgedOverlap) {
+    return { directOverlap: false, bridgedOverlap: true, relevance: 0.76 };
+  }
+
+  if (!profileFamilies.size || !jobFamilies.size) {
+    return { directOverlap: false, bridgedOverlap: false, relevance: 0.9 };
+  }
+
+  return { directOverlap: false, bridgedOverlap: false, relevance: 0.42 };
+}
+
+function specificityWeight(value: string): number {
+  const specificity = getSignalSpecificity(value);
+  if (specificity >= 3) return 1.7;
+  if (specificity === 2) return 1.35;
+  return 1;
+}
+
+function crossFamilySpecificityMultiplier(value: string): number {
+  const specificity = getSignalSpecificity(value);
+  if (specificity >= 3) return 0.55;
+  if (specificity === 2) return 0.38;
+  return 0.18;
+}
+
+function weightedMatchRatio(
+  matched: string[],
+  missing: string[],
+  sectionWeight: number,
+  family: { directOverlap: boolean; bridgedOverlap: boolean; relevance: number },
+): number {
+  const all = [...matched, ...missing];
+  if (!all.length) return 0;
+
+  const totalWeight = all.reduce((sum, skill) => sum + sectionWeight * specificityWeight(skill), 0);
+  if (totalWeight <= 0) return 0;
+
+  const matchedWeight = matched.reduce((sum, skill) => {
+    const base = sectionWeight * specificityWeight(skill);
+    if (family.directOverlap) return sum + base;
+    if (family.bridgedOverlap) return sum + base * family.relevance;
+    return sum + base * crossFamilySpecificityMultiplier(skill);
+  }, 0);
+
+  return matchedWeight / totalWeight;
+}
+
 function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
   score: number;
   matchingBuckets: Array<{ values: string[]; confidence: number }>;
   matching: string[];
   missing: string[];
-  conceptMatches: string[]; 
+  conceptMatches: string[];
   conceptMissing: string[];
 } {
   const profilePool = buildProfileKeywordPool(profile);
   const conceptPool = buildConceptPool(profile);
   const jobSignals = deriveJobSignals(job);
-  const targetSkills = jobSignals.coreSkills.length > 0 ? jobSignals.coreSkills : jobSignals.supportSkills;
+  const familyRelevance = computeRoleFamilyRelevance(profile, job);
 
   const matchingCore = jobSignals.coreSkills.filter((skill) => hasPoolMatch(profilePool, skill));
   const missingCore = jobSignals.coreSkills.filter((skill) => !matchingCore.includes(skill));
@@ -612,14 +678,12 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
     matchingSupport.flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
   );
 
-  const ratio = targetSkills.length > 0
-    ? targetSkills.filter((skill) => hasPoolMatch(profilePool, skill)).length / targetSkills.length
-    : conceptMatches.length > 0
-      ? Math.min(0.35, conceptMatches.length / Math.max(jobSignals.conceptSignals.length, 3))
-      : 0;
+  const coreRatio = weightedMatchRatio(matchingCore, missingCore, 3, familyRelevance);
+  const supportRatio = weightedMatchRatio(matchingSupport, missingSupport, 1.4, familyRelevance);
+  const combinedRatio = (coreRatio * 0.85) + (supportRatio * 0.15);
 
   return {
-    score: Math.round(SKILL_WEIGHT * ratio),
+    score: Math.round(SKILL_WEIGHT * Math.min(1, combinedRatio)),
     matchingBuckets: [
       { values: explicitProfileCoreMatches, confidence: 3 },
       { values: explicitProfileSupportMatches, confidence: 2 },
@@ -638,13 +702,20 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
 function computeConceptScore(profile: ResumeProfileInput, job: JobForScoring): number {
   const conceptPool = buildConceptPool(profile);
   const jobSignals = deriveJobSignals(job);
+  const familyRelevance = computeRoleFamilyRelevance(profile, job);
   const targets = jobSignals.conceptSignals;
 
   if (!targets.length) return 0;
 
   const matched = targets.filter((signal) => conceptPool.has(signal));
-  const ratio = matched.length / targets.length;
-  return Math.round(KEYWORD_WEIGHT * ratio);
+  const missing = targets.filter((signal) => !matched.includes(signal));
+
+  const ratio = weightedMatchRatio(matched, missing, 1, {
+    ...familyRelevance,
+    relevance: familyRelevance.directOverlap ? 1 : familyRelevance.bridgedOverlap ? 0.68 : 0.32,
+  });
+
+  return Math.round(KEYWORD_WEIGHT * Math.min(1, ratio));
 }
 
 function computeSeniorityScore(profile: ResumeProfileInput, job: JobForScoring): number {
