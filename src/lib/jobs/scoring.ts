@@ -209,6 +209,21 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function findProfileEvidenceForSkill(profile: ResumeProfileInput, skill: string): string[] {
+  const canonical = canonicalizeSkill(skill) || normalizeRegistryText(skill);
+  const seeds = uniqueStrings([
+    ...profile.normalizedSkills,
+    ...(profile.keywords ?? []),
+  ]);
+
+  return seeds.filter((value) => {
+    const normalized = normalizeRegistryText(value);
+    if (!normalized) return false;
+    const valueCanonical = canonicalizeSkill(normalized) || normalized;
+    return valueCanonical === canonical || phraseSimilarity(valueCanonical, canonical) >= 0.8;
+  });
+}
+
 function normalizeTitleText(value: string): string {
   return normalizeRegistryText(value)
     .replace(/\bfullstack\b/g, "full stack")
@@ -327,7 +342,9 @@ function deriveJobSignals(job: JobForScoring): {
   const requirementSkills = extractCanonicalSkillsFromText(`${text.requirements}\n${text.responsibilities}`);
   const descriptionSkills = extractCanonicalSkillsFromText(text.description);
 
-  const coreSkillSet = new Set<string>([...storedSkills, ...titleSkills, ...requirementSkills]);
+  const extractedCoreSkills = [...titleSkills, ...requirementSkills];
+  const coreSkillSeed = extractedCoreSkills.length > 0 ? extractedCoreSkills : storedSkills;
+  const coreSkillSet = new Set<string>(coreSkillSeed);
   const supportSkillSet = new Set<string>(descriptionSkills.filter((skill) => !coreSkillSet.has(skill)));
 
   const conceptSignals = dedupePreserveOrder([
@@ -588,6 +605,13 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
   const conceptMatches = jobSignals.conceptSignals.filter((signal) => conceptPool.has(signal));
   const conceptMissing = jobSignals.conceptSignals.filter((signal) => !conceptMatches.includes(signal));
 
+  const explicitProfileCoreMatches = uniqueStrings(
+    matchingCore.flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
+  );
+  const explicitProfileSupportMatches = uniqueStrings(
+    matchingSupport.flatMap((skill) => findProfileEvidenceForSkill(profile, skill))
+  );
+
   const ratio = targetSkills.length > 0
     ? targetSkills.filter((skill) => hasPoolMatch(profilePool, skill)).length / targetSkills.length
     : conceptMatches.length > 0
@@ -597,9 +621,8 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
   return {
     score: Math.round(SKILL_WEIGHT * ratio),
     matchingBuckets: [
-      { values: sortCanonicalSkills(matchingCore), confidence: 3 },
-      { values: sortCanonicalSkills(matchingSupport), confidence: 2 },
-      { values: sortConceptSignals(conceptMatches), confidence: 1 },
+      { values: explicitProfileCoreMatches, confidence: 3 },
+      { values: explicitProfileSupportMatches, confidence: 2 },
     ],
     matching: [],
     missing: selectSurfacedSignals([

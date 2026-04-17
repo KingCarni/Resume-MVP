@@ -3977,6 +3977,11 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     node.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  const isApplyPackFlow = useMemo(() => {
+    const queryBundle = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("bundle") : "";
+    return String(queryBundle || applyPackBundle?.bundle || "").trim() === "apply-pack";
+  }, [applyPackBundle]);
+
   const continueToCoverLetter = useCallback(() => {
     if (typeof window !== "undefined" && applyPackBundle) {
       const nextBundle = {
@@ -4491,6 +4496,13 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             isFirstTimeSetup: isSetupMode,
             onlyExperienceBullets,
             resumeText: resumeTextForApi || "",
+            jobId: analyticsJobId || undefined,
+            resumeProfileId: analyticsResumeProfileId || undefined,
+            sourceSlug: String(applyPackBundle?.sourceSlug || "").trim() || undefined,
+            company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+            jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
+            mode: analyticsMode,
+            bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
           }),
         });
       } else {
@@ -4503,6 +4515,13 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             targetPosition: effectiveTargetPosition,
             onlyExperienceBullets,
             isFirstTimeSetup: isSetupMode,
+            jobId: analyticsJobId || undefined,
+            resumeProfileId: analyticsResumeProfileId || undefined,
+            sourceSlug: String(applyPackBundle?.sourceSlug || "").trim() || undefined,
+            company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+            jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
+            mode: analyticsMode,
+            bundleSessionId: String(applyPackBundle?.bundleSessionId || "").trim() || undefined,
           }),
         });
       }
@@ -7020,7 +7039,7 @@ useEffect(() => {
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
+                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : isApplyPackFlow ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : isApplyPackFlow ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
 
                 

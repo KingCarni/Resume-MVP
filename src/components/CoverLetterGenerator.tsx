@@ -1819,6 +1819,11 @@ export default function CoverLetterGenerator() {
   const [jobText, setJobText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
+
+  const isApplyPackFlow = useMemo(() => {
+    const queryBundle = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("bundle") : "";
+    return String(queryBundle || applyPackBundle?.bundle || "").trim() === "apply-pack";
+  }, [applyPackBundle]);
   const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const trackedCoverLetterEntryRef = useRef("");
   const searchParams = useSearchParams();
@@ -2464,7 +2469,7 @@ export default function CoverLetterGenerator() {
                 disabled={!canGenerate || loading}
                 className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-600 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-90"
               >
-                {loading ? "Generating…" : "Generate Cover Letter (5 credits)"}
+                {loading ? "Generating…" : isApplyPackFlow ? "Generate Cover Letter (included in 8-credit pack)" : "Generate Cover Letter (5 credits)"}
               </button>
 
               <div className="ml-auto text-xs font-extrabold text-black/90 dark:text-black/90">
