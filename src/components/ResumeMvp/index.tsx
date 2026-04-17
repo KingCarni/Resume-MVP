@@ -7719,6 +7719,7 @@ useEffect(() => {
           </div>
         </section>
       ) : null}
+      </div>
     </main>
   );
 }
