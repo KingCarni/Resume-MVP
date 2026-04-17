@@ -4018,7 +4018,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
   const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
-    if (!next) return;
+    if (!next) return false;
 
     setTargetPosition(next.targetPosition || "");
     if (TEMPLATE_OPTIONS.some((option) => option.id === next.template)) {
@@ -4034,12 +4034,25 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       portfolio: next.profile.portfolio,
       summary: next.profile.summary,
     });
-    setSections(next.sections.length ? next.sections : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+
+    const nextSections = next.sections.length
+      ? next.sections
+      : [{ id: "default", company: "Experience", title: "", dates: "", location: "", bullets: [] }];
+
+    setSections(nextSections.map(({ bullets: _bullets, ...section }) => section));
+    setEditorBulletsBySection(
+      nextSections.reduce<Record<string, string[]>>((acc, section) => {
+        acc[section.id] = Array.isArray(section.bullets)
+          ? section.bullets.map((bullet) => String(bullet ?? ""))
+          : [];
+        return acc;
+      }, {})
+    );
     setEditorEducationItems(next.educationItems);
     setEditorExpertiseItems(next.expertiseItems);
     setEditorMetaGames(next.metaGames);
     setEditorMetaMetrics(next.metaMetrics);
-    setShippedLabelMode(next.shippedLabelMode === "apps" ? "apps" : "games");
+    setShippedLabelMode(next.shippedLabelMode === "apps" ? "Apps" : "Games");
     setIncludeMetaInResumeDoc(next.includeMetaInResumeDoc);
     setShowShippedBlock(next.showShippedBlock);
     setShowMetricsBlock(next.showMetricsBlock);
@@ -4049,30 +4062,37 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setProfilePhotoDataUrl(next.profilePhotoDataUrl);
     setProfilePhotoShape(next.profilePhotoShape);
     setProfilePhotoSize(next.profilePhotoSize);
+
+    return true;
   }, []);
 
-  useEffect(() => {
-    if (status !== "authenticated" || latestResumeHydratedRef.current) return;
-    if (file || resumeText.trim() || analysis) return;
+  const hydrateLatestSavedResume = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (status !== "authenticated") return null;
+      if (!options?.force && latestResumeHydratedRef.current) return null;
 
-    let cancelled = false;
-
-    async function hydrateLatestResume() {
       try {
         const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
         const payload = (await parseApiResponse(response)) as LatestResumePayload | string;
-        if (!response.ok || typeof payload === "string" || !payload?.ok || !payload.item || cancelled) return;
+
+        if (!response.ok || typeof payload === "string" || !payload?.ok || !payload.item) return null;
 
         const latest = payload.item;
         const nextText = String(latest.text || "").trim();
-        if (!nextText) return;
+        const structuredApplied = applyStructuredSnapshot(latest.structuredData || null);
+
+        if (!nextText && !structuredApplied) return null;
 
         latestResumeHydratedRef.current = true;
-        setResumeText(nextText);
-        applyStructuredSnapshot(latest.structuredData || null);
+
+        if (nextText) {
+          setResumeText(nextText);
+        }
+
         if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
           setResumeTemplate(latest.template as ResumeTemplateId);
         }
+
         setResumeSourceMeta({
           fileName: latest.sourceFileName || null,
           mimeType: latest.sourceMimeType || null,
@@ -4083,9 +4103,36 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           title: String(latest.title || latest.sourceFileName || "Latest saved resume"),
           createdAt: latest.createdAt,
         });
+
+        const structuredText = structuredApplied && latest.structuredData
+          ? structuredSnapshotToResumeText(latest.structuredData)
+          : "";
+
+        const htmlText = String(latest.html || "").trim()
+          ? htmlToPlainText(String(latest.html || ""))
+          : "";
+
+        return {
+          text: nextText,
+          structuredText,
+          htmlText,
+        };
       } catch {
-        // silent: resume hydration should not block the editor
+        return null;
       }
+    },
+    [status, applyStructuredSnapshot]
+  );
+
+  useEffect(() => {
+    if (status !== "authenticated" || latestResumeHydratedRef.current) return;
+    if (file || resumeText.trim() || analysis) return;
+
+    let cancelled = false;
+
+    async function hydrateLatestResume() {
+      const hydrated = await hydrateLatestSavedResume();
+      if (!hydrated || cancelled) return;
     }
 
     void hydrateLatestResume();
@@ -4093,7 +4140,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return () => {
       cancelled = true;
     };
-  }, [status, file, resumeText, analysis, applyStructuredSnapshot]);
+  }, [status, file, resumeText, analysis, hydrateLatestSavedResume]);
 
 
   useEffect(() => {
@@ -4376,13 +4423,30 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     try {
       let res: Response;
 
-      const structuredSnapshotText = hasStructuredResumeBullets(structuredResumeSnapshot)
+      let structuredSnapshotText = hasStructuredResumeBullets(structuredResumeSnapshot)
         ? structuredSnapshotToResumeText(structuredResumeSnapshot)
         : "";
-      const htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
-      const resumeInput = file ? resumeText.trim() : (structuredSnapshotText || htmlDraftPlain || resumeText.trim());
+      let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
+      let resumeInput = file
+        ? resumeText.trim()
+        : structuredSnapshotText || htmlDraftPlain || resumeText.trim();
+
+      if (!file && !String(resumeInput).trim()) {
+        const hydrated = await hydrateLatestSavedResume({ force: true });
+        if (hydrated) {
+          structuredSnapshotText = hydrated.structuredText || structuredSnapshotText;
+          htmlDraftPlain = hydrated.htmlText || htmlDraftPlain;
+          resumeInput = hydrated.structuredText || hydrated.htmlText || hydrated.text || resumeInput;
+        }
+      }
+
       const resumePlain = looksLikeHtmlInput(resumeInput) ? htmlToPlainText(resumeInput) : resumeInput;
       const resumeTextForApi = resumePlain ? normalizeResumeTextForParsing(resumePlain) : "";
+
+      if (!file && !resumeTextForApi.trim()) {
+        throw new Error("No saved resume was loaded. Open your saved FTUE resume first or upload a file.");
+      }
+
       const effectiveTargetPosition = isSetupMode ? "Professional Resume" : targetPosition.trim();
 
       const analyticsParams =
@@ -5374,12 +5438,15 @@ if (typeof planIndex === "number") {
     targetPosition: targetPosition.trim(),
     template: resumeTemplate,
     profile,
-    sections,
+    sections: sections.map((section) => ({
+      ...section,
+      bullets: (editorBulletsBySection[section.id] || []).map((bullet) => String(bullet ?? "").trim()).filter(Boolean),
+    })),
     educationItems: editorEducationItems.filter((x) => String(x ?? "").trim()),
     expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
     metaGames: editorMetaGames.filter((x) => String(x ?? "").trim()),
     metaMetrics: editorMetaMetrics.filter((x) => String(x ?? "").trim()),
-    shippedLabelMode,
+    shippedLabelMode: shippedLabelMode === "Apps" ? "apps" : "games",
     includeMetaInResumeDoc,
     showShippedBlock,
     showMetricsBlock,
@@ -5394,6 +5461,7 @@ if (typeof planIndex === "number") {
     resumeTemplate,
     profile,
     sections,
+    editorBulletsBySection,
     editorEducationItems,
     editorExpertiseItems,
     editorMetaGames,
@@ -6192,7 +6260,7 @@ const resumeHtml = useMemo(() => {
   }, [compiledResumeHtml]);
 
 const syncResumeProfileDraft = useCallback(async () => {
-  if (status !== "authenticated" || !analysis) return;
+  if (status !== "authenticated" || !analysis) return null;
 
   setProfileSyncSaving(true);
 
@@ -6204,7 +6272,10 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
-  if (normalizedDraft.length < 120) return;
+  if (normalizedDraft.length < 120) {
+    setProfileSyncSaving(false);
+    return null;
+  }
 
   const nextTitle = String(
     profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
@@ -6239,7 +6310,10 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   const signature = resumeProfileSyncSignature;
 
-  if (!signature || lastProfileSyncSignatureRef.current === signature) return;
+  if (!signature || lastProfileSyncSignatureRef.current === signature) {
+    setProfileSyncSaving(false);
+    return activeResumeProfileId || null;
+  }
 
   try {
     const response = await fetch("/api/resume-profiles/sync", {
@@ -6261,7 +6335,7 @@ const syncResumeProfileDraft = useCallback(async () => {
     });
 
     const payload = await parseApiResponse(response);
-    if (!response.ok || typeof payload === "string" || !payload?.ok) return;
+    if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
 
     lastProfileSyncSignatureRef.current = signature;
 
@@ -6269,8 +6343,9 @@ const syncResumeProfileDraft = useCallback(async () => {
     if (typeof window !== "undefined" && syncedProfileId) {
       window.localStorage.setItem("activeResumeProfileId", syncedProfileId);
     }
+    return syncedProfileId || activeResumeProfileId || null;
   } catch {
-    // silent: draft/profile sync should never interrupt editing
+    return null;
   } finally {
     setProfileSyncSaving(false);
   }
@@ -6280,6 +6355,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   searchParamsKey,
   applyPackBundle,
   resumeText,
+  resumeHtmlDraft,
   liveResumeHtml,
   resumeTemplate,
   profile.titleLine,
@@ -6290,8 +6366,20 @@ const syncResumeProfileDraft = useCallback(async () => {
   editorMetaMetrics,
   structuredResumeSnapshot,
   resumeSourceMeta,
-  setProfileSyncSaving,
 ]);
+
+
+  const finishSetupAndGoToJobs = useCallback(async () => {
+    const syncedProfileId = await syncResumeProfileDraft();
+    if (syncedProfileId) {
+      router.push("/jobs");
+      return;
+    }
+
+    if (!profileSyncDirty && analysis) {
+      router.push("/jobs");
+    }
+  }, [syncResumeProfileDraft, router, profileSyncDirty, analysis]);
 
 useEffect(() => {
   if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;
@@ -6407,7 +6495,7 @@ useEffect(() => {
       { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
       { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
       { id: "analyze", label: hasAnalyzed ? (isSetupMode ? "Base resume analyzed" : "Resume analyzed") : (isSetupMode ? "Analyze base resume" : "Analyze resume"), done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
-      { id: "ats", label: isSetupMode ? "Review Areas of Expertise" : "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection(isSetupMode ? "expertise-editor" : "ats-panel") },
+      ...(isSetupMode ? [] : [{ id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") }]),
       { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
       { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
       { id: "bullets", label: isSetupMode ? "Edit bullets" : "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
@@ -6506,14 +6594,25 @@ useEffect(() => {
               >
                 {analysis ? "Refresh ATS + Profile Sync" : isSetupMode ? "Analyze base resume first" : "Analyze resume first"}
               </button>
-              <button
-                type="button"
-                onClick={continueToCoverLetter}
-                disabled={!canContinueToCoverLetter}
-                className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
-              >
-                Continue to Cover Letter
-              </button>
+              {isSetupMode ? (
+                <button
+                  type="button"
+                  onClick={finishSetupAndGoToJobs}
+                  disabled={!analysis || profileSyncSaving}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {profileSyncSaving ? "Finishing setup…" : "Finish Setup & Go to Job Board"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={continueToCoverLetter}
+                  disabled={!canContinueToCoverLetter}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  Continue to Cover Letter
+                </button>
+              )}
             </div>
           </div>
 
@@ -7020,11 +7119,11 @@ useEffect(() => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={syncResumeProfileDraft}
+                    onClick={finishSetupAndGoToJobs}
                     disabled={!analysis || profileSyncSaving || !liveResumeHtml}
                     className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                   >
-                    {profileSyncSaving ? "Updating Profile…" : "Update Profile"}
+                    {profileSyncSaving ? "Finishing setup…" : "Update Profile & Go to Job Board"}
                   </button>
 
                   <div className="text-xs text-black/70 dark:text-black/80">
@@ -7408,7 +7507,7 @@ useEffect(() => {
 
       {/* ✅ BULLETS PANEL */}
       {analysis && liveBulletRows.length ? (
-        <section id="bullets-panel" className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+        <section id="bullets-panel" className="mt-4 xl:col-span-2 2xl:col-span-2 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
