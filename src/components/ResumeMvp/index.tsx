@@ -3978,9 +3978,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }, []);
 
   const isApplyPackFlow = useMemo(() => {
-    const queryBundle = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("bundle") : "";
-    return String(queryBundle || applyPackBundle?.bundle || "").trim() === "apply-pack";
-  }, [applyPackBundle]);
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    const storedBundle = String(applyPackBundle?.bundle || "").trim();
+    return queryBundle === "apply-pack" || storedBundle === "apply-pack";
+  }, [searchParams, applyPackBundle]);
 
   const continueToCoverLetter = useCallback(() => {
     if (typeof window !== "undefined" && applyPackBundle) {
