@@ -4469,7 +4469,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
       let resumeInput = file
         ? resumeText.trim()
-        : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
+        : shouldPreserveStructuredSource
+          ? structuredSnapshotText || resumeText.trim() || htmlDraftPlain
+          : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
 
       if (!file && !String(resumeInput).trim()) {
         const hydrated = await hydrateLatestSavedResume({ force: true });
@@ -4590,7 +4592,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
       const data = payload as AnalyzeResponse;
       setAnalysis(data);
-      if (resumeTextForApi.trim()) {
+      if (!shouldPreserveStructuredSource && resumeTextForApi.trim()) {
         setResumeText(resumeTextForApi);
       }
 
@@ -5654,6 +5656,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (!analysisSeedKey) return;
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
 
     const seeded: Record<string, string[]> = {};
     Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
@@ -5679,7 +5682,7 @@ useEffect(() => {
 
       return seeded;
     });
-  }, [analysisSeedKey, bulletsBySection]);
+  }, [analysisSeedKey, bulletsBySection, preserveStructuredDuringAnalyze, structuredResumeSnapshot]);
 
   useEffect(() => {
     if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
