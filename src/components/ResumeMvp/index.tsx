@@ -148,7 +148,6 @@ type ExperienceSection = {
 
 type BulletAssignment = {
   sectionId: string;
-  bulletIndex?: number;
 };
 
 type ExperienceJobFromApi = {
@@ -3986,12 +3985,17 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }, [searchParams, applyPackBundle]);
 
   const applyPackPricingEligible = useMemo(() => {
-    if (!isApplyPackFlow || jobTextOverrideMode) return false;
-    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    const savedJobId = String(applyPackBundle?.jobId || "").trim();
     const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
     const currentJobText = String(jobText || "").trim();
-    return !!activeJobId && !!savedJobText && currentJobText === savedJobText;
-  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
+
+    if (queryBundle !== "apply-pack" || jobTextOverrideMode) return false;
+    if (!queryJobId || !savedJobId || queryJobId !== savedJobId) return false;
+
+    return !!savedJobText && currentJobText === savedJobText;
+  }, [jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
 
 
   const continueToCoverLetter = useCallback(() => {
@@ -4446,94 +4450,6 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return next;
   }
 
-  function normalizeBulletMatchText(value: string) {
-    return String(value || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9+#.\s]/g, " ")
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter((token) => token.length >= 3);
-  }
-
-  function scoreBulletSimilarity(a: string, b: string) {
-    const left = String(a || "").trim().toLowerCase();
-    const right = String(b || "").trim().toLowerCase();
-    if (!left || !right) return 0;
-    if (left === right) return 10;
-    if (left.includes(right) || right.includes(left)) return 5;
-
-    const leftTokens = normalizeBulletMatchText(left);
-    const rightTokens = normalizeBulletMatchText(right);
-    if (!leftTokens.length || !rightTokens.length) return 0;
-
-    const leftSet = new Set(leftTokens);
-    const rightSet = new Set(rightTokens);
-    let overlap = 0;
-    leftSet.forEach((token) => {
-      if (rightSet.has(token)) overlap += 1;
-    });
-
-    const denom = Math.max(leftSet.size, rightSet.size, 1);
-    return overlap / denom;
-  }
-
-  function buildAssignmentsFromCurrentBullets(args: {
-    rewritePlan: RewritePlanItem[];
-    sections: ExperienceSection[];
-    bulletsBySection: Record<string, string[]>;
-    fallbackSectionId: string;
-  }) {
-    const { rewritePlan, sections, bulletsBySection, fallbackSectionId } = args;
-
-    const entries = sections.flatMap((section) =>
-      (bulletsBySection[section.id] || [])
-        .map((bullet, bulletIndex) => ({
-          sectionId: section.id,
-          bulletIndex,
-          text: String(bullet || "").trim(),
-        }))
-        .filter((entry) => entry.text)
-    );
-
-    const next: Record<number, BulletAssignment> = {};
-    const used = new Set<number>();
-
-    rewritePlan.forEach((item, planIndex) => {
-      const candidateText = String(item?.originalBullet || item?.rewrittenBullet || "").trim();
-
-      let bestIndex = -1;
-      let bestScore = 0;
-
-      entries.forEach((entry, entryIndex) => {
-        if (used.has(entryIndex)) return;
-        const score = scoreBulletSimilarity(candidateText, entry.text);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIndex = entryIndex;
-        }
-      });
-
-      if (bestIndex >= 0 && bestScore >= 0.18) {
-        const matched = entries[bestIndex];
-        used.add(bestIndex);
-        next[planIndex] = { sectionId: matched.sectionId, bulletIndex: matched.bulletIndex };
-        return;
-      }
-
-      const fallbackEntryIndex = entries.findIndex((_, entryIndex) => !used.has(entryIndex));
-      if (fallbackEntryIndex >= 0) {
-        const matched = entries[fallbackEntryIndex];
-        used.add(fallbackEntryIndex);
-        next[planIndex] = { sectionId: matched.sectionId, bulletIndex: matched.bulletIndex };
-        return;
-      }
-
-      next[planIndex] = { sectionId: fallbackSectionId };
-    });
-
-    return next;
-  }
-
   async function handleAnalyze() {
     if (!isSetupMode && !targetPosition.trim()) {
       setError("Target position is required for ATS analysis.");
@@ -4694,17 +4610,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const planLen = rewritePlanLocal.length;
 
       if (shouldPreserveStructuredSource) {
-        const fallbackId = sections[0]?.id || "default";
-        if (planLen) {
-          setAssignments(buildAssignmentsFromCurrentBullets({
-            rewritePlan: rewritePlanLocal,
-            sections,
-            bulletsBySection: editorBulletsBySection,
-            fallbackSectionId: fallbackId,
-          }));
-        } else {
-          setAssignments({});
-        }
+        setAssignments({});
       } else {
         const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];
         const nextSections: ExperienceSection[] =
@@ -5789,9 +5695,6 @@ useEffect(() => {
       if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
         return prev;
       }
-      if (!cleanedNext.length && cleanedPrev.length) {
-        return prev;
-      }
       return metaGames;
     });
   }, [analysis?.metaBlocks?.gamesShipped, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
@@ -5802,9 +5705,6 @@ useEffect(() => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       const cleanedNext = metaMetrics.map((x) => String(x ?? "").trim()).filter(Boolean);
       if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
-        return prev;
-      }
-      if (!cleanedNext.length && cleanedPrev.length) {
         return prev;
       }
       return metaMetrics;
@@ -6161,26 +6061,13 @@ useEffect(() => {
   };
 
   const planBucketsBySection = useMemo(() => {
-    const buckets: Record<string, Array<{ item: RewritePlanItem; planIndex: number; bulletIndex: number | null }>> = {};
+    const buckets: Record<string, Array<{ item: RewritePlanItem; planIndex: number }>> = {};
     const fallback = sections[0]?.id || "default";
 
     effectivePlan.forEach((item, planIndex) => {
-      const assignment = assignments[planIndex];
-      const sectionId = assignment?.sectionId || fallback;
+      const sectionId = assignments[planIndex]?.sectionId || fallback;
       if (!buckets[sectionId]) buckets[sectionId] = [];
-      buckets[sectionId].push({ item, planIndex, bulletIndex: typeof assignment?.bulletIndex === "number" ? assignment.bulletIndex : null });
-    });
-
-    Object.values(buckets).forEach((bucket) => {
-      bucket.sort((a, b) => {
-        const left = a.bulletIndex;
-        const right = b.bulletIndex;
-        if (left === null && right === null) return a.planIndex - b.planIndex;
-        if (left === null) return 1;
-        if (right === null) return -1;
-        if (left === right) return a.planIndex - b.planIndex;
-        return left - right;
-      });
+      buckets[sectionId].push({ item, planIndex });
     });
 
     return buckets;
@@ -6204,9 +6091,7 @@ useEffect(() => {
           sectionLabel,
           bulletIndex,
           text,
-          originalText: preserveStructuredDuringAnalyze
-            ? String(text ?? "").trim()
-            : String(matchedItem?.originalBullet ?? text ?? "").trim(),
+          originalText: String(matchedItem?.originalBullet ?? text ?? "").trim(),
           planIndex: typeof matched?.planIndex === "number" ? matched.planIndex : null,
           rewrittenBullet: String(matchedItem?.rewrittenBullet ?? "").trim(),
           suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords),
@@ -6229,7 +6114,7 @@ useEffect(() => {
     });
 
     return rows;
-  }, [sections, editorBulletsBySection, planBucketsBySection, preserveStructuredDuringAnalyze]);
+  }, [sections, editorBulletsBySection, planBucketsBySection]);
 
   const liveBulletRowsRef = useRef<LiveBulletRow[]>([]);
   const liveAtsScoreRef = useRef<AtsScoreResult | null>(null);
@@ -6906,8 +6791,16 @@ useEffect(() => {
             </div>
           </div>
 
-          <div>
-            <h2 className="text-base font-extrabold">Inputs</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-extrabold">Inputs</h2>
+              <div className="text-xs text-slate-600 dark:text-slate-300">{isSetupMode ? "Setup mode · build your base resume once, then tailor per job later." : "Job-aware resume mode"}</div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-slate-100/90">
+              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
+                {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
+              </span>
+            </div>
           </div>
 
           <div className="mt-3 grid gap-3">
@@ -6975,18 +6868,44 @@ useEffect(() => {
                   <label className="grid gap-1.5">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
-                        Job posting text
+                        {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
                       </div>
+
+                      {applyPackBundle?.job?.jobContextText ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setJobTextOverrideMode((v) => !v)}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={syncJobTextFromApplyPack}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            Re-sync saved job
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
 
                     <textarea
                       value={jobText}
                       onChange={(e) => setJobText(e.target.value)}
                       rows={6}
-                      placeholder="Post job description/requirements here"
+                      placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Post job description/requirements here"}
                       className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                     />
 
+                    <div className="text-xs text-black/70 dark:text-slate-200/80">
+                      {applyPackBundle?.job?.jobContextText
+                        ? jobTextOverrideMode
+                          ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
+                          : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
+                        : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
+                    </div>
                   </label>
 
                   <label className="grid gap-1.5">
@@ -7168,7 +7087,7 @@ useEffect(() => {
                         <select
                           value={String(profilePhotoSize)}
                           onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
-                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
+                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         >
                           <option value="88">Small</option>
                           <option value="112">Medium</option>
