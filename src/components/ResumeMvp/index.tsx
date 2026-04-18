@@ -3985,17 +3985,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }, [searchParams, applyPackBundle]);
 
   const applyPackPricingEligible = useMemo(() => {
-    const queryBundle = String(searchParams.get("bundle") || "").trim();
-    const queryJobId = String(searchParams.get("jobId") || "").trim();
-    const savedJobId = String(applyPackBundle?.jobId || "").trim();
+    if (!isApplyPackFlow || jobTextOverrideMode) return false;
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
     const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
     const currentJobText = String(jobText || "").trim();
-
-    if (queryBundle !== "apply-pack" || jobTextOverrideMode) return false;
-    if (!queryJobId || !savedJobId || queryJobId !== savedJobId) return false;
-
-    return !!savedJobText && currentJobText === savedJobText;
-  }, [jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
+    return !!activeJobId && !!savedJobText && currentJobText === savedJobText;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
 
 
   const continueToCoverLetter = useCallback(() => {
@@ -4232,9 +4227,15 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
       if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
 
+      const isActiveApplyPackResumeEntry = bundle === "apply-pack" && !!queryJobId;
+      if (!isActiveApplyPackResumeEntry) {
+        setApplyPackBundle(null);
+        return;
+      }
+
       setApplyPackBundle(parsed);
 
-      const sameRequestedJob = !queryJobId || queryJobId === storedJobId;
+      const sameRequestedJob = queryJobId === storedJobId;
 
       if (sameRequestedJob && storedJobText) {
         setJobText((current) => (current.trim() ? current : storedJobText));
@@ -6449,7 +6450,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   }
 
   const nextTitle = String(
-    profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
+    profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
   ).trim();
 
   const nextSummary = String(profile.summary || analysis?.autoResumeProfile?.title || "").trim();
