@@ -5,7 +5,9 @@ import {
   authOptions,
 } from "@/lib/auth";
 import {
+  countJobMatches,
   getMatchCandidateWindow,
+  listAllVisibleJobIds,
   listJobs,
   listMatchCandidateJobIds,
 } from "@/lib/jobs/queries";
@@ -183,10 +185,16 @@ export async function GET(request: NextRequest) {
 
   if (resumeProfileId) {
     if (sort === "match") {
-      const candidateLimit = getMatchCandidateWindow();
-      const candidateJobIds = await listMatchCandidateJobIds(input, candidateLimit);
+      const existingMatchCount = await countJobMatches(input);
 
-      await backfillMissingMatches(userId, resumeProfileId, candidateJobIds);
+      if (existingMatchCount === 0) {
+        const visibleJobIds = await listAllVisibleJobIds(input);
+        await backfillMissingMatches(userId, resumeProfileId, visibleJobIds);
+      } else {
+        const candidateLimit = getMatchCandidateWindow();
+        const candidateJobIds = await listMatchCandidateJobIds(input, candidateLimit);
+        await backfillMissingMatches(userId, resumeProfileId, candidateJobIds);
+      }
     } else {
       const initial = await listJobs(input);
       await backfillMissingMatches(

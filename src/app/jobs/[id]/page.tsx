@@ -714,12 +714,20 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
           >
             ← Back to AI Job Match
           </Link>
-          <Link
-            href={`/jobs/saved${resumeProfileId ? `?resumeProfileId=${encodeURIComponent(resumeProfileId)}` : ""}`}
-            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
-          >
-            Saved Jobs
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={`/jobs/saved${resumeProfileId ? `?resumeProfileId=${encodeURIComponent(resumeProfileId)}` : ""}`}
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+            >
+              Saved Jobs
+            </Link>
+            <Link
+              href="/account"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+            >
+              Account
+            </Link>
+          </div>
         </div>
         {feedback ? (
           <div

@@ -4230,6 +4230,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const isActiveApplyPackResumeEntry = queryBundle === "apply-pack" && !!queryJobId;
       if (!isActiveApplyPackResumeEntry) {
         setApplyPackBundle(null);
+        setJobTextOverrideMode(false);
         return;
       }
 
@@ -4251,6 +4252,19 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return () => {
       cancelled = true;
     };
+  }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    const isDirectResumeEntry = queryBundle !== "apply-pack" || !queryJobId;
+
+    if (!isDirectResumeEntry) return;
+
+    setApplyPackBundle(null);
+    setJobTextOverrideMode(false);
   }, [searchParamsKey]);
 
   useEffect(() => {

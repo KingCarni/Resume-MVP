@@ -26,23 +26,39 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const id = String(searchParams.get("id") ?? "").trim();
+  const body = (await request.json().catch(() => null)) as { id?: string } | null;
+  const id = String(body?.id || "").trim();
 
   if (!id) {
-    return NextResponse.json({ ok: false, error: "Missing resume document id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
   }
 
-  const existing = await prisma.document.findFirst({
-    where: { id, userId, type: DocumentType.resume },
+  const document = await prisma.document.findFirst({
+    where: {
+      id,
+      userId,
+      type: DocumentType.resume,
+    },
     select: { id: true },
   });
 
-  if (!existing) {
-    return NextResponse.json({ ok: false, error: "Resume document not found" }, { status: 404 });
+  if (!document) {
+    return NextResponse.json({ ok: false, error: "Resume not found." }, { status: 404 });
   }
 
-  await prisma.document.delete({ where: { id } });
+  await prisma.resumeProfile.updateMany({
+    where: {
+      userId,
+      sourceDocumentId: id,
+    },
+    data: {
+      sourceDocumentId: null,
+    },
+  });
+
+  await prisma.document.delete({
+    where: { id },
+  });
 
   return NextResponse.json({ ok: true, deletedId: id });
 }

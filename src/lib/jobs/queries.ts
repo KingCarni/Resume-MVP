@@ -110,6 +110,23 @@ type JobWithSourceAndMatches = Prisma.JobGetPayload<{
   };
 }>;
 
+
+
+type JobMatchWithJob = Prisma.JobMatchGetPayload<{
+  include: {
+    job: {
+      include: {
+        source: {
+          select: {
+            slug: true;
+            name: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
 type SavedJobWithSource = Prisma.SavedJobGetPayload<{
   include: {
     job: {
@@ -167,10 +184,7 @@ const SEARCH_SYNONYMS: Record<string, string[]> = {
   devops: ["devops", "platform", "site reliability", "sre", "infrastructure"],
 };
 
-const DEFAULT_MATCH_CANDIDATE_LIMIT = 140;
-const MIN_MATCH_CANDIDATE_LIMIT = 120;
-const MATCH_CANDIDATE_BUFFER = 80;
-const MAX_MATCH_CANDIDATE_LIMIT = 260;
+const MATCH_BACKFILL_CANDIDATE_LIMIT = 300;
 
 export function normalizePage(value?: number | null): number {
   if (!value || Number.isNaN(value) || value < 1) return 1;
@@ -380,20 +394,11 @@ function buildMatchCandidateOrderBy(): Prisma.JobOrderByWithRelationInput[] {
   ];
 }
 
-export function getMatchCandidateWindow(input?: {
+export function getMatchCandidateWindow(_input?: {
   page?: number | null;
   pageSize?: number | null;
 }): number {
-  if (!input) return DEFAULT_MATCH_CANDIDATE_LIMIT;
-
-  const page = normalizePage(input.page);
-  const pageSize = normalizePageSize(input.pageSize);
-  const target = page * pageSize + MATCH_CANDIDATE_BUFFER;
-
-  return Math.min(
-    MAX_MATCH_CANDIDATE_LIMIT,
-    Math.max(MIN_MATCH_CANDIDATE_LIMIT, target),
-  );
+  return MATCH_BACKFILL_CANDIDATE_LIMIT;
 }
 
 export async function listMatchCandidateJobIds(
@@ -433,6 +438,56 @@ function mapJobRow(job: JobWithSource, match: JobListRow["match"]): JobListRow {
   };
 }
 
+
+function mapJobMatchRow(row: JobMatchWithJob): JobListRow {
+  return {
+    id: row.job.id,
+    title: row.job.title,
+    company: row.job.company,
+    location: row.job.location,
+    remoteType: String(row.job.remoteType),
+    seniority: String(row.job.seniority),
+    salaryMin: row.job.salaryMin,
+    salaryMax: row.job.salaryMax,
+    salaryCurrency: row.job.salaryCurrency,
+    postedAt: row.job.postedAt,
+    createdAt: row.job.createdAt,
+    status: String(row.job.status),
+    titleNormalized: row.job.titleNormalized,
+    locationNormalized: row.job.locationNormalized,
+    companyNormalized: row.job.companyNormalized,
+    match: {
+      totalScore: row.totalScore,
+      explanationShort: row.explanationShort,
+      matchingSkills: row.matchingSkills,
+      missingSkills: row.missingSkills,
+      computedAt: row.computedAt,
+    },
+    source: row.job.source,
+  };
+}
+
+export async function countJobMatches(input: JobQueryInput): Promise<number> {
+  if (!input.resumeProfileId) return 0;
+  return prisma.jobMatch.count({
+    where: {
+      userId: input.userId,
+      resumeProfileId: input.resumeProfileId,
+      job: buildJobWhere(input),
+    },
+  });
+}
+
+export async function listAllVisibleJobIds(input: JobQueryInput): Promise<string[]> {
+  const rows = await prisma.job.findMany({
+    where: buildJobWhere(input),
+    select: { id: true },
+    orderBy: buildMatchCandidateOrderBy(),
+  });
+
+  return rows.map((row) => row.id);
+}
+
 export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
@@ -443,39 +498,43 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
   const total = await prisma.job.count({ where });
 
   if (input.resumeProfileId && sort === "match") {
-    const candidateItems = await prisma.job.findMany({
-      where,
-      orderBy: buildMatchCandidateOrderBy(),
-      take: getMatchCandidateWindow({ page, pageSize }),
-      include: {
-        source: {
-          select: {
-            slug: true,
-            name: true,
+    const [scoredTotal, scoredRows] = await Promise.all([
+      prisma.jobMatch.count({
+        where: {
+          userId: input.userId,
+          resumeProfileId: input.resumeProfileId,
+          job: where,
+        },
+      }),
+      prisma.jobMatch.findMany({
+        where: {
+          userId: input.userId,
+          resumeProfileId: input.resumeProfileId,
+          job: where,
+        },
+        orderBy: [
+          { totalScore: Prisma.SortOrder.desc },
+          { computedAt: Prisma.SortOrder.desc },
+        ],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          job: {
+            include: {
+              source: {
+                select: {
+                  slug: true,
+                  name: true,
+                },
+              },
+            },
           },
         },
-        matches: {
-          where: {
-            resumeProfileId: input.resumeProfileId,
-            userId: input.userId,
-          },
-          orderBy: {
-            computedAt: "desc",
-          },
-          take: 1,
-          select: {
-            totalScore: true,
-            explanationShort: true,
-            matchingSkills: true,
-            missingSkills: true,
-            computedAt: true,
-          },
-        },
-      },
-    });
+      }),
+    ]);
 
-    mapped = (candidateItems as JobWithSourceAndMatches[])
-      .map((job) => mapJobRow(job, job.matches.length > 0 ? job.matches[0] : null))
+    mapped = (scoredRows as JobMatchWithJob[])
+      .map((row) => mapJobMatchRow(row))
       .sort((left, right) => {
         const leftScore = left.match?.totalScore ?? -1;
         const rightScore = right.match?.totalScore ?? -1;
@@ -486,8 +545,18 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
         if (leftPosted !== rightPosted) return rightPosted - leftPosted;
 
         return right.createdAt.getTime() - left.createdAt.getTime();
-      })
-      .slice((page - 1) * pageSize, page * pageSize);
+      });
+
+    const effectiveTotal = scoredTotal > 0 ? scoredTotal : total;
+    const totalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
+
+    return {
+      items: mapped,
+      total: effectiveTotal,
+      page,
+      pageSize,
+      totalPages,
+    };
   } else if (input.resumeProfileId) {
     const items = await prisma.job.findMany({
       where,

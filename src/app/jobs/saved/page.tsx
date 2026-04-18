@@ -460,20 +460,8 @@ export default function SavedJobsPage() {
             {feedback.message}
           </div>
         ) : null}
-        <section className="mb-6 grid gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
-            <p className="text-sm text-slate-300">
-              This is a light pipeline stub only: applied, interviewing,
-              archived. No full kanban, no notes system, no employer CRM
-              behavior.
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              {selectedProfileId
-                ? "Profile selected. Match scoring and tailoring actions are active."
-                : "No profile selected. Saved jobs still work, but fit scoring and tailoring actions are intentionally disabled."}
-            </p>
-          </div>
-          <div>
+        <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+          <div className="ml-auto max-w-[360px]">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
               Resume profile{profiles.length > 0 ? ` • ${profiles.length}` : ""}
             </label>
