@@ -1,4 +1,3 @@
-
 import { JobMatchWarmupStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -100,27 +99,29 @@ export async function updateJobMatchWarmupProgress(args: {
   totalCandidateCount: number;
   lastProcessedJobId?: string | null;
 }) {
+  const isReady = args.totalCandidateCount > 0 && args.processedCount >= args.totalCandidateCount;
+
   return prisma.jobMatchWarmup.upsert({
     where: {
       resumeProfileId: args.resumeProfileId,
     },
     update: {
       userId: args.userId,
-      status: args.processedCount >= args.totalCandidateCount ? "ready" : "running",
+      status: isReady ? "ready" : "running",
       processedCount: args.processedCount,
       totalCandidateCount: args.totalCandidateCount,
       lastProcessedJobId: args.lastProcessedJobId ?? null,
       lastError: null,
-      completedAt: args.processedCount >= args.totalCandidateCount ? new Date() : null,
+      completedAt: isReady ? new Date() : null,
     },
     create: {
       userId: args.userId,
       resumeProfileId: args.resumeProfileId,
-      status: args.processedCount >= args.totalCandidateCount ? "ready" : "running",
+      status: isReady ? "ready" : "running",
       processedCount: args.processedCount,
       totalCandidateCount: args.totalCandidateCount,
       lastProcessedJobId: args.lastProcessedJobId ?? null,
-      completedAt: args.processedCount >= args.totalCandidateCount ? new Date() : null,
+      completedAt: isReady ? new Date() : null,
     },
   });
 }
@@ -187,6 +188,54 @@ export async function markJobMatchWarmupFailed(args: {
       processedCount: args.processedCount ?? 0,
       lastProcessedJobId: args.lastProcessedJobId ?? null,
       lastError: message,
+    },
+  });
+}
+
+export async function getOrCreateRunningWarmup(args: {
+  userId: string;
+  resumeProfileId: string;
+  totalCandidateCount: number;
+}) {
+  const existing = await prisma.jobMatchWarmup.findUnique({
+    where: {
+      resumeProfileId: args.resumeProfileId,
+    },
+  });
+
+  if (!existing) {
+    return markJobMatchWarmupRunning(args);
+  }
+
+  if (existing.status === "running") {
+    return prisma.jobMatchWarmup.update({
+      where: {
+        resumeProfileId: args.resumeProfileId,
+      },
+      data: {
+        userId: args.userId,
+        totalCandidateCount: args.totalCandidateCount,
+        lastError: null,
+      },
+    });
+  }
+
+  if (existing.status === "ready" && existing.processedCount >= args.totalCandidateCount && existing.totalCandidateCount === args.totalCandidateCount) {
+    return existing;
+  }
+
+  return prisma.jobMatchWarmup.update({
+    where: {
+      resumeProfileId: args.resumeProfileId,
+    },
+    data: {
+      userId: args.userId,
+      status: "running",
+      totalCandidateCount: args.totalCandidateCount,
+      processedCount: existing.status === "failed" ? existing.processedCount : existing.processedCount,
+      lastError: null,
+      startedAt: existing.startedAt ?? new Date(),
+      completedAt: null,
     },
   });
 }

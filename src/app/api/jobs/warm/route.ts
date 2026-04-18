@@ -5,10 +5,10 @@ import { resolveJobMatchForUser } from "@/app/api/jobs/[id]/match/route";
 import { authOptions } from "@/lib/auth";
 import { listMatchCandidateJobIds } from "@/lib/jobs/queries";
 import {
+  getJobMatchWarmupState,
+  getOrCreateRunningWarmup,
   markJobMatchWarmupFailed,
-  markJobMatchWarmupPending,
   markJobMatchWarmupReady,
-  markJobMatchWarmupRunning,
   updateJobMatchWarmupProgress,
 } from "@/lib/jobs/warmup";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +16,7 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BATCH_SIZE = 24;
+const BATCH_SIZE = 40;
 const MAX_CANDIDATES = 240;
 
 async function getUserIdFromSession() {
@@ -57,52 +57,79 @@ async function buildMatchesForProfile(args: {
     MAX_CANDIDATES,
   );
 
-  await markJobMatchWarmupPending({
+  const totalCandidates = candidateIds.length;
+  const warmup = await getOrCreateRunningWarmup({
     userId: args.userId,
     resumeProfileId: args.resumeProfileId,
-    totalCandidateCount: candidateIds.length,
+    totalCandidateCount: totalCandidates,
   });
 
-  await markJobMatchWarmupRunning({
-    userId: args.userId,
-    resumeProfileId: args.resumeProfileId,
-    totalCandidateCount: candidateIds.length,
-  });
+  if (totalCandidates === 0) {
+    await markJobMatchWarmupReady({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      totalCandidateCount: 0,
+      processedCount: 0,
+      lastProcessedJobId: null,
+    });
 
-  let processed = 0;
-  let lastProcessedJobId: string | null = null;
-  for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
-    const batch = candidateIds.slice(i, i + BATCH_SIZE);
-    await Promise.all(
-      batch.map((jobId) =>
-        resolveJobMatchForUser({
-          userId: args.userId,
-          resumeProfileId: args.resumeProfileId,
-          jobId,
-        }),
-      ),
-    );
-    processed += batch.length;
-    lastProcessedJobId = batch.length > 0 ? batch[batch.length - 1] : lastProcessedJobId;
+    return { processed: 0, totalCandidates: 0, ready: true };
+  }
 
+  let startIndex = 0;
+  if (warmup.lastProcessedJobId) {
+    const foundIndex = candidateIds.findIndex((id) => id === warmup.lastProcessedJobId);
+    if (foundIndex >= 0) {
+      startIndex = foundIndex + 1;
+    }
+  }
+
+  const alreadyProcessed = Math.min(warmup.processedCount, startIndex);
+  const nextBatch = candidateIds.slice(startIndex, startIndex + BATCH_SIZE);
+
+  if (nextBatch.length === 0) {
+    await markJobMatchWarmupReady({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      totalCandidateCount: totalCandidates,
+      processedCount: totalCandidates,
+      lastProcessedJobId: warmup.lastProcessedJobId,
+    });
+
+    return { processed: totalCandidates, totalCandidates, ready: true };
+  }
+
+  for (const jobId of nextBatch) {
+    await resolveJobMatchForUser({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      jobId,
+    });
+  }
+
+  const processed = Math.min(totalCandidates, alreadyProcessed + nextBatch.length);
+  const lastProcessedJobId = nextBatch[nextBatch.length - 1] ?? null;
+  const ready = processed >= totalCandidates;
+
+  if (ready) {
+    await markJobMatchWarmupReady({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      totalCandidateCount: totalCandidates,
+      processedCount: processed,
+      lastProcessedJobId,
+    });
+  } else {
     await updateJobMatchWarmupProgress({
       userId: args.userId,
       resumeProfileId: args.resumeProfileId,
       processedCount: processed,
-      totalCandidateCount: candidateIds.length,
+      totalCandidateCount: totalCandidates,
       lastProcessedJobId,
     });
   }
 
-  await markJobMatchWarmupReady({
-    userId: args.userId,
-    resumeProfileId: args.resumeProfileId,
-    totalCandidateCount: candidateIds.length,
-    processedCount: processed,
-    lastProcessedJobId,
-  });
-
-  return { processed, totalCandidates: candidateIds.length };
+  return { processed, totalCandidates, ready };
 }
 
 export async function POST(request: NextRequest) {
@@ -134,6 +161,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Resume profile not found" }, { status: 404 });
   }
 
+  const currentState = await getJobMatchWarmupState({
+    userId,
+    resumeProfileId,
+  });
+
+  if (currentState?.status === "ready") {
+    return NextResponse.json({
+      ok: true,
+      processed: currentState.processedCount,
+      totalCandidates: currentState.totalCandidateCount,
+      ready: true,
+    });
+  }
+
   try {
     const result = await buildMatchesForProfile({
       userId,
@@ -145,12 +186,19 @@ export async function POST(request: NextRequest) {
       minSalary: typeof body.minSalary === "number" ? body.minSalary : null,
     });
 
-    const ready = result.totalCandidates > 0 && result.processed >= result.totalCandidates;
-    return NextResponse.json({ ok: true, ...result, ready });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
+    const stateAfterFailure = await getJobMatchWarmupState({
+      userId,
+      resumeProfileId,
+    });
+
     await markJobMatchWarmupFailed({
       userId,
       resumeProfileId,
+      totalCandidateCount: stateAfterFailure?.totalCandidateCount,
+      processedCount: stateAfterFailure?.processedCount,
+      lastProcessedJobId: stateAfterFailure?.lastProcessedJobId,
       error,
     });
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Warmup failed" }, { status: 500 });
