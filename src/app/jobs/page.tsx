@@ -61,6 +61,8 @@ type JobsResponse = {
   page?: number;
   pageSize?: number;
   totalPages?: number;
+  usedFallback?: boolean;
+  matchCacheReady?: boolean;
   error?: string;
 };
 
@@ -300,6 +302,7 @@ export default function JobsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
+  const [matchWarmupPending, setMatchWarmupPending] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
@@ -501,6 +504,7 @@ export default function JobsPage() {
         setJobs(items);
         setTotalPages(Math.max(1, json.totalPages ?? 1));
         setTotalJobs(json.total ?? 0);
+        setMatchWarmupPending(!!selectedProfileId && appliedSort === "match" && !!json.usedFallback && !json.matchCacheReady);
         setSavedJobIds((current) => {
           let changed = false;
           const next = { ...current };
@@ -516,6 +520,7 @@ export default function JobsPage() {
         });
       } catch (error) {
         if (!active) return;
+        setMatchWarmupPending(false);
         setJobsError(
           error instanceof Error ? error.message : "Could not load jobs.",
         );
@@ -1033,7 +1038,13 @@ export default function JobsPage() {
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <div>
-            {jobsLoading ? (
+            {matchWarmupPending ? (
+          <div className="mb-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">
+            Best match is loading from fallback right now. This profile does not have cached matches yet, so you are seeing recent jobs first while async warmup is wired in.
+          </div>
+        ) : null}
+
+        {jobsLoading ? (
               <span>Refreshing jobs…</span>
             ) : (
               <span>
@@ -1053,6 +1064,12 @@ export default function JobsPage() {
             Press Enter in a text field or use Apply filters.
           </div>
         </div>
+
+        {matchWarmupPending ? (
+          <div className="mb-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">
+            Best match is loading from fallback right now. This profile does not have cached matches yet, so you are seeing recent jobs first while async warmup is wired in.
+          </div>
+        ) : null}
 
         {jobsLoading ? (
           <div className="grid gap-4">
