@@ -908,7 +908,7 @@ export default function AccountProfileHub(props: Props) {
             <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Paid credits only</p>
-                <p className="mt-2 text-sm leading-6 text-slate-200">Pool donations should come from paid credits, not daily/free bonus credits.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">Pool donations come from your paid credits, not daily/free bonus credits.</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Request flow</p>
