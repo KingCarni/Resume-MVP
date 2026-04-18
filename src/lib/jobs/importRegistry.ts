@@ -31,6 +31,50 @@ export type JobImportSourceRow = {
   lastError: string | null;
 };
 
+export type ImportJobSourceRunResult =
+  | (ImportResult & {
+      ok: true;
+      sourceId: string;
+      displayName: string;
+      error: null;
+      skipped: false;
+    })
+  | {
+      ok: false;
+      sourceId: string;
+      displayName: string;
+      adapter: JobsAdapterSlug;
+      tokenOrSite: string;
+      created: number;
+      updated: number;
+      total: number;
+      fetchedAt: string;
+      items: [];
+      error: string;
+      skipped: false;
+    }
+  | {
+      ok: true;
+      sourceId: string;
+      displayName: string;
+      adapter: JobsAdapterSlug;
+      tokenOrSite: string;
+      created: number;
+      updated: number;
+      total: number;
+      fetchedAt: string;
+      items: [];
+      error: null;
+      skipped: true;
+    };
+
+export type ImportJobSourceRunSummary = {
+  results: ImportJobSourceRunResult[];
+  dueSourceCount: number;
+  selectedSourceCount: number;
+  skippedSourceCount: number;
+};
+
 type JobImportSourceDelegate = {
   findMany(args?: unknown): Promise<JobImportSourceRow[]>;
   findUnique(args: unknown): Promise<JobImportSourceRow | null>;
@@ -53,6 +97,50 @@ function getSourceTable(): JobImportSourceDelegate {
 function normalizeRefreshHours(value?: number | null): number {
   if (!value || Number.isNaN(value)) return 24;
   return Math.min(Math.max(Math.floor(value), 1), 168);
+}
+
+function isSourceDue(source: JobImportSourceRow, now = new Date()): boolean {
+  if (!source.isActive) return false;
+
+  const baseline = source.lastRunAt ?? source.lastSuccessAt;
+  if (!baseline) return true;
+
+  const refreshMs = normalizeRefreshHours(source.refreshHours) * 60 * 60 * 1000;
+  return now.getTime() - baseline.getTime() >= refreshMs;
+}
+
+function buildFailureResult(source: JobImportSourceRow, error: unknown): ImportJobSourceRunResult {
+  return {
+    ok: false,
+    sourceId: source.id,
+    displayName: source.displayName,
+    adapter: source.adapter,
+    tokenOrSite: source.tokenOrSite,
+    created: 0,
+    updated: 0,
+    total: 0,
+    fetchedAt: new Date().toISOString(),
+    items: [],
+    error: error instanceof Error ? error.message : "Unknown import failure",
+    skipped: false,
+  };
+}
+
+function buildSkippedResult(source: JobImportSourceRow): ImportJobSourceRunResult {
+  return {
+    ok: true,
+    sourceId: source.id,
+    displayName: source.displayName,
+    adapter: source.adapter,
+    tokenOrSite: source.tokenOrSite,
+    created: 0,
+    updated: 0,
+    total: 0,
+    fetchedAt: new Date().toISOString(),
+    items: [],
+    error: null,
+    skipped: true,
+  };
 }
 
 export async function upsertJobImportSource(
@@ -105,7 +193,7 @@ export async function listJobImportSources(args?: {
 
 export async function importOneJobSource(
   sourceId: string
-): Promise<ImportResult & { sourceId: string; displayName: string }> {
+): Promise<ImportJobSourceRunResult> {
   const table = getSourceTable();
 
   const source = await table.findUnique({
@@ -119,23 +207,34 @@ export async function importOneJobSource(
   return runImportForSource(source);
 }
 
-export async function importActiveJobSources(): Promise<
-  Array<ImportResult & { sourceId: string; displayName: string }>
-> {
-  const sources = await listJobImportSources({ activeOnly: true });
-  const results: Array<ImportResult & { sourceId: string; displayName: string }> = [];
+export async function importActiveJobSources(args?: {
+  now?: Date;
+  dueOnly?: boolean;
+  limit?: number | null;
+}): Promise<ImportJobSourceRunSummary> {
+  const now = args?.now ?? new Date();
+  const dueOnly = args?.dueOnly ?? false;
+  const limit = args?.limit ?? null;
 
-  for (const source of sources) {
+  const sources = await listJobImportSources({ activeOnly: true });
+  const dueSources = dueOnly ? sources.filter((source) => isSourceDue(source, now)) : sources;
+  const selectedSources = limit ? dueSources.slice(0, limit) : dueSources;
+  const results: ImportJobSourceRunResult[] = [];
+
+  for (const source of selectedSources) {
     const result = await runImportForSource(source);
     results.push(result);
   }
 
-  return results;
+  return {
+    results,
+    dueSourceCount: dueSources.length,
+    selectedSourceCount: selectedSources.length,
+    skippedSourceCount: Math.max(dueSources.length - selectedSources.length, 0),
+  };
 }
 
-async function runImportForSource(
-  source: JobImportSourceRow
-): Promise<ImportResult & { sourceId: string; displayName: string }> {
+async function runImportForSource(source: JobImportSourceRow): Promise<ImportJobSourceRunResult> {
   const table = getSourceTable();
   const startedAt = new Date();
 
@@ -165,8 +264,11 @@ async function runImportForSource(
 
     return {
       ...result,
+      ok: true,
       sourceId: source.id,
       displayName: source.displayName,
+      error: null,
+      skipped: false,
     };
   } catch (error) {
     await table.update({
@@ -178,6 +280,14 @@ async function runImportForSource(
       },
     });
 
-    throw error;
+    console.error("[job-import-source] failed", {
+      sourceId: source.id,
+      displayName: source.displayName,
+      adapter: source.adapter,
+      tokenOrSite: source.tokenOrSite,
+      error: error instanceof Error ? error.message : error,
+    });
+
+    return buildFailureResult(source, error);
   }
 }

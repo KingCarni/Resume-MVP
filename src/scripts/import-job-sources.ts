@@ -31,9 +31,16 @@ function parseArgs(argv: string[]) {
   return args;
 }
 
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(1, Math.floor(parsed));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const action = args.get("action") ?? "run";
+  const action = args.get("action") ?? "run-due";
 
   if (action === "add") {
     const adapter = args.get("adapter") as JobsAdapterSlug | undefined;
@@ -78,13 +85,17 @@ async function main() {
     return;
   }
 
-  if (action === "run") {
-    const results = await importActiveJobSources();
-    console.log(JSON.stringify(results, null, 2));
+  if (action === "run-due" || action === "run-all") {
+    const result = await importActiveJobSources({
+      dueOnly: action === "run-due",
+      limit: parsePositiveInt(args.get("limit")),
+    });
+
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 
-  throw new Error('Invalid --action. Use "add", "list", or "run".');
+  throw new Error('Invalid --action. Use "add", "list", "run-due", or "run-all".');
 }
 
 main().catch((error) => {
