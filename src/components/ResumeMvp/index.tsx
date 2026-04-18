@@ -7,7 +7,7 @@ import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
-import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 
 /** ---------------- Types ---------------- */
 
@@ -4149,10 +4149,15 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         const structuredText = structuredApplied && latest.structuredData
           ? structuredSnapshotToResumeText(latest.structuredData)
           : "";
+        const structuredAnalyzeText = structuredApplied && latest.structuredData
+          ? structuredSnapshotToAnalyzeText(latest.structuredData)
+          : "";
         const htmlText = String(latest.html || "").trim()
           ? htmlToPlainText(String(latest.html || ""))
           : "";
-        const preferredText = nextText || htmlText || structuredText;
+        const preferredText = structuredApplied
+          ? structuredAnalyzeText || structuredText || nextText || htmlText
+          : nextText || htmlText || structuredText;
 
         if (!preferredText && !structuredApplied) return null;
 
@@ -4677,8 +4682,26 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       const data = payload as AnalyzeResponse;
-      setAnalysis(data);
-      if (!shouldPreserveStructuredSource && resumeTextForApi.trim()) {
+      const normalizedAnalysis = shouldPreserveStructuredSource
+        ? {
+            ...data,
+            metaBlocks: {
+              gamesShipped: [],
+              metrics: [],
+            },
+            highlights: {
+              gamesShipped: [],
+              keyMetrics: [],
+            },
+          }
+        : data;
+      setAnalysis(normalizedAnalysis);
+      if (shouldPreserveStructuredSource) {
+        const canonicalAnalyzeText = structuredSnapshotToAnalyzeText(structuredResumeSnapshot).trim();
+        if (canonicalAnalyzeText) {
+          setResumeText(canonicalAnalyzeText);
+        }
+      } else if (resumeTextForApi.trim()) {
         setResumeText(resumeTextForApi);
       }
 
@@ -5654,6 +5677,8 @@ if (typeof planIndex === "number") {
   ]);
 
   useEffect(() => {
+    if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       if (cleanedPrev.length) return prev;
@@ -5661,10 +5686,11 @@ if (typeof planIndex === "number") {
       const parsed = parseEducationLines(resumeText);
       return parsed.length ? parsed : prev;
     });
-  }, [resumeText]);
+  }, [resumeText, structuredResumeSnapshot]);
 
   useEffect(() => {
     if (!analysis) return;
+    if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
 
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -5678,7 +5704,7 @@ if (typeof planIndex === "number") {
       const parsed = parseEducationLines(sourceText);
       return parsed.length ? parsed : prev;
     });
-  }, [analysis, resumeText]);
+  }, [analysis, resumeText, structuredResumeSnapshot]);
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
@@ -6333,9 +6359,9 @@ if (typeof planIndex === "number") {
 
   const resumeProfileSyncSignature = useMemo(() => {
     const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
-      ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+      ? structuredSnapshotToAnalyzeText(structuredResumeSnapshot)
       : "";
-    const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "") || structuredDraft;
+    const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
     const normalizedDraft = normalizeResumeTextForParsing(draftSource);
     if (normalizedDraft.length < 120) return "";
 
@@ -6507,7 +6533,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
     ? structuredSnapshotToResumeText(structuredResumeSnapshot)
     : "";
-  const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "") || structuredDraft;
+  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
   if (normalizedDraft.length < 120) {
     setProfileSyncSaving(false);
