@@ -107,5 +107,6 @@ export async function POST(request: NextRequest) {
     minSalary: typeof body.minSalary === "number" ? body.minSalary : null,
   });
 
-  return NextResponse.json({ ok: true, ...result });
+  const ready = result.totalCandidates > 0 && result.processed >= result.totalCandidates;
+  return NextResponse.json({ ok: true, ...result, ready });
 }

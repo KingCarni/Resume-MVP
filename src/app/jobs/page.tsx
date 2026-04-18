@@ -499,7 +499,11 @@ export default function JobsPage() {
         setJobs(items);
         setTotalPages(Math.max(1, json.totalPages ?? 1));
         setTotalJobs(json.total ?? 0);
-        setMatchWarmupPending(!!selectedProfileId && appliedSort === "match" && !!json.usedFallback && !json.matchCacheReady);
+        setMatchWarmupPending(
+          !!selectedProfileId &&
+            appliedSort === "match" &&
+            !!json.usedFallback,
+        );
         setSavedJobIds((current) => {
           let changed = false;
           const next = { ...current };
@@ -704,6 +708,54 @@ export default function JobsPage() {
       meta: { profileCount: profiles.length },
     });
   }, [profiles.length, profilesLoading, selectedProfileId]);
+
+  useEffect(() => {
+    if (!pageStateReady) return;
+    if (!selectedProfileId) return;
+    if (appliedSort !== "match") return;
+    if (!matchWarmupPending) return;
+
+    let cancelled = false;
+
+    async function warmMatches() {
+      try {
+        await fetch("/api/jobs/warm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeProfileId: selectedProfileId,
+            q: appliedSearch || undefined,
+            remote: appliedRemote !== "all" ? appliedRemote : undefined,
+            location: appliedLocation || undefined,
+            seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
+            minSalary: appliedMinSalary ? Number(appliedMinSalary) : undefined,
+          }),
+        });
+      } catch {
+        return;
+      }
+
+      if (!cancelled) {
+        window.location.reload();
+      }
+    }
+
+    void warmMatches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appliedLocation,
+    appliedMinSalary,
+    appliedRemote,
+    appliedSearch,
+    appliedSeniority,
+    appliedSort,
+    matchWarmupPending,
+    pageStateReady,
+    selectedProfileId,
+  ]);
 
   async function hideJob(job: JobListItem) {
     setHidingJobIds((current) => ({ ...current, [job.id]: true }));
