@@ -311,11 +311,6 @@ export default function JobsPage() {
   const trackedProfileSelectionRef = useRef("");
   const [pageStateReady, setPageStateReady] = useState(false);
 
-  const selectedProfile = useMemo(
-    () => profiles.find((profile) => profile.id === selectedProfileId) || null,
-    [profiles, selectedProfileId],
-  );
-
   const defaultSort: SortMode = "match";
 
   const filtersDirty =
@@ -1038,13 +1033,7 @@ export default function JobsPage() {
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <div>
-            {matchWarmupPending ? (
-          <div className="mb-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">
-            Best match is loading from fallback right now. This profile does not have cached matches yet, so you are seeing recent jobs first while async warmup is wired in.
-          </div>
-        ) : null}
-
-        {jobsLoading ? (
+            {jobsLoading ? (
               <span>Refreshing jobs…</span>
             ) : (
               <span>

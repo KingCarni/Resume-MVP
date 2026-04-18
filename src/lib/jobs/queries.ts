@@ -313,7 +313,7 @@ export function buildJobWhere(input: JobQueryInput): Prisma.JobWhereInput {
     remote !== "all" &&
     ["remote", "hybrid", "onsite", "unknown"].includes(remote)
   ) {
-    where.remoteType = remote as any;
+    where.remoteType = remote as Prisma.EnumRemoteTypeFilter<"Job">;
   }
 
   const location = input.location?.trim();
@@ -336,7 +336,7 @@ export function buildJobWhere(input: JobQueryInput): Prisma.JobWhereInput {
 
   const seniority = input.seniority?.trim().toLowerCase();
   if (seniority && seniority !== "all") {
-    where.seniority = seniority as any;
+    where.seniority = seniority as Prisma.EnumSeniorityFilter<"Job">;
   }
 
   const minSalary = normalizeMinSalary(input.minSalary);
