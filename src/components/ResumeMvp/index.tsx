@@ -3980,9 +3980,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
   const isApplyPackFlow = useMemo(() => {
     const queryBundle = String(searchParams.get("bundle") || "").trim();
-    const storedBundle = String(applyPackBundle?.bundle || "").trim();
-    return queryBundle === "apply-pack" || storedBundle === "apply-pack";
-  }, [searchParams, applyPackBundle]);
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    return queryBundle === "apply-pack" && !!queryJobId;
+  }, [searchParams]);
 
   const applyPackPricingEligible = useMemo(() => {
     if (!isApplyPackFlow || jobTextOverrideMode) return false;
@@ -4227,7 +4227,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
       if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
 
-      const isActiveApplyPackResumeEntry = bundle === "apply-pack" && !!queryJobId;
+      const isActiveApplyPackResumeEntry = queryBundle === "apply-pack" && !!queryJobId;
       if (!isActiveApplyPackResumeEntry) {
         setApplyPackBundle(null);
         return;
@@ -6281,15 +6281,15 @@ useEffect(() => {
     })();
 
     const nextTitle = String(
-      profile.titleLine || analysis?.ats?.detectedResumeRole?.roleName || targetPosition || ""
+      profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
     ).trim();
 
     const nextTitles = uniqueTerms(
       [
         profile.titleLine,
+        targetPosition,
         analysis?.ats?.detectedResumeRole?.roleName,
         analysis?.ats?.targetRole?.roleName,
-        targetPosition,
       ]
         .map((value) => String(value || "").trim())
         .filter(Boolean)
