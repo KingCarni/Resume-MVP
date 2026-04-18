@@ -30,12 +30,12 @@ const trustPoints = [
     body: "Git-a-Job reads the role title, requirements, and responsibilities first, then compares your selected profile against that job instead of inventing generic advice.",
   },
   {
-    title: "You can see the risk before you commit.",
-    body: "Strong signals and likely gaps are visible up front, so weak-fit roles are easier to skip and stronger-fit roles are easier to prioritize.",
+    title: "You can see the fit before you commit.",
+    body: "Strong signals and likely gaps are visible up front, so it is easier to prioritize the roles that already look promising.",
   },
   {
-    title: "Job context carries into the paid tools.",
-    body: "When you decide a role is worth chasing, that same job context can flow into resume and cover-letter tailoring so you are not restarting from scratch.",
+    title: "Job context carries into your application workflow.",
+    body: "When you decide a role is worth pursuing, that same job context flows into resume and cover-letter tailoring so you are not starting over from scratch.",
   },
 ];
 
@@ -96,14 +96,13 @@ export default async function HomePage() {
                 Jobs-first application workflow
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Match to real roles. See the fit. Tailor only the jobs worth chasing.
+                Start with real roles. See your fit clearly. Tailor with context already loaded.
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                Git-a-Job works best when the workflow starts with a live job, shows believable fit, and only then moves into resume or cover-letter tailoring.
+                Git-a-Job helps you move from live job discovery to resume and cover-letter tailoring without losing the role context that matters.
               </p>
 
-              <div className="mt-6 inline-flex max-w-2xl items-start gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.08] px-4 py-3 text-left shadow-[0_12px_30px_rgba(6,182,212,0.08)]">
-                <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-300" />
+              <div className="mt-6 inline-flex max-w-2xl rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.08] px-4 py-3 text-left shadow-[0_12px_30px_rgba(6,182,212,0.08)]">
                 <p className="text-sm font-medium leading-7 text-cyan-50 sm:text-[15px]">
                   Get <span className="font-bold text-white">25 free credits</span> when you sign up, then claim <span className="font-bold text-white">10 bonus credits every day</span> you come back.
                 </p>
@@ -146,7 +145,7 @@ export default async function HomePage() {
                       <div className="text-3xl font-bold text-white">{jobCount.toLocaleString()}</div>
                       <p className="mt-1 text-sm leading-6 text-slate-300">Active jobs currently available to score against live profiles.</p>
                     </div>
-                    <Link href="/jobs" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold tracking-[0.18em] text-cyan-100 uppercase transition hover:border-cyan-300/30 hover:bg-cyan-400/10">
+                    <Link href="/jobs" className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs font-semibold tracking-[0.18em] text-cyan-100 uppercase transition hover:border-cyan-300/30 hover:bg-cyan-400/10">
                       Open board
                     </Link>
                   </div>
@@ -189,7 +188,7 @@ export default async function HomePage() {
             <div className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Workflow</div>
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-white">Discover, evaluate, tailor.</h2>
             <p className="mt-4 max-w-xl text-sm leading-7 text-slate-300">
-              Git-a-Job is strongest when it helps you reject weak roles faster, focus on stronger ones, and carry the best job context forward into the paid tools.
+              Git-a-Job helps you focus on the roles that fit best, understand why they fit, and carry that job context forward into your next application steps.
             </p>
           </div>
 
@@ -245,7 +244,7 @@ export default async function HomePage() {
               <div className="mt-6 rounded-3xl border border-cyan-400/20 bg-cyan-400/[0.06] px-4 py-4">
                 <div className="text-[11px] font-semibold tracking-[0.24em] text-cyan-100 uppercase">Donation support</div>
                 <p className="mt-3 text-sm leading-7 text-slate-300">
-                  Donations fund a shared credit pool. Requests are reviewed manually first, then approved credits are fulfilled from that pool so support stays moderated instead of becoming a giveaway faucet.
+                  Donations support a shared credit pool. Requests are reviewed manually, and approved credits are fulfilled from that pool to keep support thoughtful and sustainable.
                 </p>
               </div>
             </div>
@@ -259,7 +258,7 @@ export default async function HomePage() {
               Start from the roles you actually want, then tailor with context already loaded.
             </h2>
             <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base">
-              Open the jobs board, check the fit, and only then move into the output tools that cost credits.
+              Open the jobs board, check the fit, and then move into the application tools with the right job context already loaded.
             </p>
             <p className="mt-4 text-sm font-medium leading-7 text-cyan-100 sm:text-base">
               Start free with <span className="font-bold text-white">25 credits</span>, then collect <span className="font-bold text-white">10 bonus credits every day</span> you sign in.
