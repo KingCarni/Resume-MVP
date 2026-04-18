@@ -82,7 +82,7 @@ export default async function HomePage() {
   const credits = creditAgg._sum.delta ?? 0;
   const signOutHref = "/api/auth/signout?callbackUrl=/";
   const primaryHref = "/jobs";
-  const primaryLabel = session ? "Open Job Match" : "Browse Jobs";
+  const primaryLabel = session ? "Open Jobs" : "Browse Jobs";
 
   return (
     <main className="min-h-screen pb-10">
@@ -96,7 +96,7 @@ export default async function HomePage() {
                 Jobs-first application workflow
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Start with real roles. See your fit clearly. Tailor with context already loaded.
+                Start with real roles. See your fit clearly. Tailor faster. Apply smarter.
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
                 Git-a-Job helps you move from live job discovery to resume and cover-letter tailoring without losing the role context that matters.
@@ -146,7 +146,7 @@ export default async function HomePage() {
                       <p className="mt-1 text-sm leading-6 text-slate-300">Active jobs currently available to score against live profiles.</p>
                     </div>
                     <Link href="/jobs" className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs font-semibold tracking-[0.18em] text-cyan-100 uppercase transition hover:border-cyan-300/30 hover:bg-cyan-400/10">
-                      Open board
+                      Open Jobs
                     </Link>
                   </div>
                 </div>
@@ -255,7 +255,7 @@ export default async function HomePage() {
           <div className="mx-auto max-w-3xl">
             <div className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Next step</div>
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-              Start from the roles you actually want, then tailor with context already loaded.
+              Start from the roles you actually want, then tailor faster. Apply smarter.
             </h2>
             <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base">
               Open the jobs board, check the fit, and then move into the application tools with the right job context already loaded.

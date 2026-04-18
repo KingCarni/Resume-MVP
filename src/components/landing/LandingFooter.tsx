@@ -9,7 +9,7 @@ export default function LandingFooter() {
             Git-a-Job
           </div>
           <p className="mt-3 max-w-lg text-sm leading-7 text-slate-300">
-            Match against real roles, understand the fit, and tailor faster without losing trust in the process.
+            Match against real jobs, see your fit clearly, and tailor faster with real context.
           </p>
         </div>
 
