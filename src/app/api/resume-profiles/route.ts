@@ -128,11 +128,7 @@ export async function GET() {
         normalizedTitles: true,
         keywords: true,
         rawText: true,
-        keywords: true,
-      rawText: true,
-      keywords: true,
-      rawText: true,
-      sourceDocumentId: true,
+        sourceDocumentId: true,
         sourceDocument: {
           select: {
             id: true,
@@ -325,4 +321,33 @@ export async function PATCH(request: NextRequest) {
   });
 
   return NextResponse.json({ ok: true, item: formatProfileItem(item) });
+}
+
+
+export async function DELETE(request: NextRequest) {
+  const userId = await getUserIdFromSession();
+
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = String(searchParams.get("id") ?? "").trim();
+
+  if (!id) {
+    return NextResponse.json({ ok: false, error: "Missing profile id" }, { status: 400 });
+  }
+
+  const existing = await prisma.resumeProfile.findFirst({
+    where: { id, userId },
+    select: { id: true },
+  });
+
+  if (!existing) {
+    return NextResponse.json({ ok: false, error: "Resume profile not found" }, { status: 404 });
+  }
+
+  await prisma.resumeProfile.delete({ where: { id } });
+
+  return NextResponse.json({ ok: true, deletedId: id });
 }

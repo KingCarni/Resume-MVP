@@ -265,6 +265,7 @@ export default function AccountProfileHub(props: Props) {
   const [titleKeywordDraft, setTitleKeywordDraft] = useState("");
   const [skillTags, setSkillTags] = useState<string[]>([]);
   const [titleTags, setTitleTags] = useState<string[]>([]);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
@@ -272,6 +273,13 @@ export default function AccountProfileHub(props: Props) {
     () => profiles.find((profile) => profile.id === selectedProfileId) || null,
     [profiles, selectedProfileId],
   );
+
+  const visibleSkillTags = useMemo(
+    () => (skillsExpanded ? skillTags : skillTags.slice(0, 12)),
+    [skillTags, skillsExpanded],
+  );
+
+  const hiddenSkillCount = Math.max(0, skillTags.length - visibleSkillTags.length);
 
   const activeProfile = useMemo(
     () => profiles.find((profile) => profile.id === activeProfileId) || null,
@@ -375,6 +383,7 @@ export default function AccountProfileHub(props: Props) {
       setDocumentDraft("");
       setSkillTags([]);
       setTitleTags([]);
+      setSkillsExpanded(false);
       return;
     }
 
@@ -382,6 +391,7 @@ export default function AccountProfileHub(props: Props) {
     setDocumentDraft(selectedProfile.sourceDocumentId || "");
     setSkillTags(selectedProfile.normalizedSkills);
     setTitleTags(selectedProfile.normalizedTitles);
+    setSkillsExpanded(false);
   }, [selectedProfile]);
 
   useEffect(() => {
@@ -781,7 +791,18 @@ export default function AccountProfileHub(props: Props) {
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
                         Skills
                       </p>
-                      <span className="text-xs text-slate-500">{skillTags.length} total</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">{skillTags.length} total</span>
+                        {skillTags.length > 12 ? (
+                          <button
+                            type="button"
+                            onClick={() => setSkillsExpanded((current) => !current)}
+                            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+                          >
+                            {skillsExpanded ? "Collapse" : `Expand (+${hiddenSkillCount})`}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="mt-3 flex gap-2">
@@ -808,7 +829,7 @@ export default function AccountProfileHub(props: Props) {
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       {skillTags.length > 0 ? (
-                        skillTags.map((item) => (
+                        visibleSkillTags.map((item) => (
                           <TagChip
                             key={item}
                             value={item}
@@ -820,6 +841,12 @@ export default function AccountProfileHub(props: Props) {
                         <span className="text-xs text-slate-500">No skill metadata stored yet.</span>
                       )}
                     </div>
+
+                    {!skillsExpanded && hiddenSkillCount > 0 ? (
+                      <p className="mt-3 text-xs text-slate-500">
+                        {hiddenSkillCount} more skill{hiddenSkillCount === 1 ? "" : "s"} hidden to keep this panel tidy.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
