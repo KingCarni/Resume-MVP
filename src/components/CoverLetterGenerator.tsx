@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
+import { sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 
 /** ---------------- Types ---------------- */
 
@@ -98,6 +99,20 @@ type ApplyPackBundle = {
     postedAt?: string | null;
     jobContextText?: string;
   };
+};
+
+type LatestResumePayload = {
+  ok: boolean;
+  item?: {
+    id: string;
+    title?: string | null;
+    template?: string | null;
+    text?: string | null;
+    html?: string | null;
+    structuredData?: StructuredResumeSnapshot | null;
+    sourceFileName?: string | null;
+    createdAt?: string;
+  } | null;
 };
 
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
@@ -1821,14 +1836,21 @@ export default function CoverLetterGenerator() {
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
   const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const trackedCoverLetterEntryRef = useRef("");
+  const latestResumeHydratedRef = useRef(false);
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
+
+  const shouldHydrateJobContext = useMemo(() => {
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    return !!queryJobId || queryBundle === "apply-pack";
+  }, [searchParamsKey]);
 
   const isApplyPackFlow = useMemo(() => {
     const queryBundle = String(searchParams.get("bundle") || "").trim();
     const storedBundle = String(applyPackBundle?.bundle || "").trim();
-    return queryBundle === "apply-pack" || storedBundle === "apply-pack";
-  }, [searchParams, applyPackBundle]);
+    return shouldHydrateJobContext && (queryBundle === "apply-pack" || storedBundle === "apply-pack");
+  }, [shouldHydrateJobContext, searchParams, applyPackBundle]);
 
   const applyPackPricingEligible = useMemo(() => {
     if (!isApplyPackFlow || jobTextOverrideMode) return false;
@@ -1862,7 +1884,7 @@ export default function CoverLetterGenerator() {
 
   const [coverLetterDraft, setCoverLetterDraft] = useState("");
 
-  const applyPackActive = !!applyPackBundle?.job?.jobContextText;
+  const applyPackActive = shouldHydrateJobContext && !!applyPackBundle?.job?.jobContextText;
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1872,7 +1894,60 @@ export default function CoverLetterGenerator() {
 
 
   useEffect(() => {
+    if (latestResumeHydratedRef.current) return;
+    if (file || resumeText.trim()) return;
+
+    let cancelled = false;
+
+    async function hydrateLatestSavedResume() {
+      try {
+        const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
+        const payload = (await response.json().catch(() => null)) as LatestResumePayload | null;
+
+        if (!response.ok || !payload?.ok || !payload.item || cancelled) return;
+
+        const latest = payload.item;
+        const structured = sanitizeStructuredResumeSnapshot(latest.structuredData || null);
+        const structuredText = structured ? structuredSnapshotToResumeText(structured) : "";
+        const nextText = String(latest.text || "").trim() || structuredText;
+
+        latestResumeHydratedRef.current = true;
+
+        if (nextText) setResumeText(nextText);
+
+        if (structured?.profile) {
+          setProfile((current) => ({
+            fullName: current.fullName || structured.profile.fullName || "",
+            locationLine: current.locationLine || structured.profile.locationLine || "",
+            email: current.email || structured.profile.email || "",
+            phone: current.phone || structured.profile.phone || "",
+            linkedin: current.linkedin || structured.profile.linkedin || structured.profile.portfolio || "",
+          }));
+        }
+
+        if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
+          setTemplate(latest.template as ResumeTemplateId);
+        }
+      } catch {
+        // ignore hydrate failure
+      }
+    }
+
+    void hydrateLatestSavedResume();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [file, resumeText]);
+
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!shouldHydrateJobContext) {
+      setApplyPackBundle(null);
+      setJobTextOverrideMode(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -1996,12 +2071,6 @@ export default function CoverLetterGenerator() {
       },
     });
   }, [applyPackBundle, searchParamsKey]);
-
-  function syncJobTextFromApplyPack() {
-    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
-    if (savedJobText) setJobText(savedJobText);
-    setJobTextOverrideMode(false);
-  }
 
   function clearFile() {
     setFile(null);
@@ -2201,7 +2270,7 @@ export default function CoverLetterGenerator() {
   const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-black">
+    <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-white">
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -2214,12 +2283,12 @@ export default function CoverLetterGenerator() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Inputs */}
         <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <h2 className="text-base font-extrabold text-black dark:text-black">Inputs</h2>
+          <h2 className="text-base font-extrabold text-black dark:text-white">Resume source</h2>
 
           <div className="mt-3 grid gap-3">
             {/* File input */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
+              <div className="text-xs font-extrabold text-black/90 dark:text-white/80">
                 {applyPackActive ? "Resume file (recommended)" : "Resume file (optional)"}
               </div>
               <input
@@ -2238,7 +2307,7 @@ export default function CoverLetterGenerator() {
                   setError(null);
                   setFile(f);
                 }}
-                className="block w-full text-sm text-black dark:text-black
+                className="block w-full text-sm text-black dark:text-white
                 file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
                 file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
                 file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
@@ -2247,27 +2316,27 @@ export default function CoverLetterGenerator() {
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/90 dark:text-black/90">{file.name}</div>
+                  <div className="text-xs font-extrabold text-black/90 dark:text-white/80">{file.name}</div>
                   <button
                     type="button"
                     onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100 text-black dark:text-black"
+                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100 text-black dark:text-white"
                   >
                     Clear
                   </button>
                 </div>
               ) : null}
-              <div className="text-xs text-black/60 dark:text-black/90">
+              <div className="text-xs text-black/60 dark:text-white/80">
                 {applyPackActive
-                ? "Your saved job is already loaded below. Upload a resume file for the cleanest job-aware cover letter, or paste resume text instead."
-                : "If you upload a file, the generator extracts text server-side (PDF/DOCX/TXT)."}
+                ? "Your latest saved resume is loaded when available. Upload a new file only if you want to replace it for this cover letter."
+                : "If you upload a file, it replaces the currently loaded saved resume text for this cover letter."}
               </div>
             </label>
 
                   {/* Resume text */}
           <label className="grid gap-1.5">
             <div className="text-xs font-extrabold text-black/90">
-              {applyPackActive ? "Resume text (optional override)" : "Resume text (paste if not uploading)"}
+              {applyPackActive ? "Resume text" : "Resume text (paste if not uploading)"}
             </div>
 
             <textarea
@@ -2276,61 +2345,32 @@ export default function CoverLetterGenerator() {
               rows={applyPackActive ? 6 : 8}
               className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm text-black outline-none
                         placeholder:text-black/80 focus:border-black/20
-                        dark:bg-white dark:text-black dark:placeholder:text-black/90"
+                        dark:bg-white dark:text-white dark:placeholder:text-white/40"
             />
           </label>
 
             {/* Job text */}
             <label className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">
-                  {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
-                </div>
-
-                {applyPackBundle?.job?.jobContextText ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setJobTextOverrideMode((v) => !v)}
-                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
-                    >
-                      {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={syncJobTextFromApplyPack}
-                      className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
-                    >
-                      Re-sync saved job
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
+              <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Job posting text</div>
               <textarea
                 value={jobText}
-                onChange={(e) => setJobText(e.target.value)}
+                onChange={(e) => {
+                  setJobText(e.target.value);
+                  if (applyPackActive) setJobTextOverrideMode(true);
+                }}
                 rows={8}
-                placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Paste job posting here"}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
+                placeholder="Paste job posting here"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:placeholder:text-white/40 dark:focus:border-white/20"
               />
-
-              <div className="text-xs text-black/70 dark:text-black/80">
-                {applyPackBundle?.job?.jobContextText
-                  ? jobTextOverrideMode
-                    ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
-                    : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
-                  : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
-              </div>
             </label>
 
             {/* Template selector */}
             <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Template</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Template</div>
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-black"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -2338,42 +2378,42 @@ export default function CoverLetterGenerator() {
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-black/90 dark:text-black/90">Selected: {templateLabel}</div>
+              <div className="text-xs text-black/90 dark:text-white/80">Selected: {templateLabel}</div>
             </label>
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">Header details</div>
+              <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-white/80">Header details</div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
                 <input
                   value={profile.locationLine}
                   onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
                 <input
                   value={profile.email}
                   onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
                 <input
                   value={profile.phone}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
                 <input
                   value={profile.linkedin}
                   onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20 sm:col-span-2"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20 sm:col-span-2"
                 />
               </div>
             </div>
@@ -2382,12 +2422,12 @@ export default function CoverLetterGenerator() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Tone</div>
+                  <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Tone</div>
                   <button
                     type="button"
                     onClick={handleRecommendTone}
                     disabled={!jobText.trim() || toneLoading}
-                    className="rounded-lg border border-black/10 bg-emerald-500 px-2 py-1 text-xs font-extrabold text-black hover:bg-green/25 disabled:opacity-90 dark:border-black/20 dark:bg-green/60 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-lg border border-black/10 bg-emerald-500 px-2 py-1 text-xs font-extrabold text-black hover:bg-green/25 disabled:opacity-90 dark:border-black/20 dark:bg-green/60 dark:text-white dark:hover:bg-white/15"
                     title="Uses /api/recommend-tone if available; otherwise a heuristic."
                   >
                     {toneLoading ? "Recommending…" : "Recommended tone"}
@@ -2396,16 +2436,16 @@ export default function CoverLetterGenerator() {
                 <input
                   value={tone}
                   onChange={(e) => setTone(e.target.value)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                 />
               </label>
 
               <label className="grid gap-1.5">
-                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Length</div>
+                <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Length</div>
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-black"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
                 >
                   <option value="short">Short</option>
                   <option value="standard">Standard</option>
@@ -2414,14 +2454,14 @@ export default function CoverLetterGenerator() {
               </label>
             </div>
 
-            <label className="flex items-center gap-2 text-black dark:text-black">
+            <label className="flex items-center gap-2 text-black dark:text-white">
               <input
                 type="checkbox"
                 checked={includeBullets}
                 onChange={(e) => setIncludeBullets(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-xs font-extrabold text-black/90 dark:text-black/90">
+              <span className="text-xs font-extrabold text-black/90 dark:text-white/80">
                 Include 3 impact bullets
               </span>
             </label>
@@ -2429,8 +2469,8 @@ export default function CoverLetterGenerator() {
             {/* Signature */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Signature block</div>
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Signature block</div>
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-white/80">
                   <input
                     type="checkbox"
                     checked={includeSignature}
@@ -2446,19 +2486,19 @@ export default function CoverLetterGenerator() {
                   value={signatureClosing}
                   onChange={(e) => setSignatureClosing(e.target.value)}
                   placeholder='Closing (optional) e.g. "Sincerely,"'
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                   disabled={!includeSignature}
                 />
                 <input
                   value={signatureName}
                   onChange={(e) => setSignatureName(e.target.value)}
                   placeholder="Signature name (optional — defaults to Full name)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 disabled:opacity-80 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
                   disabled={!includeSignature}
                 />
               </div>
 
-              <div className="mt-2 text-xs text-black/90 dark:text-black/90">
+              <div className="mt-2 text-xs text-black/90 dark:text-white/80">
                 Leave “Closing” empty if your generated text already includes a sign-off (prevents duplicate “Sincerely”).
               </div>
             </div>
@@ -2474,7 +2514,7 @@ export default function CoverLetterGenerator() {
                 {loading ? "Generating…" : applyPackPricingEligible ? "Generate Cover Letter (included in 8-credit pack)" : "Generate Cover Letter (5 credits)"}
               </button>
 
-              <div className="ml-auto text-xs font-extrabold text-black/90 dark:text-black/90">
+              <div className="ml-auto text-xs font-extrabold text-black/90 dark:text-white/80">
                 Preview is live-editable after generation.
               </div>
             </div>
@@ -2491,7 +2531,7 @@ export default function CoverLetterGenerator() {
                   type="button"
                   onClick={copyToClipboard}
                   disabled={!coverLetterDraft}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
                 >
                   Copy
                 </button>
@@ -2506,16 +2546,12 @@ export default function CoverLetterGenerator() {
                     }
                   }}
                   disabled={!coverLetterDraft}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-90 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
                 >
                   Preview
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <div className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black dark:border-white/10 dark:bg-black/20 dark:text-black">
-                    .pdf
-                  </div>
-
                   <button
                     type="button"
                     disabled={!coverLetterDraft}
@@ -2538,7 +2574,7 @@ export default function CoverLetterGenerator() {
 
           {/* Live editor */}
           <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-white/80">
               Edit cover letter (live preview)
             </div>
             <textarea
@@ -2546,7 +2582,7 @@ export default function CoverLetterGenerator() {
               onChange={(e) => setCoverLetterDraft(e.target.value)}
               rows={12}
               placeholder="Generate a cover letter, then edit it here…"
-              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm leading-relaxed outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-white dark:focus:border-white/20"
             />
           </div>
         </section>
