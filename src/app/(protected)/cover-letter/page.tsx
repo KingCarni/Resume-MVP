@@ -1,10 +1,37 @@
-// src/app/(protected)/cover-letter/page.tsx
 import CoverLetterGenerator from "@/components/CoverLetterGenerator";
 import DashboardShell from "@/components/layout/DashboardShell";
 import CreditsPill from "@/components/Billing/CreditsPill";
 import Link from "next/link";
 
-export default function Page() {
+type SearchParamsValue = string | string[] | undefined;
+
+function readParam(value: SearchParamsValue) {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function buildBuyCreditsHref(searchParams: Record<string, SearchParamsValue>) {
+  const jobId = readParam(searchParams.jobId).trim();
+  if (!jobId) return "/buy-credits";
+
+  const params = new URLSearchParams({
+    source: "jobs",
+    route: "/cover-letter",
+    jobId,
+    mode: readParam(searchParams.bundle) === "apply-pack" ? "apply_pack" : "cover_letter",
+  });
+
+  const resumeProfileId = readParam(searchParams.resumeProfileId).trim();
+  if (resumeProfileId) params.set("resumeProfileId", resumeProfileId);
+
+  return `/buy-credits?${params.toString()}`;
+}
+
+export default async function Page(props: {
+  searchParams?: Promise<Record<string, SearchParamsValue>>;
+}) {
+  const searchParams = (await props.searchParams) ?? {};
+  const buyCreditsHref = buildBuyCreditsHref(searchParams);
+
   return (
     <DashboardShell
       title="Cover Letter Generator"
@@ -13,13 +40,9 @@ export default function Page() {
         <div className="flex items-center gap-2">
           <CreditsPill />
 
-          {/* Simple header button (NOT the big component) */}
-          <Link
-          href="/buy-credits"
-          className="shell-primary-btn"
-        >
-          Buy Credits
-        </Link>
+          <Link href={buyCreditsHref} className="shell-primary-btn">
+            Buy Credits
+          </Link>
 
           <a
             href="https://git-a-job.com/donate"

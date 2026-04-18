@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <DashboardShell
       title="Buy Credits"
-      subtitle="Purchase credits to power AI rewrites and premium features."
+      subtitle="Purchase credits to power AI rewrites, jobs tailoring, and premium features."
       topRight={
         <div className="flex items-center gap-2">
           <CreditsPill />

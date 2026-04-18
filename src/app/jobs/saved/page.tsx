@@ -298,6 +298,26 @@ export default function SavedJobsPage() {
         );
       }
 
+      trackJobEvent({
+        event:
+          mode === "resume"
+            ? "job_detail_tailor_resume_clicked"
+            : mode === "cover_letter"
+              ? "job_detail_cover_letter_clicked"
+              : "job_detail_tailor_both_clicked",
+        jobId: job.id,
+        resumeProfileId: selectedProfileId,
+        company: json.item.company,
+        jobTitle: json.item.title,
+        sourceSlug: job.source.slug,
+        route: "/jobs/saved",
+        matchScore: job.match?.totalScore ?? null,
+        mode,
+        meta: {
+          source: "saved_jobs",
+        },
+      });
+
       const destination =
         mode === "resume"
           ? `/resume?jobId=${encodeURIComponent(job.id)}&resumeProfileId=${encodeURIComponent(selectedProfileId)}`

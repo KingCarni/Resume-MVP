@@ -23,7 +23,10 @@ export type JobAnalyticsEventName =
   | "job_cover_letter_credit_charged"
   | "job_apply_pack_started"
   | "job_apply_pack_completed"
-  | "job_apply_pack_failed";
+  | "job_apply_pack_failed"
+  | "job_buy_credits_view"
+  | "job_buy_credits_checkout_started"
+  | "job_buy_credits_purchase_completed";
 
 export type JobAnalyticsPayload = {
   event: JobAnalyticsEventName;

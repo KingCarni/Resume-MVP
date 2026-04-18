@@ -10,10 +10,23 @@ export const dynamic = "force-dynamic";
 
 type Pack = "standard" | "plus" | "pro" | "premium";
 
-type ReqBody = {
-  pack: Pack;
+type JobsCheckoutAnalytics = {
+  source?: string;
+  route?: string;
+  jobId?: string;
+  resumeProfileId?: string;
+  company?: string;
+  jobTitle?: string;
+  sourceSlug?: string;
+  mode?: "resume" | "cover_letter" | "apply_pack" | "browse";
 };
 
+type ReqBody = {
+  pack: Pack;
+  analytics?: JobsCheckoutAnalytics;
+};
+
+const BOOT_TAG = "jobs-analytics-v2";
 const PACKS: Record<Pack, { credits: number; amountCents: number; label: string }> = {
   standard: { label: "Standard", credits: 25, amountCents: 500 }, // $5
   plus: { label: "Plus", credits: 75, amountCents: 1000 }, // $10
@@ -37,6 +50,66 @@ function normalizePack(x: unknown): Pack | null {
   return null;
 }
 
+function cleanOptionalString(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeJobsAnalytics(input: unknown): JobsCheckoutAnalytics | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+
+  const source = cleanOptionalString((input as JobsCheckoutAnalytics).source);
+  const jobId = cleanOptionalString((input as JobsCheckoutAnalytics).jobId);
+  if (source !== "jobs" || !jobId) return null;
+
+  const modeRaw = cleanOptionalString((input as JobsCheckoutAnalytics).mode);
+  const mode =
+    modeRaw === "resume" || modeRaw === "cover_letter" || modeRaw === "apply_pack" || modeRaw === "browse"
+      ? modeRaw
+      : null;
+
+  return {
+    source,
+    route: cleanOptionalString((input as JobsCheckoutAnalytics).route) ?? "/buy-credits",
+    jobId,
+    resumeProfileId: cleanOptionalString((input as JobsCheckoutAnalytics).resumeProfileId),
+    company: cleanOptionalString((input as JobsCheckoutAnalytics).company),
+    jobTitle: cleanOptionalString((input as JobsCheckoutAnalytics).jobTitle),
+    sourceSlug: cleanOptionalString((input as JobsCheckoutAnalytics).sourceSlug),
+    mode: mode ?? undefined,
+  };
+}
+
+async function writeJobsPurchaseEvent(args: {
+  userId: string;
+  event: string;
+  creditsCost: number;
+  analytics: JobsCheckoutAnalytics;
+  meta?: Record<string, unknown>;
+}) {
+  await prisma.event.create({
+    data: {
+      userId: args.userId,
+      type: "purchase",
+      metaJson: {
+        tag: BOOT_TAG,
+        category: "jobs",
+        event: args.event,
+        path: args.analytics.route ?? "/buy-credits",
+        route: args.analytics.route ?? "/buy-credits",
+        jobId: args.analytics.jobId ?? null,
+        resumeProfileId: args.analytics.resumeProfileId ?? null,
+        company: args.analytics.company ?? null,
+        jobTitle: args.analytics.jobTitle ?? null,
+        sourceSlug: args.analytics.sourceSlug ?? null,
+        mode: args.analytics.mode ?? null,
+        creditsCost: args.creditsCost,
+        meta: args.meta ?? null,
+      },
+    },
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -58,6 +131,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as Partial<ReqBody>;
     const pack: Pack = normalizePack(body.pack) ?? "standard";
+    const analytics = normalizeJobsAnalytics(body.analytics);
 
     const packInfo = PACKS[pack];
     if (!packInfo) {
@@ -68,6 +142,19 @@ export async function POST(req: Request) {
     const appUrl = getAppUrl(req);
 
     const idemKey = `checkout:${dbUser.id}:${pack}:${Date.now()}`;
+
+    if (analytics?.jobId) {
+      await writeJobsPurchaseEvent({
+        userId: dbUser.id,
+        event: "job_buy_credits_checkout_started",
+        creditsCost: credits,
+        analytics,
+        meta: {
+          pack,
+          source: analytics.source,
+        },
+      });
+    }
 
     const checkout = await stripe.checkout.sessions.create(
       {
@@ -90,6 +177,14 @@ export async function POST(req: Request) {
           credits: String(credits),
           pack,
           email,
+          analyticsSource: analytics?.source ?? "",
+          analyticsRoute: analytics?.route ?? "",
+          analyticsJobId: analytics?.jobId ?? "",
+          analyticsResumeProfileId: analytics?.resumeProfileId ?? "",
+          analyticsCompany: analytics?.company ?? "",
+          analyticsJobTitle: analytics?.jobTitle ?? "",
+          analyticsSourceSlug: analytics?.sourceSlug ?? "",
+          analyticsMode: analytics?.mode ?? "",
         },
       },
       { idempotencyKey: idemKey }

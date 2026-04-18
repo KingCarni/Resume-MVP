@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const BOOT_TAG = "jobs-analytics-v2";
+
 function jsonOk(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
     ...init,
@@ -23,6 +25,46 @@ export async function GET() {
 function toInt(n: unknown) {
   const x = typeof n === "number" ? n : Number(String(n ?? ""));
   return Number.isFinite(x) ? Math.trunc(x) : NaN;
+}
+
+function cleanOptionalString(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+async function writeJobsPurchaseCompletedEvent(args: {
+  userId: string;
+  credits: number;
+  metadata: Record<string, string | null>;
+  stripeSessionId: string;
+  livemode: boolean;
+}) {
+  if (args.metadata.analyticsSource !== "jobs" || !args.metadata.analyticsJobId) return;
+
+  await prisma.event.create({
+    data: {
+      userId: args.userId,
+      type: "purchase",
+      metaJson: {
+        tag: BOOT_TAG,
+        category: "jobs",
+        event: "job_buy_credits_purchase_completed",
+        route: args.metadata.analyticsRoute ?? "/buy-credits",
+        path: args.metadata.analyticsRoute ?? "/buy-credits",
+        jobId: args.metadata.analyticsJobId,
+        resumeProfileId: args.metadata.analyticsResumeProfileId ?? null,
+        company: args.metadata.analyticsCompany ?? null,
+        jobTitle: args.metadata.analyticsJobTitle ?? null,
+        sourceSlug: args.metadata.analyticsSourceSlug ?? null,
+        mode: args.metadata.analyticsMode ?? null,
+        creditsCost: args.credits,
+        meta: {
+          stripeSessionId: args.stripeSessionId,
+          livemode: args.livemode,
+        },
+      },
+    },
+  });
 }
 
 export async function POST(req: Request) {
@@ -46,14 +88,12 @@ export async function POST(req: Request) {
     return jsonOk({ ok: false, error: "Invalid signature" }, { status: 400 });
   }
 
-  // We only credit on successful checkout completion
   if (event.type !== "checkout.session.completed") {
     return jsonOk({ ok: true, ignored: event.type });
   }
 
   const session = event.data.object as Stripe.Checkout.Session;
 
-  // Only credit if actually paid
   if (session.payment_status && session.payment_status !== "paid") {
     console.log("[stripe-webhook] ignoring unpaid session", {
       sessionId: session.id,
@@ -62,20 +102,18 @@ export async function POST(req: Request) {
     return jsonOk({ ok: true, ignored: `payment_status=${session.payment_status}` });
   }
 
-  // Optional: prevent mixing test/live (leave unset if you don’t care)
   const expectLive =
     process.env.STRIPE_EXPECT_LIVEMODE === "true"
       ? true
       : process.env.STRIPE_EXPECT_LIVEMODE === "false"
-      ? false
-      : undefined;
+        ? false
+        : undefined;
 
   if (typeof expectLive === "boolean" && event.livemode !== expectLive) {
     console.error("[stripe-webhook] livemode mismatch", { expectLive, got: event.livemode });
     return jsonOk({ ok: true, ignored: "livemode_mismatch" });
   }
 
-  // REQUIRED METADATA: your checkout session MUST set these
   const userId = String(session.metadata?.userId ?? "").trim();
   const credits = toInt(session.metadata?.credits);
   const pack = String(session.metadata?.pack ?? "").trim() || null;
@@ -86,12 +124,22 @@ export async function POST(req: Request) {
       eventId: event.id,
       metadata: session.metadata,
     });
-    // Return 200 so Stripe doesn’t keep retrying forever
     return jsonOk({ ok: true, ignored: "missing_metadata_userId_or_credits" });
   }
 
-  const stripeSessionId = session.id; // cs_...
-  const ref = `stripe_checkout_session:${stripeSessionId}`; // best idempotency key
+  const analyticsMetadata = {
+    analyticsSource: cleanOptionalString(session.metadata?.analyticsSource),
+    analyticsRoute: cleanOptionalString(session.metadata?.analyticsRoute),
+    analyticsJobId: cleanOptionalString(session.metadata?.analyticsJobId),
+    analyticsResumeProfileId: cleanOptionalString(session.metadata?.analyticsResumeProfileId),
+    analyticsCompany: cleanOptionalString(session.metadata?.analyticsCompany),
+    analyticsJobTitle: cleanOptionalString(session.metadata?.analyticsJobTitle),
+    analyticsSourceSlug: cleanOptionalString(session.metadata?.analyticsSourceSlug),
+    analyticsMode: cleanOptionalString(session.metadata?.analyticsMode),
+  };
+
+  const stripeSessionId = session.id;
+  const ref = `stripe_checkout_session:${stripeSessionId}`;
 
   try {
     const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
@@ -101,13 +149,12 @@ export async function POST(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
-      // Idempotency via @@unique([userId, ref])
       try {
         await tx.creditsLedger.create({
           data: {
             userId,
             delta: credits,
-            reason: "purchase", // ✅ standardize
+            reason: "purchase",
             ref,
           },
         });
@@ -117,6 +164,34 @@ export async function POST(req: Request) {
           return;
         }
         throw e;
+      }
+
+      if (analyticsMetadata.analyticsSource === "jobs" && analyticsMetadata.analyticsJobId) {
+        await tx.event.create({
+          data: {
+            userId,
+            type: "purchase",
+            metaJson: {
+              tag: BOOT_TAG,
+              category: "jobs",
+              event: "job_buy_credits_purchase_completed",
+              route: analyticsMetadata.analyticsRoute ?? "/buy-credits",
+              path: analyticsMetadata.analyticsRoute ?? "/buy-credits",
+              jobId: analyticsMetadata.analyticsJobId,
+              resumeProfileId: analyticsMetadata.analyticsResumeProfileId ?? null,
+              company: analyticsMetadata.analyticsCompany ?? null,
+              jobTitle: analyticsMetadata.analyticsJobTitle ?? null,
+              sourceSlug: analyticsMetadata.analyticsSourceSlug ?? null,
+              mode: analyticsMetadata.analyticsMode ?? null,
+              creditsCost: credits,
+              meta: {
+                stripeSessionId,
+                livemode: event.livemode,
+                pack,
+              },
+            },
+          },
+        });
       }
 
       console.log("[stripe-webhook] credited", {
