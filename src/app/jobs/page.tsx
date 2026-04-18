@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trackJobEvent } from "@/lib/analytics/jobs";
+import CreditsPill from "@/components/Billing/CreditsPill";
 
 type ResumeProfileItem = {
   id: string;
@@ -181,6 +182,66 @@ function normalizeInputValue(value: string) {
   return value.trim();
 }
 
+const JOBS_PAGE_STATE_KEY = "jobsPageState:v2";
+
+type PersistedJobsPageState = {
+  selectedProfileId?: string;
+  search?: string;
+  location?: string;
+  remote?: RemoteFilter;
+  seniority?: string;
+  minSalary?: string;
+  sort?: SortMode;
+  page?: number;
+};
+
+function isRemoteFilter(value: unknown): value is RemoteFilter {
+  return (
+    value === "all" ||
+    value === "remote" ||
+    value === "hybrid" ||
+    value === "onsite" ||
+    value === "unknown"
+  );
+}
+
+function isSortMode(value: unknown): value is SortMode {
+  return value === "match" || value === "newest" || value === "salary";
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function buildCardSummary(job: JobListItem, hasProfile: boolean) {
+  if (!hasProfile) {
+    return "Browsing without a profile. Select one anytime to unlock fit scoring and stronger tailoring signals.";
+  }
+
+  const base = job.match?.explanationShort?.trim();
+  const matchingSkills = toStringArray(job.match?.matchingSkills).slice(0, 2);
+  const missingSkills = toStringArray(job.match?.missingSkills).slice(0, 2);
+
+  if (!base) {
+    return "Open the detail page to inspect the fit and launch job-targeted tailoring.";
+  }
+
+  const lowerBase = base.toLowerCase();
+  const extras: string[] = [];
+
+  if (matchingSkills.length > 0 && !lowerBase.includes("skills match:")) {
+    extras.push(`Matching skills: ${matchingSkills.join(", ")}.`);
+  }
+
+  if (missingSkills.length > 0 && !lowerBase.includes("gap to close:") && !lowerBase.includes("address ")) {
+    extras.push(`Gap to close: ${missingSkills.join(", ")}.`);
+  }
+
+  if (!extras.length) return base;
+  return `${base} ${extras[0]}`;
+}
+
 function EmptyJobsState(props: {
   hasProfile: boolean;
   onResetFilters: () => void;
@@ -220,7 +281,6 @@ export default function JobsPage() {
   const [profiles, setProfiles] = useState<ResumeProfileItem[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [profilesError, setProfilesError] = useState<string | null>(null);
-  const [profileSeedLoading, setProfileSeedLoading] = useState(false);
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState<string | null>(null);
@@ -246,13 +306,14 @@ export default function JobsPage() {
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const trackedFeedViewKeyRef = useRef("");
   const trackedProfileSelectionRef = useRef("");
+  const [pageStateReady, setPageStateReady] = useState(false);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) || null,
     [profiles, selectedProfileId],
   );
 
-  const defaultSort: SortMode = selectedProfileId ? "match" : "newest";
+  const defaultSort: SortMode = "match";
 
   const filtersDirty =
     normalizeInputValue(searchInput) !== appliedSearch ||
@@ -262,20 +323,88 @@ export default function JobsPage() {
     normalizeInputValue(minSalaryInput) !== appliedMinSalary ||
     sortInput !== appliedSort;
 
-  useEffect(() => {
-    const stored =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("activeResumeProfileId")
-        : null;
-    if (stored) setSelectedProfileId(stored);
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    const storedProfileId = window.localStorage.getItem("activeResumeProfileId") || "";
+    const rawState = window.localStorage.getItem(JOBS_PAGE_STATE_KEY);
+
+    if (rawState) {
+      try {
+        const parsed = JSON.parse(rawState) as PersistedJobsPageState;
+        const nextSearch = normalizeInputValue(parsed.search ?? "");
+        const nextLocation = normalizeInputValue(parsed.location ?? "");
+        const nextRemote = isRemoteFilter(parsed.remote) ? parsed.remote : "all";
+        const nextSeniority = typeof parsed.seniority === "string" && parsed.seniority.trim() ? parsed.seniority : "all";
+        const nextMinSalary = normalizeInputValue((parsed.minSalary ?? "").replace(/[^\d]/g, ""));
+        const nextSort = isSortMode(parsed.sort) ? parsed.sort : "match";
+        const nextPage = typeof parsed.page === "number" && Number.isFinite(parsed.page) && parsed.page > 0
+          ? Math.floor(parsed.page)
+          : 1;
+
+        setSearchInput(nextSearch);
+        setAppliedSearch(nextSearch);
+        setLocationInput(nextLocation);
+        setAppliedLocation(nextLocation);
+        setRemoteInput(nextRemote);
+        setAppliedRemote(nextRemote);
+        setSeniorityInput(nextSeniority);
+        setAppliedSeniority(nextSeniority);
+        setMinSalaryInput(nextMinSalary);
+        setAppliedMinSalary(nextMinSalary);
+        setSortInput(nextSort);
+        setAppliedSort(nextSort);
+        setPage(nextPage);
+
+        if (storedProfileId) {
+          setSelectedProfileId(storedProfileId);
+        } else if (typeof parsed.selectedProfileId === "string") {
+          setSelectedProfileId(parsed.selectedProfileId);
+        }
+      } catch {
+        if (storedProfileId) setSelectedProfileId(storedProfileId);
+      }
+    } else if (storedProfileId) {
+      setSelectedProfileId(storedProfileId);
+    }
+
+    setPageStateReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !pageStateReady) return;
     if (selectedProfileId)
       window.localStorage.setItem("activeResumeProfileId", selectedProfileId);
     else window.localStorage.removeItem("activeResumeProfileId");
-  }, [selectedProfileId]);
+  }, [pageStateReady, selectedProfileId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !pageStateReady) return;
+
+    const payload: PersistedJobsPageState = {
+      selectedProfileId,
+      search: appliedSearch,
+      location: appliedLocation,
+      remote: appliedRemote,
+      seniority: appliedSeniority,
+      minSalary: appliedMinSalary,
+      sort: appliedSort,
+      page,
+    };
+
+    window.localStorage.setItem(JOBS_PAGE_STATE_KEY, JSON.stringify(payload));
+  }, [
+    appliedLocation,
+    appliedMinSalary,
+    appliedRemote,
+    appliedSearch,
+    appliedSeniority,
+    appliedSort,
+    page,
+    pageStateReady,
+    selectedProfileId,
+  ]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -283,12 +412,6 @@ export default function JobsPage() {
     return () => window.clearTimeout(timeout);
   }, [feedback]);
 
-  useEffect(() => {
-    if (!selectedProfileId) {
-      if (sortInput === "match") setSortInput("newest");
-      if (appliedSort === "match") setAppliedSort("newest");
-    }
-  }, [selectedProfileId, sortInput, appliedSort]);
 
   useEffect(() => {
     setPage(1);
@@ -317,7 +440,7 @@ export default function JobsPage() {
               ? window.localStorage.getItem("activeResumeProfileId")
               : null;
           if (stored && items.some((item) => item.id === stored)) return stored;
-          return "";
+          return items[0]?.id ?? "";
         });
       }
     } catch (error) {
@@ -359,6 +482,8 @@ export default function JobsPage() {
   ]);
 
   useEffect(() => {
+    if (!pageStateReady) return;
+
     let active = true;
     async function loadJobs() {
       setJobsLoading(true);
@@ -402,82 +527,8 @@ export default function JobsPage() {
     return () => {
       active = false;
     };
-  }, [queryString]);
+  }, [pageStateReady, queryString]);
 
-  async function createQuickProfile() {
-    setProfileSeedLoading(true);
-    setProfilesError(null);
-
-    try {
-      const createdAtLabel = new Intl.DateTimeFormat("en-CA", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(new Date());
-
-      const response = await fetch("/api/resume-profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `Quick Test Resume Profile • ${createdAtLabel}`,
-          rawText:
-            "Senior QA Automation Engineer with experience in Selenium, Playwright, Cypress, TypeScript, API testing, CI/CD, Git, Jira, Agile, and test strategy. Built regression suites, improved release confidence, worked across web applications, and collaborated with engineering and product teams in remote and hybrid environments.",
-          summary:
-            "Quick bootstrap profile for testing AI Job Match until automatic profile creation is wired into the resume pipeline.",
-          skills: [
-            "Selenium",
-            "Playwright",
-            "Cypress",
-            "TypeScript",
-            "API testing",
-            "CI/CD",
-            "Git",
-            "Jira",
-            "Agile",
-            "Quality Assurance",
-            "Automation Testing",
-          ],
-          titles: [
-            "QA Automation Engineer",
-            "SDET",
-            "Quality Assurance Engineer",
-          ],
-          keywords: [
-            "selenium",
-            "playwright",
-            "automation",
-            "testing",
-            "typescript",
-            "api",
-            "quality assurance",
-          ],
-          yearsExperience: 6,
-          seniority: "senior",
-        }),
-      });
-
-      const json = (await response.json()) as { ok: boolean; error?: string };
-      if (!response.ok || !json.ok) {
-        throw new Error(json.error || "Could not create a test profile.");
-      }
-
-      setFeedback({
-        tone: "success",
-        message:
-          "New quick test profile created. You can now switch between profiles instead of overwriting the last one.",
-      });
-      await loadProfiles();
-    } catch (error) {
-      setProfilesError(
-        error instanceof Error
-          ? error.message
-          : "Could not create a test profile.",
-      );
-    } finally {
-      setProfileSeedLoading(false);
-    }
-  }
 
   function clearProfile() {
     setSelectedProfileId("");
@@ -715,6 +766,40 @@ export default function JobsPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
+      <header className="shell-wrap pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl">
+              Git-a-Job
+            </Link>
+            <div className="hidden items-center gap-2 md:flex">
+              <Link href="/jobs" className="shell-nav-link">
+                Jobs
+              </Link>
+              <Link href="/resume" className="shell-nav-link">
+                Resume
+              </Link>
+              <Link href="/cover-letter" className="shell-nav-link">
+                Cover Letter
+              </Link>
+              <Link href="/account" className="shell-nav-link">
+                Account
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <CreditsPill />
+            <Link href="/donate" className="shell-secondary-btn">
+              Donate
+            </Link>
+            <Link href="/jobs/saved" className="shell-secondary-btn">
+              Saved Jobs
+            </Link>
+          </div>
+        </div>
+      </header>
+
       <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -791,44 +876,10 @@ export default function JobsPage() {
               {profilesError ? (
                 <p className="mt-2 text-xs text-rose-300">{profilesError}</p>
               ) : null}
-              {selectedProfile ? (
-                <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
-                  <p className="text-sm font-semibold text-white">
-                    {selectedProfile.title || "Resume Profile"}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    {selectedProfile.summary || "No summary stored yet."}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedProfile.normalizedTitles.slice(0, 3).map((title) => (
-                      <span
-                        key={title}
-                        className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-medium text-slate-300"
-                      >
-                        {title}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
               {!profilesLoading && profiles.length === 0 ? (
-                <button
-                  type="button"
-                  onClick={createQuickProfile}
-                  disabled={profileSeedLoading}
-                  className="mt-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {profileSeedLoading
-                    ? "Creating test profile..."
-                    : "Create quick test profile"}
-                </button>
-              ) : null}
-              {!profilesLoading ? (
-                <p className="mt-2 text-xs text-slate-400">
-                  {selectedProfileId
-                    ? "Profile selected. Match scores and tailoring shortcuts are active. Multiple profiles can now coexist instead of silently overwriting the last one."
-                    : "No profile selected. Best match is replaced with newest until you choose a profile."}
-                </p>
+                <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-xs leading-6 text-slate-300">
+                  No resume profiles yet. Upload or build one in the Resume tool to unlock best-match ranking.
+                </div>
               ) : null}
             </div>
 
@@ -853,9 +904,6 @@ export default function JobsPage() {
                   Apply
                 </button>
               </div>
-              <p className="mt-2 text-xs text-slate-400">
-                Search understands common shorthand like qa, qas, sdet, ux, ui, pm, and devops.
-              </p>
             </div>
 
             <div>
@@ -886,16 +934,12 @@ export default function JobsPage() {
                 onChange={(event) => setSortInput(event.target.value as SortMode)}
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
               >
-                {selectedProfileId ? (
-                  <option value="match">Best match</option>
-                ) : null}
+                <option value="match">Best match</option>
                 <option value="newest">Newest</option>
                 <option value="salary">Salary</option>
               </select>
               <p className="mt-2 text-xs text-slate-400">
-                {selectedProfileId
-                  ? "Best match uses your selected profile."
-                  : "Choose a profile to unlock Best match."}
+                Best match uses your selected profile when one is available.
               </p>
             </div>
 
@@ -1102,21 +1146,9 @@ export default function JobsPage() {
                             </span>
                           ))}
                         </div>
-                        {job.match?.explanationShort ? (
-                          <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-300">
-                            {job.match.explanationShort}
-                          </p>
-                        ) : hasProfile ? (
-                          <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
-                            Open the detail page to inspect the fit and launch
-                            job-targeted tailoring.
-                          </p>
-                        ) : (
-                          <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
-                            Browsing without a profile. Select one anytime to
-                            unlock fit scoring and stronger tailoring signals.
-                          </p>
-                        )}
+                        <p className="mt-4 max-w-3xl overflow-hidden text-sm leading-6 text-slate-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
+                          {buildCardSummary(job, hasProfile)}
+                        </p>
                       </div>
                       <div className="flex min-w-[220px] flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
                         <div>
