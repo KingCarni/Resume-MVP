@@ -167,7 +167,10 @@ const SEARCH_SYNONYMS: Record<string, string[]> = {
   devops: ["devops", "platform", "site reliability", "sre", "infrastructure"],
 };
 
-const MATCH_BACKFILL_CANDIDATE_LIMIT = 300;
+const DEFAULT_MATCH_CANDIDATE_LIMIT = 140;
+const MIN_MATCH_CANDIDATE_LIMIT = 120;
+const MATCH_CANDIDATE_BUFFER = 80;
+const MAX_MATCH_CANDIDATE_LIMIT = 260;
 
 export function normalizePage(value?: number | null): number {
   if (!value || Number.isNaN(value) || value < 1) return 1;
@@ -377,11 +380,20 @@ function buildMatchCandidateOrderBy(): Prisma.JobOrderByWithRelationInput[] {
   ];
 }
 
-export function getMatchCandidateWindow(_input?: {
+export function getMatchCandidateWindow(input?: {
   page?: number | null;
   pageSize?: number | null;
 }): number {
-  return MATCH_BACKFILL_CANDIDATE_LIMIT;
+  if (!input) return DEFAULT_MATCH_CANDIDATE_LIMIT;
+
+  const page = normalizePage(input.page);
+  const pageSize = normalizePageSize(input.pageSize);
+  const target = page * pageSize + MATCH_CANDIDATE_BUFFER;
+
+  return Math.min(
+    MAX_MATCH_CANDIDATE_LIMIT,
+    Math.max(MIN_MATCH_CANDIDATE_LIMIT, target),
+  );
 }
 
 export async function listMatchCandidateJobIds(
@@ -434,6 +446,7 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
     const candidateItems = await prisma.job.findMany({
       where,
       orderBy: buildMatchCandidateOrderBy(),
+      take: getMatchCandidateWindow({ page, pageSize }),
       include: {
         source: {
           select: {

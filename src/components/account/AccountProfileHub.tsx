@@ -267,6 +267,8 @@ export default function AccountProfileHub(props: Props) {
   const [titleTags, setTitleTags] = useState<string[]>([]);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [deleteProfileLoading, setDeleteProfileLoading] = useState(false);
+  const [deleteDocumentLoading, setDeleteDocumentLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
 
   const selectedProfile = useMemo(
@@ -427,6 +429,100 @@ export default function AccountProfileHub(props: Props) {
     }
     setTitleTags(next);
     setTitleKeywordDraft("");
+  }
+
+
+
+  async function deleteSelectedProfile() {
+    if (!selectedProfile || deleteProfileLoading) return;
+
+    const confirmed = window.confirm(
+      `Delete the profile "${selectedProfile.title || "Resume Profile"}"? This removes the profile metadata only.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeleteProfileLoading(true);
+
+    try {
+      const profileId = selectedProfile.id;
+      const response = await fetch(`/api/resume-profiles?id=${encodeURIComponent(profileId)}`, {
+        method: "DELETE",
+      });
+      const json = (await response.json()) as { ok?: boolean; error?: string; deletedId?: string };
+
+      if (!response.ok || !json.ok || !json.deletedId) {
+        throw new Error(json.error || "Could not delete resume profile.");
+      }
+
+      const remainingProfiles = profiles.filter((profile) => profile.id !== json.deletedId);
+      setProfiles(remainingProfiles);
+
+      const nextSelectedId = remainingProfiles[0]?.id || "";
+      const nextActiveId =
+        activeProfileId === json.deletedId ? remainingProfiles[0]?.id || "" : activeProfileId;
+
+      setSelectedProfileId(nextSelectedId);
+      setActiveProfileId(nextActiveId);
+
+      setFeedback({
+        tone: "success",
+        message: "Resume profile deleted.",
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not delete resume profile.",
+      });
+    } finally {
+      setDeleteProfileLoading(false);
+    }
+  }
+
+  async function deleteSelectedResumeDocument() {
+    if (!selectedProfile || !documentDraft || deleteDocumentLoading) return;
+
+    const attachedDocument = resumeDocuments.find((document) => document.id === documentDraft);
+    const confirmed = window.confirm(
+      `Delete the attached resume "${attachedDocument?.title || "Untitled resume"}"? Any linked profiles will keep their metadata but lose the file attachment.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeleteDocumentLoading(true);
+
+    try {
+      const response = await fetch(`/api/resume-documents?id=${encodeURIComponent(documentDraft)}`, {
+        method: "DELETE",
+      });
+      const json = (await response.json()) as { ok?: boolean; error?: string; deletedId?: string };
+
+      if (!response.ok || !json.ok || !json.deletedId) {
+        throw new Error(json.error || "Could not delete resume attachment.");
+      }
+
+      setResumeDocuments((current) => current.filter((document) => document.id !== json.deletedId));
+      setProfiles((current) =>
+        current.map((profile) =>
+          profile.sourceDocumentId === json.deletedId
+            ? { ...profile, sourceDocumentId: null, sourceDocument: null }
+            : profile,
+        ),
+      );
+      setDocumentDraft("");
+
+      setFeedback({
+        tone: "success",
+        message: "Resume attachment deleted. Linked profiles kept their metadata but no longer point to that file.",
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not delete resume attachment.",
+      });
+    } finally {
+      setDeleteDocumentLoading(false);
+    }
   }
 
   async function saveProfileChanges() {
@@ -701,13 +797,23 @@ export default function AccountProfileHub(props: Props) {
                       Current resume attachment
                     </label>
                     {documentDraft ? (
-                      <button
-                        type="button"
-                        onClick={() => setDocumentDraft("")}
-                        className="text-xs font-semibold text-rose-300 transition hover:text-rose-200"
-                      >
-                        Remove current resume
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setDocumentDraft("")}
+                          className="text-xs font-semibold text-rose-300 transition hover:text-rose-200"
+                        >
+                          Remove current resume
+                        </button>
+                        <button
+                          type="button"
+                          onClick={deleteSelectedResumeDocument}
+                          disabled={deleteDocumentLoading}
+                          className="text-xs font-semibold text-rose-300 transition hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {deleteDocumentLoading ? "Deleting resume..." : "Delete resume"}
+                        </button>
+                      </div>
                     ) : null}
                   </div>
 
@@ -880,6 +986,15 @@ export default function AccountProfileHub(props: Props) {
                       Use as active profile
                     </button>
                   ) : null}
+
+                  <button
+                    type="button"
+                    onClick={deleteSelectedProfile}
+                    disabled={deleteProfileLoading}
+                    className="inline-flex items-center justify-center rounded-2xl border border-rose-400/20 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-300/30 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deleteProfileLoading ? "Deleting profile..." : "Delete profile"}
+                  </button>
                 </div>
               </div>
             ) : (
