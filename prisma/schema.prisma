@@ -30,6 +30,7 @@ model User {
   // AI Job Match
   resumeProfiles ResumeProfile[]
   jobMatches     JobMatch[]
+  jobMatchWarmups JobMatchWarmup[]
   savedJobs      SavedJob[]
   hiddenJobs     HiddenJob[]
 }
@@ -387,4 +388,33 @@ model HiddenJob {
   @@unique([userId, jobId])
   @@index([userId, createdAt])
   @@index([jobId])
+}
+
+
+enum JobMatchWarmupStatus {
+  pending
+  running
+  ready
+  failed
+  stale
+}
+
+model JobMatchWarmup {
+  id                  String               @id @default(cuid())
+  userId              String
+  resumeProfileId     String               @unique
+  status              JobMatchWarmupStatus @default(pending)
+  totalCandidateCount Int                  @default(0)
+  processedCount      Int                  @default(0)
+  lastProcessedJobId  String?
+  lastError           String?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
 }

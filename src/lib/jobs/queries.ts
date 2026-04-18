@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getJobMatchWarmupState } from "@/lib/jobs/warmup";
 
 export type JobSort = "match" | "newest" | "salary";
 
@@ -453,11 +454,18 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
       job: where,
     };
 
+    const warmupState = await getJobMatchWarmupState({
+      userId: input.userId,
+      resumeProfileId: input.resumeProfileId,
+    });
+
     const cachedCount = await prisma.jobMatch.count({
       where: matchWhere,
     });
 
-    if (cachedCount > 0) {
+    const warmupReady = warmupState?.status === "ready";
+
+    if (warmupReady && cachedCount > 0) {
       const rows = await prisma.jobMatch.findMany({
         where: matchWhere,
         orderBy: [

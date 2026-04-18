@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveJobMatchForUser } from "@/app/api/jobs/[id]/match/route";
 import { authOptions } from "@/lib/auth";
 import { listMatchCandidateJobIds } from "@/lib/jobs/queries";
+import {
+  markJobMatchWarmupFailed,
+  markJobMatchWarmupPending,
+  markJobMatchWarmupReady,
+  markJobMatchWarmupRunning,
+  updateJobMatchWarmupProgress,
+} from "@/lib/jobs/warmup";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -50,7 +57,20 @@ async function buildMatchesForProfile(args: {
     MAX_CANDIDATES,
   );
 
+  await markJobMatchWarmupPending({
+    userId: args.userId,
+    resumeProfileId: args.resumeProfileId,
+    totalCandidateCount: candidateIds.length,
+  });
+
+  await markJobMatchWarmupRunning({
+    userId: args.userId,
+    resumeProfileId: args.resumeProfileId,
+    totalCandidateCount: candidateIds.length,
+  });
+
   let processed = 0;
+  let lastProcessedJobId: string | null = null;
   for (let i = 0; i < candidateIds.length; i += BATCH_SIZE) {
     const batch = candidateIds.slice(i, i + BATCH_SIZE);
     await Promise.all(
@@ -63,7 +83,24 @@ async function buildMatchesForProfile(args: {
       ),
     );
     processed += batch.length;
+    lastProcessedJobId = batch.length > 0 ? batch[batch.length - 1] : lastProcessedJobId;
+
+    await updateJobMatchWarmupProgress({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      processedCount: processed,
+      totalCandidateCount: candidateIds.length,
+      lastProcessedJobId,
+    });
   }
+
+  await markJobMatchWarmupReady({
+    userId: args.userId,
+    resumeProfileId: args.resumeProfileId,
+    totalCandidateCount: candidateIds.length,
+    processedCount: processed,
+    lastProcessedJobId,
+  });
 
   return { processed, totalCandidates: candidateIds.length };
 }
@@ -97,16 +134,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Resume profile not found" }, { status: 404 });
   }
 
-  const result = await buildMatchesForProfile({
-    userId,
-    resumeProfileId,
-    q: body.q ?? null,
-    remote: body.remote ?? null,
-    location: body.location ?? null,
-    seniority: body.seniority ?? null,
-    minSalary: typeof body.minSalary === "number" ? body.minSalary : null,
-  });
+  try {
+    const result = await buildMatchesForProfile({
+      userId,
+      resumeProfileId,
+      q: body.q ?? null,
+      remote: body.remote ?? null,
+      location: body.location ?? null,
+      seniority: body.seniority ?? null,
+      minSalary: typeof body.minSalary === "number" ? body.minSalary : null,
+    });
 
-  const ready = result.totalCandidates > 0 && result.processed >= result.totalCandidates;
-  return NextResponse.json({ ok: true, ...result, ready });
+    const ready = result.totalCandidates > 0 && result.processed >= result.totalCandidates;
+    return NextResponse.json({ ok: true, ...result, ready });
+  } catch (error) {
+    await markJobMatchWarmupFailed({
+      userId,
+      resumeProfileId,
+      error,
+    });
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Warmup failed" }, { status: 500 });
+  }
 }
