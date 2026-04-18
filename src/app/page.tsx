@@ -102,6 +102,13 @@ export default async function HomePage() {
                 Git-a-Job works best when the workflow starts with a live job, shows believable fit, and only then moves into resume or cover-letter tailoring.
               </p>
 
+              <div className="mt-6 inline-flex max-w-2xl items-start gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.08] px-4 py-3 text-left shadow-[0_12px_30px_rgba(6,182,212,0.08)]">
+                <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-300" />
+                <p className="text-sm font-medium leading-7 text-cyan-50 sm:text-[15px]">
+                  Get <span className="font-bold text-white">25 free credits</span> when you sign up, then claim <span className="font-bold text-white">10 bonus credits every day</span> you come back.
+                </p>
+              </div>
+
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href={primaryHref} className="shell-primary-btn">
                   {primaryLabel}
@@ -253,6 +260,9 @@ export default async function HomePage() {
             </h2>
             <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base">
               Open the jobs board, check the fit, and only then move into the output tools that cost credits.
+            </p>
+            <p className="mt-4 text-sm font-medium leading-7 text-cyan-100 sm:text-base">
+              Start free with <span className="font-bold text-white">25 credits</span>, then collect <span className="font-bold text-white">10 bonus credits every day</span> you sign in.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href={primaryHref} className="shell-primary-btn">
