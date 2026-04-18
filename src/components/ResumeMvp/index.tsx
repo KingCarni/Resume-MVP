@@ -4083,9 +4083,48 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }, []);
 
   const hydrateLatestSavedResume = useCallback(
-    async (options?: { force?: boolean }) => {
+    async (options?: { force?: boolean; preferredProfileId?: string | null }) => {
       if (status !== "authenticated") return null;
       if (!options?.force && latestResumeHydratedRef.current) return null;
+
+      const preferredProfileId = String(options?.preferredProfileId || "").trim();
+
+      if (preferredProfileId) {
+        try {
+          const response = await fetch("/api/resume-profiles", { method: "GET", cache: "no-store" });
+          const payload = (await parseApiResponse(response)) as { ok?: boolean; items?: Array<Record<string, unknown>> } | string;
+
+          if (response.ok && typeof payload !== "string" && payload?.ok && Array.isArray(payload.items)) {
+            const matchedProfile = payload.items.find((item) => String(item?.id || "").trim() === preferredProfileId) as
+              | { rawText?: string | null; title?: string | null; updatedAt?: string | null }
+              | undefined;
+
+            const profileText = String(matchedProfile?.rawText || "").trim();
+            if (profileText) {
+              latestResumeHydratedRef.current = true;
+              setResumeText(profileText);
+              setResumeSourceMeta({
+                fileName: String(matchedProfile?.title || "").trim() || null,
+                mimeType: null,
+                extension: null,
+                sourceKind: "resume_profile",
+              });
+              setLatestResumeMeta({
+                title: String(matchedProfile?.title || "Resume profile").trim() || "Resume profile",
+                createdAt: String(matchedProfile?.updatedAt || "").trim() || null,
+              });
+
+              return {
+                text: profileText,
+                structuredText: "",
+                htmlText: "",
+              };
+            }
+          }
+        } catch {
+          // fall back to latest saved resume
+        }
+      }
 
       try {
         const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
@@ -4146,7 +4185,13 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     let cancelled = false;
 
     async function hydrateLatestResume() {
-      const hydrated = await hydrateLatestSavedResume();
+      const preferredProfileId = (() => {
+        if (typeof window === "undefined") return "";
+        const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+        return String(searchParams.get("resumeProfileId") || stored).trim();
+      })();
+
+      const hydrated = await hydrateLatestSavedResume({ preferredProfileId });
       if (!hydrated || cancelled) return;
     }
 
@@ -4155,7 +4200,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return () => {
       cancelled = true;
     };
-  }, [status, file, resumeText, analysis, hydrateLatestSavedResume]);
+  }, [status, file, resumeText, analysis, hydrateLatestSavedResume, searchParams]);
 
 
   useEffect(() => {
@@ -4183,11 +4228,11 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const storedJobId = String(parsed?.jobId || "").trim();
       const storedJobText = String(parsed?.job?.jobContextText || "").trim();
       const storedTargetPosition = String(parsed?.job?.title || "").trim();
+      const isJobAwareResumeEntry = !!queryJobId;
 
       const needsFreshJobContext =
-        queryBundle === "apply-pack" &&
-        queryJobId &&
-        (queryJobId !== storedJobId || !storedJobText);
+        isJobAwareResumeEntry &&
+        (queryJobId !== storedJobId || !storedJobText || queryBundle !== "apply-pack");
 
       if (needsFreshJobContext) {
         try {
@@ -4210,13 +4255,15 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
               job: json.item,
             };
 
-            window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+            if (queryBundle === "apply-pack") {
+              window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+            }
 
             if (cancelled) return;
 
-            setApplyPackBundle(nextBundle);
-            setJobText(String(json.item.jobContextText || "").trim());
-            setTargetPosition(String(json.item.title || "").trim());
+            setApplyPackBundle(queryBundle === "apply-pack" ? nextBundle : null);
+            setJobText((current) => (current.trim() ? current : String(json.item.jobContextText || "").trim()));
+            setTargetPosition((current) => (current.trim() ? current : String(json.item.title || "").trim()));
             setJobTextOverrideMode(false);
             return;
           }
