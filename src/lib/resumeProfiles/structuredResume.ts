@@ -118,6 +118,42 @@ export function structuredSnapshotToResumeText(snapshot: StructuredResumeSnapsho
   return lines.join('\n').trim();
 }
 
+
+export function structuredSnapshotToAnalyzeText(snapshot: StructuredResumeSnapshot | null | undefined): string {
+  if (!snapshot) return "";
+
+  const lines: string[] = [];
+  const push = (value: unknown = "") => {
+    const next = cleanString(value);
+    if (next) lines.push(next);
+  };
+
+  push(snapshot.profile.fullName);
+  push(snapshot.profile.titleLine);
+  push(snapshot.profile.locationLine);
+  push(snapshot.profile.email);
+  push(snapshot.profile.phone);
+  push(snapshot.profile.linkedin);
+  push(snapshot.profile.portfolio);
+  push(snapshot.profile.summary);
+
+  if (snapshot.expertiseItems.length) {
+    push('Areas of Expertise');
+    push(`- ${snapshot.expertiseItems.join(' • ')}`);
+  }
+
+  snapshot.sections.forEach((section) => {
+    const header = [section.title, section.company, section.dates, section.location]
+      .map(cleanString)
+      .filter(Boolean)
+      .join(' | ');
+    push(header);
+    (section.bullets || []).forEach((bullet) => push(`- ${bullet}`));
+  });
+
+  return lines.join('\n').trim();
+}
+
 export function sanitizeResumeSourceMeta(value: unknown): ResumeSourceMeta | null {
   if (!value || typeof value !== "object") return null;
   const input = value as Record<string, unknown>;

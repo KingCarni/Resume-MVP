@@ -18,7 +18,31 @@ function normalizeLines(text: string) {
 }
 
 function cleanLine(line: string) {
-  return (line || "").replace(/\s+/g, " ").trim();
+  return (line || "")
+    .replace(/([a-z0-9)])\.([A-Z])/g, "$1. $2")
+    .replace(/([a-z0-9)])\,([A-Z])/g, "$1, $2")
+    .replace(/([a-z0-9)])\:([A-Z])/g, "$1: $2")
+    .replace(/\)\.([A-Z])/g, "). $1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeExperienceBulletLabel(line: string) {
+  const cleaned = cleanLine(line);
+  const gamesPrefixMatch = cleaned.match(/^(?:🎮\s*)?games shipped\s*:\s*(.+)$/i);
+  if (!gamesPrefixMatch) return cleaned;
+
+  const rest = String(gamesPrefixMatch[1] ?? "").trim();
+  const actionVerbRe = /\b(communicated|served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|improved|debugged|executed|owned|led)\b/i;
+  const actionMatch = rest.match(actionVerbRe);
+  if (!actionMatch || typeof actionMatch.index !== "number") return cleaned;
+
+  const prefix = rest.slice(0, actionMatch.index).replace(/[—\-:|,;]+$/g, "").trim();
+  const narrative = rest.slice(actionMatch.index).trim();
+  if (!narrative) return cleaned;
+  if (!prefix || prefix.length > 80) return narrative;
+
+  return `${prefix} — ${narrative}`;
 }
 
 /** ---------- “Do not include as bullets” filters ---------- */
@@ -232,7 +256,7 @@ export function extractResumeBullets(resumeText: string): {
   let prev2 = "";
 
   const pushBullet = (b0: string) => {
-    const b = cleanLine(b0);
+    const b = normalizeExperienceBulletLabel(b0);
     if (!b) return;
     if (b.length < 10) return;
     if (rejectAsBullet(b)) return;

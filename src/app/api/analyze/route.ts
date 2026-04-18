@@ -1606,8 +1606,8 @@ export async function POST(req: Request) {
 
         const extra = sanitizeResumeInput(body.resumeText);
         if (extra && extra.length >= 200 && extra !== resumeText) {
-          resumeText = `${resumeText}\n\n${extra}`;
-          blobDebug.appendedResumeText = true;
+          blobDebug.appendedResumeText = false;
+          blobDebug.ignoredResumeText = true;
         }
 
         if (!extracted.parserUsed) {

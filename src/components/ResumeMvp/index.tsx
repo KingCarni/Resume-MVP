@@ -4538,7 +4538,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     try {
       let res: Response;
 
-      const shouldPreserveStructuredSource = !file && hasStructuredResumeBullets(structuredResumeSnapshot);
+      const hasCanonicalStructuredResume = hasStructuredResumeBullets(structuredResumeSnapshot);
+      const shouldPreserveStructuredSource = hasCanonicalStructuredResume;
       setPreserveStructuredDuringAnalyze(shouldPreserveStructuredSource);
 
       let structuredSnapshotText = shouldPreserveStructuredSource
@@ -4546,12 +4547,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         : "";
       let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
       const savedResumeText = resumeText.trim();
-      let resumeInput = file
-        ? savedResumeText
-        : savedResumeText || structuredSnapshotText || htmlDraftPlain;
+      let resumeInput = shouldPreserveStructuredSource
+        ? structuredSnapshotText || savedResumeText || htmlDraftPlain
+        : file
+          ? savedResumeText
+          : savedResumeText || structuredSnapshotText || htmlDraftPlain;
 
-      if (!file && shouldPreserveStructuredSource && structuredSnapshotText) {
-        resumeInput = savedResumeText || structuredSnapshotText;
+      if (shouldPreserveStructuredSource && structuredSnapshotText) {
+        resumeInput = structuredSnapshotText || savedResumeText;
       }
 
       if (!file && !String(resumeInput).trim()) {
@@ -4601,8 +4604,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         });
       }
 
-      if (file) {
-        const url = await ensureResumeUploadedToBlob(file);
+      const shouldAnalyzeFromBlob = !!file && !shouldPreserveStructuredSource;
+
+      if (shouldAnalyzeFromBlob) {
+        const url = await ensureResumeUploadedToBlob(file!);
 
         res = await fetch("/api/analyze", {
           method: "POST",
@@ -4613,7 +4618,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             targetPosition: effectiveTargetPosition,
             isFirstTimeSetup: isSetupMode,
             onlyExperienceBullets,
-            resumeText: resumeTextForApi || "",
+            resumeText: "",
             jobId: analyticsJobId || undefined,
             resumeProfileId: analyticsResumeProfileId || undefined,
             sourceSlug: String(applyPackBundle?.sourceSlug || "").trim() || undefined,
