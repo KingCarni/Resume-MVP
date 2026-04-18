@@ -17,9 +17,6 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
             Git-a-Job
           </Link>
           <div className="hidden items-center gap-2 md:flex">
-            <Link href="/jobs" className="shell-nav-link">
-              Jobs
-            </Link>
             <Link href="/resume" className="shell-nav-link">
               Resume
             </Link>

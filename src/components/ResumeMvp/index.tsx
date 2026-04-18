@@ -3884,6 +3884,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }, [status, refreshCredits]);
 
   const [resumeText, setResumeText] = useState("");
+  const [preserveStructuredDuringAnalyze, setPreserveStructuredDuringAnalyze] = useState(false);
   const [jobText, setJobText] = useState("");
   const [targetPosition, setTargetPosition] = useState("");
   const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
@@ -4101,7 +4102,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         const htmlText = String(latest.html || "").trim()
           ? htmlToPlainText(String(latest.html || ""))
           : "";
-        const preferredText = structuredText || nextText || htmlText;
+        const preferredText = nextText || htmlText || structuredText;
 
         if (!preferredText && !structuredApplied) return null;
 
@@ -4313,7 +4314,27 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
     setEditorBulletsBySection({});
+    setEditorEducationItems([]);
+    setEditorExpertiseItems([]);
+    setEditorMetaGames([]);
+    setEditorMetaMetrics([]);
     setResumeBlobUrl("");
+    setResumeHtmlDraft("");
+    setResumeText("");
+    setPreserveStructuredDuringAnalyze(false);
+    setLatestResumeMeta(null);
+    setResumeSourceMeta(null);
+    setProfile({
+      fullName: "",
+      titleLine: "",
+      locationLine: "",
+      email: "",
+      phone: "",
+      linkedin: "",
+      portfolio: "",
+      summary: "",
+    });
+    setProfilePhotoDataUrl("");
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
     setAtsScoreInitialized(false);
@@ -4343,6 +4364,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   );
 
   const clearFile = useCallback(() => {
+    latestResumeHydratedRef.current = false;
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     resetDerivedState();
@@ -4438,20 +4460,23 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     try {
       let res: Response;
 
-      let structuredSnapshotText = hasStructuredResumeBullets(structuredResumeSnapshot)
+      const shouldPreserveStructuredSource = !file && hasStructuredResumeBullets(structuredResumeSnapshot);
+      setPreserveStructuredDuringAnalyze(shouldPreserveStructuredSource);
+
+      let structuredSnapshotText = shouldPreserveStructuredSource
         ? structuredSnapshotToResumeText(structuredResumeSnapshot)
         : "";
       let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
       let resumeInput = file
         ? resumeText.trim()
-        : structuredSnapshotText || htmlDraftPlain || resumeText.trim();
+        : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
 
       if (!file && !String(resumeInput).trim()) {
         const hydrated = await hydrateLatestSavedResume({ force: true });
         if (hydrated) {
           structuredSnapshotText = hydrated.structuredText || structuredSnapshotText;
           htmlDraftPlain = hydrated.htmlText || htmlDraftPlain;
-          resumeInput = hydrated.structuredText || hydrated.htmlText || hydrated.text || resumeInput;
+          resumeInput = hydrated.text || hydrated.htmlText || hydrated.structuredText || resumeInput;
         }
       }
 
@@ -4579,63 +4604,67 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const rewritePlanLocal = Array.isArray(data?.rewritePlan) ? data.rewritePlan! : [];
       const planLen = rewritePlanLocal.length;
 
-      const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];
-      const nextSections: ExperienceSection[] =
-        jobs.length > 0
-          ? jobs.map((j) => ({
-              id: String(j.id),
-              company: String(j.company || "Company"),
-              title: String(j.title || "Role"),
-              // ✅ IMPORTANT: no placeholder “Dates”
-              dates: String(j.dates || ""),
-              location: j.location ? String(j.location) : "",
-            }))
-          : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
-
-      setSections(nextSections);
-
-      const knownSectionIds = new Set(nextSections.map((s) => s.id));
-      const fallbackId = nextSections[0]?.id || "default";
-
-      const analyzedEditorBullets: Record<string, string[]> = {};
-      const apiBulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : [];
-      const apiBullets = Array.isArray(data?.bullets) ? data.bullets : [];
-
-      apiBullets.forEach((bullet, index) => {
-        const cleanBullet = String(bullet ?? "").trim();
-        if (!cleanBullet) return;
-        const sectionId = String(apiBulletJobIds[index] || fallbackId).trim() || fallbackId;
-        if (!analyzedEditorBullets[sectionId]) analyzedEditorBullets[sectionId] = [];
-        analyzedEditorBullets[sectionId].push(cleanBullet);
-      });
-
-      if (!Object.keys(analyzedEditorBullets).length && jobs.length) {
-        jobs.forEach((job) => {
-          const sectionId = String(job?.id || fallbackId).trim() || fallbackId;
-          const sectionBullets = Array.isArray(job?.bullets)
-            ? job.bullets.map((bullet) => String(bullet ?? "").trim()).filter(Boolean)
-            : [];
-          if (sectionBullets.length) {
-            analyzedEditorBullets[sectionId] = sectionBullets;
-          }
-        });
-      }
-
-      setEditorBulletsBySection(analyzedEditorBullets);
-
-      if (planLen) {
-        const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
-        const auto = buildAssignmentsFromServerMapping({
-          rewritePlan: rewritePlanLocal,
-          bulletJobIds,
-          knownSectionIds,
-          fallbackSectionId: fallbackId,
-        });
-
-        setAssignments(auto);
-        ensureAssignmentsForPlan(planLen, fallbackId);
-      } else {
+      if (shouldPreserveStructuredSource) {
         setAssignments({});
+      } else {
+        const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];
+        const nextSections: ExperienceSection[] =
+          jobs.length > 0
+            ? jobs.map((j) => ({
+                id: String(j.id),
+                company: String(j.company || "Company"),
+                title: String(j.title || "Role"),
+                // ✅ IMPORTANT: no placeholder “Dates”
+                dates: String(j.dates || ""),
+                location: j.location ? String(j.location) : "",
+              }))
+            : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
+
+        setSections(nextSections);
+
+        const knownSectionIds = new Set(nextSections.map((s) => s.id));
+        const fallbackId = nextSections[0]?.id || "default";
+
+        const analyzedEditorBullets: Record<string, string[]> = {};
+        const apiBulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : [];
+        const apiBullets = Array.isArray(data?.bullets) ? data.bullets : [];
+
+        apiBullets.forEach((bullet, index) => {
+          const cleanBullet = String(bullet ?? "").trim();
+          if (!cleanBullet) return;
+          const sectionId = String(apiBulletJobIds[index] || fallbackId).trim() || fallbackId;
+          if (!analyzedEditorBullets[sectionId]) analyzedEditorBullets[sectionId] = [];
+          analyzedEditorBullets[sectionId].push(cleanBullet);
+        });
+
+        if (!Object.keys(analyzedEditorBullets).length && jobs.length) {
+          jobs.forEach((job) => {
+            const sectionId = String(job?.id || fallbackId).trim() || fallbackId;
+            const sectionBullets = Array.isArray(job?.bullets)
+              ? job.bullets.map((bullet) => String(bullet ?? "").trim()).filter(Boolean)
+              : [];
+            if (sectionBullets.length) {
+              analyzedEditorBullets[sectionId] = sectionBullets;
+            }
+          });
+        }
+
+        setEditorBulletsBySection(analyzedEditorBullets);
+
+        if (planLen) {
+          const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
+          const auto = buildAssignmentsFromServerMapping({
+            rewritePlan: rewritePlanLocal,
+            bulletJobIds,
+            knownSectionIds,
+            fallbackSectionId: fallbackId,
+          });
+
+          setAssignments(auto);
+          ensureAssignmentsForPlan(planLen, fallbackId);
+        } else {
+          setAssignments({});
+        }
       }
 
       refreshCredits();
@@ -5631,18 +5660,36 @@ useEffect(() => {
       seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
     });
 
-    if (Object.keys(seeded).length) {
-      setEditorBulletsBySection(seeded);
-    }
+    if (!Object.keys(seeded).length) return;
+
+    setEditorBulletsBySection((prev) => {
+      const prevKeys = Object.keys(prev);
+      const seededKeys = Object.keys(seeded);
+
+      if (prevKeys.length === seededKeys.length) {
+        const same = seededKeys.every((sectionId) => {
+          const prevBullets = prev[sectionId] || [];
+          const nextBullets = seeded[sectionId] || [];
+          if (prevBullets.length !== nextBullets.length) return false;
+          return nextBullets.every((bullet, index) => prevBullets[index] === bullet);
+        });
+
+        if (same) return prev;
+      }
+
+      return seeded;
+    });
   }, [analysisSeedKey, bulletsBySection]);
 
   useEffect(() => {
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
     setEditorMetaGames(metaGames);
-  }, [analysis?.metaBlocks?.gamesShipped]);
+  }, [analysis?.metaBlocks?.gamesShipped, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
 
   useEffect(() => {
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
     setEditorMetaMetrics(metaMetrics);
-  }, [analysis?.metaBlocks?.metrics]);
+  }, [analysis?.metaBlocks?.metrics, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaMetrics]);
 
   useEffect(() => {
     setCollapsedSections((prev) => {
@@ -6202,7 +6249,7 @@ useEffect(() => {
     const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
       ? structuredSnapshotToResumeText(structuredResumeSnapshot)
       : "";
-    const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+    const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "") || structuredDraft;
     const normalizedDraft = normalizeResumeTextForParsing(draftSource);
     if (normalizedDraft.length < 120) return "";
 

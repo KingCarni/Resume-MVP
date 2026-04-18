@@ -96,7 +96,11 @@ export default async function HomePage() {
                 Jobs-first application workflow
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Start with real roles. See your fit clearly. Tailor faster. Apply smarter.
+                Start with real roles. Find your job. 
+                <br />
+                Tailor faster.
+                <br />
+                Apply smarter.
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
                 Git-a-Job helps you move from live job discovery to resume and cover-letter tailoring without losing the role context that matters.
@@ -104,7 +108,7 @@ export default async function HomePage() {
 
               <div className="mt-6 inline-flex max-w-2xl rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.08] px-4 py-3 text-left shadow-[0_12px_30px_rgba(6,182,212,0.08)]">
                 <p className="text-sm font-medium leading-7 text-cyan-50 sm:text-[15px]">
-                  Get <span className="font-bold text-white">25 free credits</span> when you sign up, then claim <span className="font-bold text-white">10 bonus credits every day</span> you come back.
+                  Get <span className="font-bold text-white">25 free credits</span> when you sign up. Plus <span className="font-bold text-white">10 bonus credits every day</span> you come back!
                 </p>
               </div>
 
