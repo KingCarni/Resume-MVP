@@ -878,24 +878,41 @@ function extractMetaBlocks(fullText: string) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const gamesShippedRegex = /^(\u{1F3AE}\s*)?games shipped:/iu;
-  const metricLikeRegex =
-    /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
+  const gamesShippedRegex = /^(?:🎮\s*)?games shipped:\s*(.*)$/i;
+  const metricLikeRegex = /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
 
   const gamesShipped: string[] = [];
   const metrics: string[] = [];
   const seenGames = new Set<string>();
   const seenMetrics = new Set<string>();
 
+  const pushGame = (value: string) => {
+    const cleaned = value.replace(/^[-•]\s*/, "").replace(/\s+/g, " ").trim();
+    if (!cleaned) return;
+    if (cleaned.length > 90) return;
+    if (actionVerbRe.test(cleaned)) return;
+    const k = normalizeForContains(cleaned);
+    if (!seenGames.has(k)) {
+      seenGames.add(k);
+      gamesShipped.push(cleaned);
+    }
+  };
+
   for (const l0 of lines) {
     const l = l0.replace(/\s+/g, " ").trim();
     if (!l) continue;
 
-    if (gamesShippedRegex.test(l)) {
-      const k = normalizeForContains(l);
-      if (!seenGames.has(k)) {
-        seenGames.add(k);
-        gamesShipped.push(l);
+    const gamesMatch = l.match(gamesShippedRegex);
+    if (gamesMatch) {
+      const rest = String(gamesMatch[1] ?? "").trim();
+      if (rest) {
+        const parts = rest.split(/\s*[•|]\s*|\s*,\s*(?=[A-Z0-9])/).map((x) => x.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          parts.forEach(pushGame);
+        } else {
+          pushGame(rest);
+        }
       }
       continue;
     }
@@ -903,6 +920,7 @@ function extractMetaBlocks(fullText: string) {
     if (l.length <= 110 && metricLikeRegex.test(l)) {
       if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l)) continue;
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
+      if (actionVerbRe.test(l) && !/%|\$\s?\d|\b\d+(\.\d+)?x\b/i.test(l)) continue;
 
       const k = normalizeForContains(l);
       if (!seenMetrics.has(k)) {

@@ -2571,20 +2571,47 @@ function sanitizeMetaLines(lines: string[]) {
   const bad = [
     /max-width\s*:/i,
     /!important/i,
-    /{|\}/,
+    /\{|\}/,
     /;\s*$/,
     /^\s*\./,
     /^\s*#/,
     /^\s*@/,
     /^\s*[a-z-]+\s*:\s*[^;]+;?/i,
   ];
-  return (lines || [])
-    .map((x) => String(x ?? "").trim())
-    .filter(Boolean)
-    .filter((x) => !bad.some((re) => re.test(x)))
-    .slice(0, 24);
-}
 
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
+
+  const cleaned: string[] = [];
+  for (const raw of lines || []) {
+    const trimmed = String(raw ?? "").replace(/\s+/g, " ").trim();
+    if (!trimmed) continue;
+    if (bad.some((re) => re.test(trimmed))) continue;
+
+    const normalized = trimmed
+      .replace(/^(?:🎮\s*)?games shipped\s*:\s*/i, "")
+      .replace(/^key metrics\s*:\s*/i, "")
+      .trim();
+
+    if (!normalized) continue;
+
+    const parts = normalized
+      .split(/\s*[•|]\s*|\s*,\s*(?=[A-Z0-9])/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+    const candidates = parts.length > 1 ? parts : [normalized];
+    for (const candidate of candidates) {
+      const value = candidate.trim();
+      if (!value) continue;
+      if (value.length > 90) continue;
+      if (/[.!?].+[.!?]/.test(value)) continue;
+      if (actionVerbRe.test(value)) continue;
+      cleaned.push(value);
+    }
+  }
+
+  return Array.from(new Set(cleaned)).slice(0, 24);
+}
 
 function parseEducationLines(input: string) {
   const text = String(input ?? "")
@@ -2600,49 +2627,33 @@ function parseEducationLines(input: string) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const schoolRe =
-    /\b(university|college|institute|polytechnic|academy|school)\b/i;
-
-  const degreeRe =
-    /\b(bachelor|master|doctorate|phd|mba|masc|msc|beng|b\.eng|bsc|b\.sc|ba|b\.a|bs|m\.sc|m\.a|ms|ma|associate|diploma)\b/i;
-
-  const certRe =
-    /\b(certification|certifications|certificate|certified|license|licence|az-900|aws|gcp|azure|microsoft|google cloud|scrum|pmp)\b/i;
-
-  const headingRe =
-    /^\s*(education|education & certifications|education and certifications|certifications|training)\s*:?\s*$/i;
-
-  const stopRe =
-    /^\s*(experience|work experience|professional experience|employment|projects|skills|technical skills|areas of expertise|summary|profile|highlights)\s*:?\s*$/i;
+  const schoolRe = /\b(university|college|institute|polytechnic|academy|school)\b/i;
+  const degreeRe = /\b(bachelor|master|doctorate|phd|mba|masc|msc|beng|b\.eng|bsc|b\.sc|ba|b\.a|bs|m\.sc|m\.a|ms|ma|associate|diploma)\b/i;
+  const certRe = /\b(certification|certifications|certificate|certified|license|licence|az-900|aws|gcp|azure|microsoft certified|google cloud|scrum|pmp|istqb)\b/i;
+  const headingRe = /^\s*(education|education & certifications|education and certifications|certifications|training)\s*:?\s*$/i;
+  const stopRe = /^\s*(experience|work experience|professional experience|employment|projects|skills|technical skills|areas of expertise|summary|profile|highlights)\s*:?\s*$/i;
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
 
   const out: string[] = [];
   let inEducationSection = false;
 
   for (const raw of lines) {
-    const line = raw
-      .replace(/\(link to thesis\)/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
+    const line = raw.replace(/\(link to thesis\)/gi, "").replace(/\s+/g, " ").trim();
     if (!line) continue;
 
     if (headingRe.test(line)) {
       inEducationSection = true;
       continue;
     }
-
     if (inEducationSection && stopRe.test(line)) {
       inEducationSection = false;
       continue;
     }
 
-    const looksEducational =
-      schoolRe.test(line) ||
-      degreeRe.test(line) ||
-      certRe.test(line) ||
-      (inEducationSection && line.length >= 4 && line.length <= 160);
-
+    const looksEducational = schoolRe.test(line) || degreeRe.test(line) || certRe.test(line);
     if (!looksEducational) continue;
+    if (actionVerbRe.test(line)) continue;
+    if (line.length > 160) continue;
 
     if (!out.some((x) => x.toLowerCase() === line.toLowerCase())) {
       out.push(line);
@@ -4548,7 +4559,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         if (hydrated) {
           structuredSnapshotText = hydrated.structuredText || structuredSnapshotText;
           htmlDraftPlain = hydrated.htmlText || htmlDraftPlain;
-          resumeInput = hydrated.text || hydrated.htmlText || hydrated.structuredText || resumeInput;
+          resumeInput = hydrated.text || hydrated.structuredText || hydrated.htmlText || resumeInput;
         }
       }
 
@@ -5663,23 +5674,6 @@ if (typeof planIndex === "number") {
       return parsed.length ? parsed : prev;
     });
   }, [analysis, resumeText]);
-
-useEffect(() => {
-  if (!analysis) return;
-
-  setEditorEducationItems((prev) => {
-    const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
-    if (cleanedPrev.length) return prev;
-
-    const sourceText =
-      String(analysis?.debug?.rawText ?? "") ||
-      String(analysis?.debug?.normalizedText ?? "") ||
-      String(resumeText ?? "");
-
-    const parsed = parseEducationLines(sourceText);
-    return parsed.length ? parsed : prev;
-  });
-}, [analysis, resumeText]);
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
