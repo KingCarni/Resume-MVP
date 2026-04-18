@@ -4534,9 +4534,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         ? structuredSnapshotToResumeText(structuredResumeSnapshot)
         : "";
       let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
+      const savedResumeText = resumeText.trim();
       let resumeInput = file
-        ? resumeText.trim()
-        : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
+        ? savedResumeText
+        : savedResumeText || structuredSnapshotText || htmlDraftPlain;
+
+      if (!file && shouldPreserveStructuredSource && structuredSnapshotText) {
+        resumeInput = savedResumeText || structuredSnapshotText;
+      }
 
       if (!file && !String(resumeInput).trim()) {
         const hydrated = await hydrateLatestSavedResume({ force: true });
