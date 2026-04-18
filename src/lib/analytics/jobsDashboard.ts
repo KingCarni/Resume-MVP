@@ -43,7 +43,7 @@ type MetricCard = {
 
 type TrendPoint = {
   month: string;
-  jobsCreditsSpent: number;
+  jobsChargedCreditsProxy: number;
   totalCreditsSpent: number;
   purchasedCredits: number;
 };
@@ -73,7 +73,7 @@ type JobsAnalyticsSummary = {
     bundleSharePct: number;
   };
   monetization: {
-    jobsCreditsSpent: number;
+    jobsChargedCreditsProxy: number;
     totalCreditsSpent: number;
     jobsAttributedPurchases: number;
     jobsAttributedPurchasedCredits: number;
@@ -241,7 +241,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
   let coverLetterClicks = 0;
   let tailorBothClicks = 0;
   let paidJobsActions = 0;
-  let jobsCreditsSpent = 0;
+  let jobsChargedCreditsProxy = 0;
   let bundlePaidActions = 0;
   let jobsAttributedPurchases = 0;
   let jobsAttributedPurchasedCredits = 0;
@@ -280,7 +280,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
     if (CHARGED_EVENTS.has(event.event)) {
       paidJobsActions += 1;
       paidActionUsers.add(event.userId);
-      jobsCreditsSpent += Math.max(0, event.creditsCost ?? 0);
+      jobsChargedCreditsProxy += Math.max(0, event.creditsCost ?? 0);
       if (event.mode === "apply_pack") {
         bundlePaidActions += 1;
       }
@@ -323,7 +323,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
   for (const key of monthKeys) {
     jobsTrendMap.set(key, {
       month: key,
-      jobsCreditsSpent: 0,
+      jobsChargedCreditsProxy: 0,
       totalCreditsSpent: 0,
       purchasedCredits: 0,
     });
@@ -335,7 +335,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
     if (!point) continue;
 
     if (CHARGED_EVENTS.has(event.event)) {
-      point.jobsCreditsSpent += Math.max(0, event.creditsCost ?? 0);
+      point.jobsChargedCreditsProxy += Math.max(0, event.creditsCost ?? 0);
     }
 
   }
@@ -381,7 +381,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
     {
       label: "Job detail views",
       value: detailViews,
-      subtext: `${detailViewUsers.size} unique users opened at least one job detail.`,
+      subtext: `${detailViewUsers.size} unique ${detailViewUsers.size === 1 ? "user" : "users"} opened at least one job detail in range.`,
     },
     {
       label: "Paid action rate after detail",
@@ -389,9 +389,9 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
       subtext: "Unique detail viewers who later triggered a paid jobs action or jobs-attributed purchase in range.",
     },
     {
-      label: "Jobs credits spent",
-      value: jobsCreditsSpent,
-      subtext: "Sum of jobs-attributed charged credits from resume + cover-letter jobs flows.",
+      label: "Jobs charged credits (proxy)",
+      value: jobsChargedCreditsProxy,
+      subtext: "Event-derived proxy from jobs charged events. Useful for flow analysis, but not a ledger-truth financial total.",
     },
     {
       label: "Repeat jobs visitors within 7d",
@@ -404,6 +404,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
     "JOB-72 instrumentation exists in the repo; this dashboard converts the existing event stream into practical KPIs.",
     "Paid action rate after detail is intentionally defined as a defensible product metric, not fake revenue attribution precision.",
     "Jobs-attributed purchase metrics only populate when users reach buy-credits from a jobs-context route that passes attribution metadata.",
+    "Jobs charged credits is intentionally labeled as an event-derived proxy. Use total credits spent as the ledger-truth financial number.",
     "Monthly purchased credits trend includes purchase ledger rows product-wide; jobs-attributed purchase events are shown separately above.",
   ];
 
@@ -432,7 +433,7 @@ export async function getJobsAnalyticsSummary(daysInput?: unknown): Promise<Jobs
       bundleSharePct,
     },
     monetization: {
-      jobsCreditsSpent,
+      jobsChargedCreditsProxy,
       totalCreditsSpent,
       jobsAttributedPurchases,
       jobsAttributedPurchasedCredits,
