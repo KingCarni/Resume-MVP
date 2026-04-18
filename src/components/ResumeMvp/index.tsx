@@ -4469,9 +4469,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
       let resumeInput = file
         ? resumeText.trim()
-        : shouldPreserveStructuredSource
-          ? structuredSnapshotText || resumeText.trim() || htmlDraftPlain
-          : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
+        : resumeText.trim() || htmlDraftPlain || structuredSnapshotText;
 
       if (!file && !String(resumeInput).trim()) {
         const hydrated = await hydrateLatestSavedResume({ force: true });
@@ -5686,12 +5684,26 @@ useEffect(() => {
 
   useEffect(() => {
     if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
-    setEditorMetaGames(metaGames);
+    setEditorMetaGames((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      const cleanedNext = metaGames.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
+        return prev;
+      }
+      return metaGames;
+    });
   }, [analysis?.metaBlocks?.gamesShipped, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
 
   useEffect(() => {
     if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
-    setEditorMetaMetrics(metaMetrics);
+    setEditorMetaMetrics((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      const cleanedNext = metaMetrics.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
+        return prev;
+      }
+      return metaMetrics;
+    });
   }, [analysis?.metaBlocks?.metrics, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaMetrics]);
 
   useEffect(() => {
@@ -6424,7 +6436,7 @@ const syncResumeProfileDraft = useCallback(async () => {
   const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
     ? structuredSnapshotToResumeText(structuredResumeSnapshot)
     : "";
-  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+  const draftSource = resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "") || structuredDraft;
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
   if (normalizedDraft.length < 120) {
     setProfileSyncSaving(false);
