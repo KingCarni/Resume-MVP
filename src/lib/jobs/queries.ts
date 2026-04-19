@@ -469,8 +469,11 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
       where: matchWhere,
     });
 
-    warmup = getJobMatchWarmupUiState(warmupState);
     const warmupReady = shouldUseJobMatchCache(warmupState);
+    warmup = getJobMatchWarmupUiState({
+      state: warmupState,
+      usedFallback: !warmupReady,
+    });
 
     if (warmupReady) {
       const rows = await prisma.jobMatch.findMany({

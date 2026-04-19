@@ -977,12 +977,6 @@ export default function JobsPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link
-                href="/jobs/saved"
-                className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
-              >
-                Saved Jobs
-              </Link>
               <div className="rounded-2xl border border-cyan-400/20 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
                 <div className="font-semibold text-white">
                   {jobsLoading ? "Loading roles..." : `${totalJobs} role${totalJobs === 1 ? "" : "s"} found`}
@@ -1201,11 +1195,13 @@ export default function JobsPage() {
                 Showing <span className="font-semibold text-white">{jobs.length}</span> of{" "}
                 <span className="font-semibold text-white">{totalJobs}</span> roles •{" "}
                 <span className="font-semibold text-white">
-                  {appliedSort === "match"
-                    ? "Best match"
-                    : appliedSort === "newest"
-                      ? "Newest"
-                      : "Salary"}
+                  {selectedProfileId && appliedSort === "match" && matchWarmup?.usedFallback
+                    ? "Recent jobs while best matches prepare"
+                    : appliedSort === "match"
+                      ? "Best match"
+                      : appliedSort === "newest"
+                        ? "Newest"
+                        : "Salary"}
                 </span>
               </span>
             )}
