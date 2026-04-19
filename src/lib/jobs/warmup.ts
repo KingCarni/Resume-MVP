@@ -563,8 +563,8 @@ export function getJobMatchWarmupUiState(args: {
       shouldPoll: false,
       shouldTriggerWarmup: usedFallback,
       lastError: null,
-      shortLabel: "No warmup yet",
-      message: "Best-match cache has not been prepared yet.",
+      shortLabel: "Getting best matches ready",
+      message: "We are starting a role search based on your selected resume profile.",
     } satisfies JobMatchWarmupUiState;
   }
 
@@ -581,7 +581,7 @@ export function getJobMatchWarmupUiState(args: {
       shouldTriggerWarmup: false,
       lastError: null,
       shortLabel: "Best matches ready",
-      message: "Cached best-match results are ready for this resume profile.",
+      message: "Your role search is ready and best matches are now ranked for this resume profile.",
     } satisfies JobMatchWarmupUiState;
   }
 
@@ -597,8 +597,8 @@ export function getJobMatchWarmupUiState(args: {
       shouldPoll: false,
       shouldTriggerWarmup: false,
       lastError: state.lastError ?? "Warmup failed",
-      shortLabel: "Warmup failed",
-      message: "Best-match prep failed. Falling back to recent jobs until you retry.",
+      shortLabel: "We hit a snag",
+      message: "We could not finish ranking roles for this profile yet. Showing recent jobs for now while you retry.",
     } satisfies JobMatchWarmupUiState;
   }
 
@@ -614,8 +614,8 @@ export function getJobMatchWarmupUiState(args: {
       shouldPoll: false,
       shouldTriggerWarmup: true,
       lastError: state.lastError ?? null,
-      shortLabel: "Warmup stale",
-      message: "Cached best-match results are stale. Falling back to recent jobs while refresh runs.",
+      shortLabel: "Refreshing your best matches",
+      message: "We are updating role matches for your selected resume profile. Recent jobs are showing while the refresh finishes.",
     } satisfies JobMatchWarmupUiState;
   }
 
@@ -631,11 +631,11 @@ export function getJobMatchWarmupUiState(args: {
       shouldPoll: true,
       shouldTriggerWarmup: false,
       lastError: null,
-      shortLabel: "Preparing best matches",
+      shortLabel: "Searching for strong matches",
       message:
         totalCandidateCount > 0
-          ? `Preparing cached best matches (${processedCount}/${totalCandidateCount}).`
-          : "Preparing cached best matches for this resume profile.",
+          ? `We are ranking roles for your selected resume profile (${processedCount}/${totalCandidateCount}).`
+          : "We are ranking roles for your selected resume profile.",
     } satisfies JobMatchWarmupUiState;
   }
 
@@ -650,8 +650,8 @@ export function getJobMatchWarmupUiState(args: {
     shouldPoll: true,
     shouldTriggerWarmup: true,
     lastError: null,
-    shortLabel: "Best matches queued",
-    message: "Best-match prep is queued. Falling back to recent jobs for now.",
+    shortLabel: "Searching is queued",
+    message: "We have queued a role search for your selected resume profile. Recent jobs are showing for now.",
   } satisfies JobMatchWarmupUiState;
 }
 

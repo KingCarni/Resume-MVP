@@ -952,7 +952,7 @@ export default function JobsPage() {
   }, [appliedLocation, appliedMinSalary, appliedRemote, appliedSearch, appliedSeniority, appliedSort, defaultSort]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen pb-10 text-white">
       <header className="shell-wrap pt-5">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-4">
@@ -987,8 +987,8 @@ export default function JobsPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20 backdrop-blur">
+      <div className="shell-wrap py-8">
+        <div className="mb-8 overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_34%),radial-gradient(circle_at_78%_22%,rgba(59,130,246,0.14),transparent_28%),rgba(2,6,23,0.72)] p-6 shadow-[0_26px_80px_rgba(2,6,23,0.35)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -1025,7 +1025,7 @@ export default function JobsPage() {
             {feedback.message}
           </div>
         ) : null}
-        <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <section className="mb-6 rounded-3xl border border-white/10 bg-slate-950/65 p-4 shadow-[0_24px_70px_rgba(2,6,23,0.28)] backdrop-blur-xl">
           <div className="grid gap-4 lg:grid-cols-6">
             <div className="lg:col-span-2">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
@@ -1212,7 +1212,7 @@ export default function JobsPage() {
           </div>
         </section>
 
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 backdrop-blur">
           <div>
             {jobsLoading ? (
               <span>Refreshing jobs…</span>
