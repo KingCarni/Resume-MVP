@@ -28,27 +28,63 @@ const ROLE_FAMILIES: RoleFamilyDefinition[] = [
     label: "QA / Test",
     synonyms: [
       "qa",
-      "quality assurance",
+      "qa tester",
       "qa engineer",
-      "quality engineer",
       "qa analyst",
+      "qa lead",
+      "qa manager",
+      "quality assurance",
+      "quality assurance engineer",
+      "quality assurance analyst",
+      "quality engineer",
+      "quality analyst",
       "software tester",
+      "software test engineer",
       "test engineer",
       "test analyst",
-      "sdet",
-      "software development engineer in test",
+      "test lead",
+      "test manager",
+      "manual tester",
+      "manual qa",
+      "functional tester",
+      "functional qa",
+      "game tester",
+      "game qa",
+      "games qa",
+      "video game tester",
+      "certification tester",
+      "compliance tester",
+      "release tester",
+      "release qa",
+      "uat analyst",
+      "user acceptance tester",
+      "validation engineer",
+      "verification engineer",
+      "verification analyst",
+      "test automation engineer",
       "automation tester",
       "automation qa",
       "qa automation engineer",
-      "game tester",
-      "manual tester",
-      "functional tester",
-      "validation engineer",
-      "uat analyst",
+      "sdet",
+      "software development engineer in test",
       "technical qa",
+      "platform quality analyst",
+      "build verification engineer",
+      "bvt engineer",
     ],
-    adjacent: ["engineering", "support", "devops"],
-    exclusionKeywords: ["artist", "animator", "illustrator", "producer", "recruiter"],
+    adjacent: ["engineering", "support"],
+    exclusionKeywords: [
+      "artist",
+      "animator",
+      "illustrator",
+      "concept artist",
+      "recruiter",
+      "talent acquisition",
+      "sales",
+      "account executive",
+      "marketer",
+      "marketing",
+    ],
   },
   {
     key: "engineering",
@@ -56,23 +92,41 @@ const ROLE_FAMILIES: RoleFamilyDefinition[] = [
     synonyms: [
       "software engineer",
       "software developer",
-      "backend engineer",
-      "frontend engineer",
-      "full stack engineer",
       "application developer",
       "web developer",
       "mobile developer",
+      "frontend engineer",
+      "frontend developer",
+      "backend engineer",
+      "backend developer",
+      "full stack engineer",
+      "full stack developer",
+      "game developer",
+      "game engineer",
       "gameplay programmer",
+      "gameplay engineer",
       "engine programmer",
+      "engine engineer",
+      "tools engineer",
+      "tools programmer",
       "unity developer",
       "unreal developer",
+      "programmer",
+      "developer",
+      "engineer",
     ],
-    adjacent: ["qa", "devops", "data", "support"],
+    adjacent: ["qa", "devops", "support", "data"],
   },
   {
     key: "product",
     label: "Product",
-    synonyms: ["product manager", "product owner", "technical product manager"],
+    synonyms: [
+      "product manager",
+      "product owner",
+      "technical product manager",
+      "group product manager",
+      "product lead",
+    ],
     adjacent: ["project", "operations", "marketing"],
   },
   {
@@ -83,54 +137,124 @@ const ROLE_FAMILIES: RoleFamilyDefinition[] = [
       "product designer",
       "ux designer",
       "ui designer",
-      "artist",
-      "concept artist",
+      "visual designer",
       "graphic designer",
       "motion designer",
+      "artist",
+      "concept artist",
+      "technical artist",
       "animator",
+      "vfx artist",
+      "3d artist",
+      "level designer",
+      "systems designer",
+      "game designer",
     ],
     adjacent: ["marketing", "product"],
   },
   {
     key: "data",
     label: "Data",
-    synonyms: ["data analyst", "data engineer", "data scientist", "bi analyst", "analytics engineer"],
+    synonyms: [
+      "data analyst",
+      "data engineer",
+      "data scientist",
+      "analytics engineer",
+      "bi analyst",
+      "business intelligence analyst",
+      "reporting analyst",
+    ],
     adjacent: ["engineering", "operations", "product"],
   },
   {
     key: "devops",
     label: "DevOps / SRE",
-    synonyms: ["devops", "site reliability", "sre", "platform engineer", "infrastructure engineer", "build engineer"],
-    adjacent: ["engineering", "qa", "support", "operations"],
+    synonyms: [
+      "devops",
+      "devops engineer",
+      "site reliability",
+      "site reliability engineer",
+      "sre",
+      "platform engineer",
+      "platform reliability engineer",
+      "infrastructure engineer",
+      "build engineer",
+      "release engineer",
+      "cloud engineer",
+      "systems engineer",
+    ],
+    adjacent: ["engineering", "support"],
   },
   {
     key: "support",
     label: "Support / IT",
-    synonyms: ["support engineer", "technical support", "it support", "help desk", "systems administrator", "implementation specialist"],
+    synonyms: [
+      "support engineer",
+      "technical support",
+      "technical support engineer",
+      "it support",
+      "it specialist",
+      "help desk",
+      "service desk",
+      "desktop support",
+      "systems administrator",
+      "sysadmin",
+      "implementation specialist",
+      "application support",
+      "customer support specialist",
+    ],
     adjacent: ["qa", "engineering", "operations", "project"],
   },
   {
     key: "project",
     label: "Project / Program",
-    synonyms: ["project manager", "program manager", "producer", "scrum master", "delivery manager"],
+    synonyms: [
+      "project manager",
+      "program manager",
+      "delivery manager",
+      "scrum master",
+      "technical producer",
+      "producer",
+    ],
     adjacent: ["product", "operations", "support"],
   },
   {
     key: "marketing",
     label: "Marketing",
-    synonyms: ["marketing", "crm", "martech", "campaign manager", "lifecycle marketing", "content marketing"],
+    synonyms: [
+      "marketing",
+      "crm",
+      "martech",
+      "campaign manager",
+      "lifecycle marketing",
+      "content marketing",
+      "growth marketing",
+    ],
     adjacent: ["product", "design", "sales", "operations"],
   },
   {
     key: "sales",
     label: "Sales",
-    synonyms: ["sales", "account executive", "business development", "sales development", "customer success"],
+    synonyms: [
+      "sales",
+      "account executive",
+      "business development",
+      "sales development",
+      "customer success",
+    ],
     adjacent: ["marketing", "support", "operations"],
   },
   {
     key: "operations",
     label: "Operations",
-    synonyms: ["operations", "business operations", "revenue operations", "delivery operations", "coordinator"],
+    synonyms: [
+      "operations",
+      "business operations",
+      "revenue operations",
+      "delivery operations",
+      "coordinator",
+      "operations analyst",
+    ],
     adjacent: ["project", "support", "data", "marketing"],
   },
 ];
@@ -138,7 +262,54 @@ const ROLE_FAMILIES: RoleFamilyDefinition[] = [
 export const TARGET_POSITION_OPTIONS: string[] = ROLE_FAMILIES.map((family) => family.label);
 
 function normalize(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\s/+-]/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/,+-]/g, " ")
+    .replace(/\bfullstack\b/g, "full stack")
+    .replace(/\bfront end\b/g, "frontend")
+    .replace(/\bback end\b/g, "backend")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitInput(value: string | null | undefined): string[] {
+  const normalized = normalize(value ?? "");
+  if (!normalized) return [];
+  return normalized
+    .split(/[,/|]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function getMatchingFamilies(value: string | null | undefined): RoleFamilyKey[] {
+  const parts = splitInput(value);
+  if (!parts.length) return [];
+
+  const keys = new Set<RoleFamilyKey>();
+
+  for (const part of parts) {
+    for (const family of ROLE_FAMILIES) {
+      const normalizedLabel = normalize(family.label);
+      if (part === normalizedLabel || normalizedLabel.includes(part) || part.includes(normalizedLabel)) {
+        keys.add(family.key);
+        continue;
+      }
+
+      for (const synonym of family.synonyms) {
+        const normalizedSynonym = normalize(synonym);
+        if (
+          part === normalizedSynonym ||
+          part.includes(normalizedSynonym) ||
+          normalizedSynonym.includes(part)
+        ) {
+          keys.add(family.key);
+          break;
+        }
+      }
+    }
+  }
+
+  return Array.from(keys);
 }
 
 export function getRoleFamilies(): RoleFamilyDefinition[] {
@@ -146,39 +317,34 @@ export function getRoleFamilies(): RoleFamilyDefinition[] {
 }
 
 export function inferRoleFamily(value: string | null | undefined): RoleFamilyKey {
-  const normalized = normalize(value ?? "");
-  if (!normalized) return "unknown";
+  const matches = getMatchingFamilies(value);
+  return matches[0] ?? "unknown";
+}
 
-  for (const family of ROLE_FAMILIES) {
-    if (
-      normalized === normalize(family.label) ||
-      family.synonyms.some((synonym) => normalized.includes(normalize(synonym)))
-    ) {
-      return family.key;
-    }
-  }
-
-  return "unknown";
+export function inferRoleFamilies(value: string | null | undefined): RoleFamilyKey[] {
+  return getMatchingFamilies(value);
 }
 
 export function getRoleFamilyPriority(
   targetPosition: string | null | undefined,
   jobTitle: string | null | undefined,
 ): number {
-  const targetFamily = inferRoleFamily(targetPosition);
+  const targetFamilies = inferRoleFamilies(targetPosition);
   const jobFamily = inferRoleFamily(jobTitle);
 
-  if (targetFamily === "unknown" || jobFamily === "unknown") {
+  if (!targetFamilies.length || jobFamily === "unknown") {
     return 0;
   }
 
-  if (targetFamily === jobFamily) {
+  if (targetFamilies.includes(jobFamily)) {
     return 100;
   }
 
-  const family = ROLE_FAMILIES.find((entry) => entry.key === targetFamily);
-  if (family?.adjacent.includes(jobFamily)) {
-    return 55;
+  for (const familyKey of targetFamilies) {
+    const family = ROLE_FAMILIES.find((entry) => entry.key === familyKey);
+    if (family?.adjacent.includes(jobFamily)) {
+      return 28;
+    }
   }
 
   return 0;
@@ -188,10 +354,24 @@ export function getRoleFamilyMatchStrength(
   targetPosition: string | null | undefined,
   jobTitle: string | null | undefined,
 ): RoleFamilyMatchStrength {
-  const score = getRoleFamilyPriority(targetPosition, jobTitle);
-  if (score >= 100) return "exact";
-  if (score >= 55) return "adjacent";
-  if (score >= 20) return "weak";
+  const targetFamilies = inferRoleFamilies(targetPosition);
+  const jobFamily = inferRoleFamily(jobTitle);
+
+  if (!targetFamilies.length || jobFamily === "unknown") {
+    return "weak";
+  }
+
+  if (targetFamilies.includes(jobFamily)) {
+    return "exact";
+  }
+
+  for (const familyKey of targetFamilies) {
+    const family = ROLE_FAMILIES.find((entry) => entry.key === familyKey);
+    if (family?.adjacent.includes(jobFamily)) {
+      return "adjacent";
+    }
+  }
+
   return "exclude";
 }
 
@@ -199,14 +379,15 @@ export function shouldHardExcludeRoleCandidate(
   targetPosition: string | null | undefined,
   jobTitle: string | null | undefined,
 ): boolean {
-  const targetFamily = inferRoleFamily(targetPosition);
-  if (targetFamily === "unknown") return false;
-
-  const family = ROLE_FAMILIES.find((entry) => entry.key === targetFamily);
-  if (!family?.exclusionKeywords?.length) return false;
+  const targetFamilies = inferRoleFamilies(targetPosition);
+  if (!targetFamilies.length) return false;
 
   const normalizedJobTitle = normalize(jobTitle ?? "");
   if (!normalizedJobTitle) return false;
 
-  return family.exclusionKeywords.some((keyword) => normalizedJobTitle.includes(normalize(keyword)));
+  return targetFamilies.some((familyKey) => {
+    const family = ROLE_FAMILIES.find((entry) => entry.key === familyKey);
+    if (!family?.exclusionKeywords?.length) return false;
+    return family.exclusionKeywords.some((keyword) => normalizedJobTitle.includes(normalize(keyword)));
+  });
 }

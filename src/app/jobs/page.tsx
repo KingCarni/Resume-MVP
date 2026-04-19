@@ -825,8 +825,8 @@ export default function JobsPage() {
               : "Preparing best matches";
         const nextMessage =
           nextTotal > 0
-            ? `Preparing cached best matches (${nextProcessed}/${nextTotal}). You are seeing recent jobs until the cache is ready.`
-            : "Preparing cached best matches now. You are seeing recent jobs until the cache is ready.";
+            ? `We are ranking and expanding best matches for this profile (${nextProcessed}/${nextTotal}). Ranked results will start showing as soon as they are ready.`
+            : "We are ranking and expanding best matches for this profile now. Ranked results will start showing as soon as they are ready.";
 
         return {
           ...current,
@@ -1265,7 +1265,9 @@ export default function JobsPage() {
                 <span className="font-semibold text-white">{totalJobs}</span> roles •{" "}
                 <span className="font-semibold text-white">
                   {selectedProfileId && appliedSort === "match" && matchWarmup?.usedFallback
-                    ? "Recent jobs while best matches prepare"
+                    ? jobs.some((job) => job.match)
+                      ? "Best matches so far while search completes"
+                      : "Recent jobs while best matches prepare"
                     : appliedSort === "match"
                       ? "Best match"
                       : appliedSort === "newest"

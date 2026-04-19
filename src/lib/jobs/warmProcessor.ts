@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { listMatchCandidateJobIds } from "@/lib/jobs/queries";
+import { listWarmupCandidateJobIds } from "@/lib/jobs/queries";
+import { scoreResumeToJob } from "@/lib/jobs/scoring";
 import {
   markJobMatchWarmupFailed,
   markJobMatchWarmupPending,
@@ -7,15 +8,54 @@ import {
   markJobMatchWarmupReady,
   claimJobMatchWarmupRun,
 } from "@/lib/jobs/warmup";
-import {
-  getRoleFamilyMatchStrength,
-  shouldHardExcludeRoleCandidate,
-} from "@/lib/jobs/roleFamilies";
 
-const MAX_CANDIDATES = 240;
+type ResumeProfileRow = {
+  id: string;
+  userId: string;
+  title: string | null;
+  normalizedSkills: unknown;
+  normalizedTitles: unknown;
+  seniority: string | null;
+  yearsExperience: number | null;
+  keywords: unknown;
+  summary: string | null;
+};
+
+const MAX_CANDIDATES = 1500;
 const BATCH_SIZE = 40;
 const MAX_BATCHES_PER_PASS = 3;
-const MIN_SURVIVOR_POOL = 80;
+
+function ensureStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function buildWarmupTargetPosition(profile: ResumeProfileRow, explicitTargetPosition?: string | null) {
+  const normalizedExplicit = explicitTargetPosition?.trim();
+  if (normalizedExplicit) return normalizedExplicit;
+
+  const seeds = [
+    profile.title ?? "",
+    ...ensureStringArray(profile.normalizedTitles).slice(0, 3),
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return seeds.join(", ") || null;
+}
+
+function toResumeProfileInput(profile: ResumeProfileRow) {
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    normalizedSkills: ensureStringArray(profile.normalizedSkills),
+    normalizedTitles: ensureStringArray(profile.normalizedTitles),
+    seniority: profile.seniority,
+    yearsExperience: profile.yearsExperience,
+    keywords: ensureStringArray(profile.keywords),
+    summary: profile.summary,
+  };
+}
 
 export async function runJobMatchWarmupPass(params: {
   userId: string;
@@ -27,13 +67,31 @@ export async function runJobMatchWarmupPass(params: {
   minSalary?: number | null;
   targetPosition?: string | null;
 }) {
-  const candidateIds = await listMatchCandidateJobIds({
-    q: params.q,
-    remote: params.remote,
-    location: params.location,
-    seniority: params.seniority,
-    minSalary: params.minSalary,
-    targetPosition: params.targetPosition,
+  const profile = await prisma.resumeProfile.findFirst({
+    where: {
+      id: params.resumeProfileId,
+      userId: params.userId,
+    },
+    select: {
+      id: true,
+      userId: true,
+      title: true,
+      normalizedSkills: true,
+      normalizedTitles: true,
+      seniority: true,
+      yearsExperience: true,
+      keywords: true,
+      summary: true,
+    },
+  });
+
+  if (!profile) {
+    throw new Error("Resume profile not found for warmup.");
+  }
+
+  const warmupTargetPosition = buildWarmupTargetPosition(profile, params.targetPosition);
+  const candidateIds = await listWarmupCandidateJobIds({
+    targetPosition: warmupTargetPosition,
     limit: MAX_CANDIDATES,
   });
 
@@ -59,34 +117,45 @@ export async function runJobMatchWarmupPass(params: {
   try {
     const jobs = await prisma.job.findMany({
       where: { id: { in: candidateIds }, status: "active" },
-      select: { id: true, title: true },
+      select: {
+        id: true,
+        title: true,
+        titleNormalized: true,
+        company: true,
+        companyNormalized: true,
+        location: true,
+        locationNormalized: true,
+        remoteType: true,
+        seniority: true,
+        description: true,
+        requirementsText: true,
+        responsibilitiesText: true,
+        skills: true,
+        keywords: true,
+      },
     });
 
     const idOrder = new Map(candidateIds.map((id, index) => [id, index]));
     const orderedJobs = jobs.sort(
-      (a, b) => (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+      (a, b) =>
+        (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
     );
 
-    const survivors = orderedJobs.filter((job) => {
-      if (shouldHardExcludeRoleCandidate(params.targetPosition, job.title)) {
-        return false;
-      }
-      const strength = getRoleFamilyMatchStrength(params.targetPosition, job.title);
-      return strength === "exact" || strength === "adjacent";
-    });
-
-    const effectiveCandidates = (survivors.length >= MIN_SURVIVOR_POOL ? survivors : orderedJobs).slice(0, MAX_CANDIDATES);
-    const total = effectiveCandidates.length;
+    const total = orderedJobs.length;
     let processed = claim.state?.processedCount ?? 0;
     let batchCount = 0;
     const startIndex = Math.min(processed, total);
+    const resumeProfileInput = toResumeProfileInput(profile);
 
     for (let index = startIndex; index < total; index += BATCH_SIZE) {
-      const batch = effectiveCandidates.slice(index, index + BATCH_SIZE);
+      const batch = orderedJobs.slice(index, index + BATCH_SIZE);
       if (batch.length === 0) break;
       batchCount += 1;
 
       for (const job of batch) {
+        const match = scoreResumeToJob(resumeProfileInput, job);
+
         await prisma.jobMatch.upsert({
           where: {
             resumeProfileId_jobId: {
@@ -98,17 +167,26 @@ export async function runJobMatchWarmupPass(params: {
             userId: params.userId,
             resumeProfileId: params.resumeProfileId,
             jobId: job.id,
-            totalScore: 50,
-            titleScore: 10,
-            skillScore: 20,
-            seniorityScore: 10,
-            locationScore: 5,
-            keywordScore: 5,
-            explanationShort: "Warmup placeholder score",
-            missingSkills: [],
-            matchingSkills: [],
+            totalScore: match.totalScore,
+            titleScore: match.titleScore,
+            skillScore: match.skillScore,
+            seniorityScore: match.seniorityScore,
+            locationScore: match.locationScore,
+            keywordScore: match.keywordScore,
+            explanationShort: match.explanationShort,
+            missingSkills: match.missingSkills,
+            matchingSkills: match.matchingSkills,
           },
           update: {
+            totalScore: match.totalScore,
+            titleScore: match.titleScore,
+            skillScore: match.skillScore,
+            seniorityScore: match.seniorityScore,
+            locationScore: match.locationScore,
+            keywordScore: match.keywordScore,
+            explanationShort: match.explanationShort,
+            missingSkills: match.missingSkills,
+            matchingSkills: match.matchingSkills,
             updatedAt: new Date(),
           },
         });
@@ -151,7 +229,7 @@ export async function runJobMatchWarmupPass(params: {
       resumeProfileId: params.resumeProfileId,
       processedCount: processed,
       totalCandidateCount: total,
-      lastProcessedJobId: effectiveCandidates[effectiveCandidates.length - 1]?.id ?? null,
+      lastProcessedJobId: orderedJobs[orderedJobs.length - 1]?.id ?? null,
     });
 
     return {

@@ -104,18 +104,37 @@ const ROLE_FAMILIES: Record<string, string[]> = {
   qa: [
     "qa tester",
     "qa engineer",
+    "qa analyst",
+    "qa lead",
+    "qa manager",
     "quality assurance",
+    "quality assurance engineer",
+    "quality assurance analyst",
     "quality engineer",
     "quality analyst",
     "platform quality analyst",
+    "software tester",
+    "software test engineer",
     "test engineer",
     "test analyst",
-    "automation tester",
-    "sdet",
-    "software tester",
-    "qa lead",
-    "qa manager",
+    "test lead",
     "test manager",
+    "manual tester",
+    "functional tester",
+    "automation tester",
+    "automation qa",
+    "qa automation engineer",
+    "test automation engineer",
+    "technical qa",
+    "sdet",
+    "software development engineer in test",
+    "validation engineer",
+    "verification engineer",
+    "uat analyst",
+    "game tester",
+    "game qa",
+    "release qa",
+    "build verification engineer",
   ],
   engineering: [
     "software engineer",
@@ -130,9 +149,9 @@ const ROLE_FAMILIES: Record<string, string[]> = {
     "frontend engineer",
     "backend engineer",
     "full stack engineer",
-    "devops engineer",
-    "platform engineer",
-    "site reliability engineer",
+    "application developer",
+    "web developer",
+    "mobile developer",
     "engineering manager",
     "development manager",
     "developer",
@@ -151,18 +170,28 @@ const ROLE_FAMILIES: Record<string, string[]> = {
   ],
   art: ["artist", "technical artist", "animator", "vfx artist", "3d artist", "art director", "lead artist"],
   product: ["product manager", "program manager", "project manager", "producer", "senior producer", "lead producer", "game producer"],
-  support: ["support engineer", "support analyst", "customer support specialist"],
-  data: ["data analyst", "business analyst", "data scientist", "analytics engineer"],
+  support: [
+    "support engineer",
+    "support analyst",
+    "technical support engineer",
+    "technical support",
+    "it specialist",
+    "it support",
+    "systems administrator",
+    "implementation specialist",
+    "customer support specialist",
+  ],
+  data: ["data analyst", "business analyst", "data scientist", "analytics engineer", "data engineer"],
   marketing: ["marketing manager", "marketing specialist", "marketing automation specialist", "lifecycle marketing", "crm specialist"],
 };
 
 const ROLE_BRIDGES: Record<string, string[]> = {
   qa: ["engineering", "support"],
-  engineering: ["qa", "design", "support"],
+  engineering: ["qa", "support", "devops"],
   design: ["engineering", "art"],
   art: ["design"],
   product: ["engineering", "support", "data"],
-  support: ["engineering", "qa", "product"],
+  support: ["qa", "engineering", "product"],
   data: ["product", "engineering"],
 };
 
@@ -661,20 +690,20 @@ function computeRoleFamilyRelevance(profile: ResumeProfileInput, job: JobForScor
   const primaryBridges = buildBridgeFamilies(primaryProfileFamilies);
   const primaryBridgedOverlap = Array.from(jobFamilies).some((family) => primaryBridges.has(family));
   if (primaryBridgedOverlap) {
-    return { directOverlap: false, bridgedOverlap: true, relevance: 0.52 };
+    return { directOverlap: false, bridgedOverlap: true, relevance: 0.34 };
   }
 
   const profileBridges = buildBridgeFamilies(profileFamilies);
   const bridgedOverlap = Array.from(jobFamilies).some((family) => profileBridges.has(family));
   if (bridgedOverlap) {
-    return { directOverlap: false, bridgedOverlap: true, relevance: 0.4 };
+    return { directOverlap: false, bridgedOverlap: true, relevance: 0.24 };
   }
 
   if (!profileFamilies.size || !jobFamilies.size) {
-    return { directOverlap: false, bridgedOverlap: false, relevance: 0.72 };
+    return { directOverlap: false, bridgedOverlap: false, relevance: 0.64 };
   }
 
-  return { directOverlap: false, bridgedOverlap: false, relevance: 0.22 };
+  return { directOverlap: false, bridgedOverlap: false, relevance: 0.12 };
 }
 
 function specificityWeight(value: string): number {
