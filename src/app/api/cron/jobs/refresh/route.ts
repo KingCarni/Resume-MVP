@@ -13,6 +13,12 @@ export const dynamic = "force-dynamic";
 
 const ADMIN_EMAILS = ["gitajob.com@gmail.com"];
 
+type AdminSessionLike = {
+  user?: {
+    email?: string | null;
+  } | null;
+} | null;
+
 function getBearerToken(request: NextRequest) {
   const header = request.headers.get("authorization") ?? "";
   if (!header.toLowerCase().startsWith("bearer ")) return "";
@@ -29,7 +35,7 @@ function isAuthorizedCronRequest(request: NextRequest) {
   return headerToken === secret || queryToken === secret;
 }
 
-function isAdminSession(session: Awaited<ReturnType<typeof getServerSession>>) {
+function isAdminSession(session: AdminSessionLike) {
   const email = String(session?.user?.email ?? "").trim().toLowerCase();
   return !!email && ADMIN_EMAILS.includes(email);
 }
