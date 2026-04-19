@@ -65,5 +65,42 @@ export async function GET(request: NextRequest) {
     pageSize,
   });
 
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json({
+    ok: true,
+    items: result.jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      company: job.company,
+      location: job.location,
+      remoteType: job.remoteType,
+      seniority: job.seniority,
+      salaryMin: job.salaryMin,
+      salaryMax: job.salaryMax,
+      salaryCurrency: job.salaryCurrency,
+      postedAt: job.postedAt ? job.postedAt.toISOString() : null,
+      createdAt: job.createdAt.toISOString(),
+      status: job.status,
+      titleNormalized: job.titleNormalized,
+      locationNormalized: job.locationNormalized,
+      companyNormalized: job.companyNormalized,
+      source: job.source
+        ? { slug: job.source.slug, name: job.source.name }
+        : { slug: "unknown", name: "Unknown" },
+      match: job.matchScore != null
+        ? {
+            totalScore: job.matchScore,
+            explanationShort: job.explanationShort ?? null,
+            matchingSkills: job.matchingSkills ?? [],
+            missingSkills: job.missingSkills ?? [],
+            computedAt: job.updatedAt.toISOString(),
+          }
+        : null,
+    })),
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalPages: result.totalPages,
+    usedFallback: result.usedFallback,
+    warmup: result.warmup,
+  });
 }

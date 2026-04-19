@@ -565,7 +565,7 @@ export default function JobsPage() {
                 lastError: null,
                 shortLabel: json.usedFallback ? "Preparing best matches" : "Best match ready",
                 message: json.usedFallback
-                  ? "Best-match cache is not ready yet, so the feed is showing recent jobs."
+                  ? "Best matches are still preparing, so the feed is showing recent jobs for now."
                   : "Best-match cache is ready.",
               }
             : null,
@@ -973,7 +973,7 @@ export default function JobsPage() {
   }, [appliedLocation, appliedMinSalary, appliedRemote, appliedSearch, appliedSeniority, appliedSort, defaultSort]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen text-white">
       <header className="shell-wrap pt-5">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-4">

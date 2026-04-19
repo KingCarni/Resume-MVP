@@ -18,31 +18,96 @@ export type ListJobsParams = {
   resumeProfileId?: string | null;
   targetPosition?: string | null;
   q?: string | null;
-  page?: number;
-  pageSize?: number;
-  sort?: JobSort;
+  remote?: string | null;
+  location?: string | null;
+  seniority?: string | null;
+  minSalary?: number | null;
+  page?: number | null;
+  pageSize?: number | null;
+  sort?: JobSort | null;
 };
 
 const DEFAULT_PAGE_SIZE = 20;
 const MIN_SCORE_TO_SURFACE = 21;
+const CANDIDATE_SCAN_MULTIPLIER = 3;
+
+function normalizedValue(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeRemote(value: string | null | undefined) {
+  const normalized = normalizedValue(value).toLowerCase();
+  if (!normalized || normalized === "all") return null;
+  if (
+    normalized === "remote" ||
+    normalized === "hybrid" ||
+    normalized === "onsite" ||
+    normalized === "unknown"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeSeniority(value: string | null | undefined) {
+  const normalized = normalizedValue(value).toLowerCase();
+  if (!normalized || normalized === "all") return null;
+  return normalized;
+}
+
+function buildBaseJobWhere(params: Pick<ListJobsParams, "q" | "remote" | "location" | "seniority" | "minSalary">): Prisma.JobWhereInput {
+  const q = normalizedValue(params.q);
+  const remote = normalizeRemote(params.remote);
+  const location = normalizedValue(params.location);
+  const seniority = normalizeSeniority(params.seniority);
+  const minSalary = typeof params.minSalary === "number" && Number.isFinite(params.minSalary)
+    ? Math.max(0, Math.floor(params.minSalary))
+    : null;
+
+  return {
+    status: "active",
+    ...(q
+      ? {
+          OR: [
+            { title: { contains: q, mode: Prisma.QueryMode.insensitive } },
+            { company: { contains: q, mode: Prisma.QueryMode.insensitive } },
+            { description: { contains: q, mode: Prisma.QueryMode.insensitive } },
+          ],
+        }
+      : {}),
+    ...(remote ? { remoteType: remote } : {}),
+    ...(location
+      ? {
+          OR: [
+            { location: { contains: location, mode: Prisma.QueryMode.insensitive } },
+            { locationNormalized: { contains: location.toLowerCase() } },
+          ],
+        }
+      : {}),
+    ...(seniority ? { seniority } : {}),
+    ...(minSalary != null
+      ? {
+          OR: [
+            { salaryMin: { gte: minSalary } },
+            { salaryMax: { gte: minSalary } },
+          ],
+        }
+      : {}),
+  };
+}
 
 export async function listMatchCandidateJobIds(params: {
   q?: string | null;
+  remote?: string | null;
+  location?: string | null;
+  seniority?: string | null;
+  minSalary?: number | null;
   targetPosition?: string | null;
   limit: number;
 }) {
+  const take = Math.max(params.limit * CANDIDATE_SCAN_MULTIPLIER, params.limit);
   const jobs = await prisma.job.findMany({
-    where: {
-      status: "active",
-      ...(params.q?.trim()
-        ? {
-            OR: [
-              { title: { contains: params.q.trim(), mode: Prisma.QueryMode.insensitive } },
-              { company: { contains: params.q.trim(), mode: Prisma.QueryMode.insensitive } },
-            ],
-          }
-        : {}),
-    },
+    where: buildBaseJobWhere(params),
     select: {
       id: true,
       title: true,
@@ -50,7 +115,7 @@ export async function listMatchCandidateJobIds(params: {
       createdAt: true,
     },
     orderBy: [{ postedAt: "desc" }, { createdAt: "desc" }],
-    take: Math.max(params.limit * 3, params.limit),
+    take,
   });
 
   const ranked = jobs
@@ -74,70 +139,95 @@ export async function listMatchCandidateJobIds(params: {
     });
 
   const filtered = ranked.filter((job) => job.matchStrength !== "exclude");
-  const finalSlice = (filtered.length ? filtered : ranked).slice(0, params.limit);
-  return finalSlice.map((job) => job.id);
+  const fallback = filtered.length > 0 ? filtered : ranked;
+  return fallback.slice(0, params.limit).map((job) => job.id);
 }
 
 export async function listJobs(params: ListJobsParams) {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE);
   const sort = params.sort ?? "match";
+  const baseWhere = buildBaseJobWhere(params);
 
   const warmupState = params.resumeProfileId
-    ? await getJobMatchWarmupState(params.resumeProfileId)
+    ? await getJobMatchWarmupState({
+        userId: params.userId,
+        resumeProfileId: params.resumeProfileId,
+      })
     : null;
-  const warmupUiState = getJobMatchWarmupUiState(warmupState);
 
-  if (sort === "match" && params.resumeProfileId && shouldUseJobMatchCache(warmupState)) {
-    const matches = await prisma.jobMatch.findMany({
-      where: {
-        resumeProfileId: params.resumeProfileId,
-        totalScore: { gte: MIN_SCORE_TO_SURFACE },
-        job: {
-          status: "active",
-        },
-      },
-      orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        job: true,
-      },
-    });
+  const shouldUseCache =
+    sort === "match" &&
+    Boolean(params.resumeProfileId) &&
+    shouldUseJobMatchCache(warmupState);
 
-    const total = await prisma.jobMatch.count({
-      where: {
-        resumeProfileId: params.resumeProfileId,
-        totalScore: { gte: MIN_SCORE_TO_SURFACE },
-        job: { status: "active" },
-      },
-    });
+  const warmupUiState = getJobMatchWarmupUiState({
+    state: warmupState,
+    usedFallback: sort === "match" && Boolean(params.resumeProfileId) && !shouldUseCache,
+  });
+
+  if (shouldUseCache && params.resumeProfileId) {
+    const cacheWhere: Prisma.JobMatchWhereInput = {
+      resumeProfileId: params.resumeProfileId,
+      totalScore: { gte: MIN_SCORE_TO_SURFACE },
+      job: baseWhere,
+    };
+
+    const [matches, total] = await Promise.all([
+      prisma.jobMatch.findMany({
+        where: cacheWhere,
+        orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { job: { include: { source: true } } },
+      }),
+      prisma.jobMatch.count({ where: cacheWhere }),
+    ]);
 
     return {
       jobs: matches.map((match) => ({
         ...match.job,
         matchScore: match.totalScore,
+        explanationShort: match.explanationShort,
         matchingSkills: match.matchingSkills,
         missingSkills: match.missingSkills,
       })),
       total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
       usedFallback: false,
-      matchWarmup: warmupUiState,
+      warmup: warmupUiState,
     };
   }
 
-  const jobs = await prisma.job.findMany({
-    where: { status: "active" },
-    orderBy: [{ postedAt: "desc" }, { createdAt: "desc" }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  });
-  const total = await prisma.job.count({ where: { status: "active" } });
+  const [jobs, total] = await Promise.all([
+    prisma.job.findMany({
+      where: baseWhere,
+      include: { source: true },
+      orderBy:
+        sort === "salary"
+          ? [{ salaryMax: "desc" }, { salaryMin: "desc" }, { postedAt: "desc" }, { createdAt: "desc" }]
+          : [{ postedAt: "desc" }, { createdAt: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.job.count({ where: baseWhere }),
+  ]);
 
   return {
-    jobs: jobs.map((job) => ({ ...job, matchScore: null, matchingSkills: [], missingSkills: [] })),
+    jobs: jobs.map((job) => ({
+      ...job,
+      matchScore: null,
+      explanationShort: null,
+      matchingSkills: [],
+      missingSkills: [],
+    })),
     total,
-    usedFallback: sort === "match",
-    matchWarmup: warmupUiState,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    usedFallback: sort === "match" && Boolean(params.resumeProfileId),
+    warmup: warmupUiState,
   };
 }

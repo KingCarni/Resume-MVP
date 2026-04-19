@@ -135,6 +135,8 @@ const ROLE_FAMILIES: RoleFamilyDefinition[] = [
   },
 ];
 
+export const TARGET_POSITION_OPTIONS: string[] = ROLE_FAMILIES.map((family) => family.label);
+
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\s/+-]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -148,7 +150,10 @@ export function inferRoleFamily(value: string | null | undefined): RoleFamilyKey
   if (!normalized) return "unknown";
 
   for (const family of ROLE_FAMILIES) {
-    if (family.synonyms.some((synonym) => normalized.includes(normalize(synonym)))) {
+    if (
+      normalized === normalize(family.label) ||
+      family.synonyms.some((synonym) => normalized.includes(normalize(synonym)))
+    ) {
       return family.key;
     }
   }

@@ -305,6 +305,17 @@ export async function updateJobMatchWarmupProgress(args: {
   });
 }
 
+
+export async function markJobMatchWarmupProgress(args: {
+  userId: string;
+  resumeProfileId: string;
+  processedCount: number;
+  totalCandidateCount: number;
+  lastProcessedJobId?: string | null;
+}) {
+  return updateJobMatchWarmupProgress(args);
+}
+
 export async function markJobMatchWarmupReady(args: {
   userId: string;
   resumeProfileId: string;

@@ -5,7 +5,7 @@ import {
   markJobMatchWarmupPending,
   markJobMatchWarmupProgress,
   markJobMatchWarmupReady,
-  markJobMatchWarmupRunning,
+  claimJobMatchWarmupRun,
 } from "@/lib/jobs/warmup";
 import {
   getRoleFamilyMatchStrength,
@@ -17,26 +17,57 @@ const BATCH_SIZE = 40;
 const MAX_BATCHES_PER_PASS = 3;
 const MIN_SURVIVOR_POOL = 80;
 
-export async function runWarmProcessor(params: {
+export async function runJobMatchWarmupPass(params: {
+  userId: string;
   resumeProfileId: string;
-  targetPosition?: string | null;
   q?: string | null;
+  remote?: string | null;
+  location?: string | null;
+  seniority?: string | null;
+  minSalary?: number | null;
+  targetPosition?: string | null;
 }) {
+  const candidateIds = await listMatchCandidateJobIds({
+    q: params.q,
+    remote: params.remote,
+    location: params.location,
+    seniority: params.seniority,
+    minSalary: params.minSalary,
+    targetPosition: params.targetPosition,
+    limit: MAX_CANDIDATES,
+  });
+
+  const totalCandidates = candidateIds.length;
+  const claim = await claimJobMatchWarmupRun({
+    userId: params.userId,
+    resumeProfileId: params.resumeProfileId,
+    totalCandidateCount: totalCandidates,
+  });
+
+  if (!claim.acquired) {
+    return {
+      status: claim.reason === "ready" ? ("ready" as const) : ("running" as const),
+      processed: claim.state?.processedCount ?? 0,
+      totalCandidates: claim.state?.totalCandidateCount ?? totalCandidates,
+      ready: claim.reason === "ready",
+      didWork: false,
+      continueRecommended: claim.reason !== "ready",
+      claimReason: claim.reason,
+    };
+  }
+
   try {
-    await markJobMatchWarmupRunning(params.resumeProfileId);
-
-    const candidateIds = await listMatchCandidateJobIds({
-      q: params.q,
-      targetPosition: params.targetPosition,
-      limit: MAX_CANDIDATES,
-    });
-
     const jobs = await prisma.job.findMany({
       where: { id: { in: candidateIds }, status: "active" },
       select: { id: true, title: true },
     });
 
-    const survivors = jobs.filter((job) => {
+    const idOrder = new Map(candidateIds.map((id, index) => [id, index]));
+    const orderedJobs = jobs.sort(
+      (a, b) => (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (idOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+
+    const survivors = orderedJobs.filter((job) => {
       if (shouldHardExcludeRoleCandidate(params.targetPosition, job.title)) {
         return false;
       }
@@ -44,14 +75,15 @@ export async function runWarmProcessor(params: {
       return strength === "exact" || strength === "adjacent";
     });
 
-    const effectiveCandidates = (survivors.length >= MIN_SURVIVOR_POOL ? survivors : jobs).slice(0, MAX_CANDIDATES);
-
-    let processed = 0;
+    const effectiveCandidates = (survivors.length >= MIN_SURVIVOR_POOL ? survivors : orderedJobs).slice(0, MAX_CANDIDATES);
     const total = effectiveCandidates.length;
+    let processed = claim.state?.processedCount ?? 0;
     let batchCount = 0;
+    const startIndex = Math.min(processed, total);
 
-    for (let index = 0; index < effectiveCandidates.length; index += BATCH_SIZE) {
+    for (let index = startIndex; index < total; index += BATCH_SIZE) {
       const batch = effectiveCandidates.slice(index, index + BATCH_SIZE);
+      if (batch.length === 0) break;
       batchCount += 1;
 
       for (const job of batch) {
@@ -63,7 +95,7 @@ export async function runWarmProcessor(params: {
             },
           },
           create: {
-            userId: "system",
+            userId: params.userId,
             resumeProfileId: params.resumeProfileId,
             jobId: job.id,
             totalScore: 50,
@@ -84,37 +116,61 @@ export async function runWarmProcessor(params: {
 
       processed += batch.length;
       const lastProcessedJobId = batch[batch.length - 1]?.id ?? null;
-      await markJobMatchWarmupProgress(params.resumeProfileId, {
+      await markJobMatchWarmupProgress({
+        userId: params.userId,
+        resumeProfileId: params.resumeProfileId,
         processedCount: processed,
         totalCandidateCount: total,
         lastProcessedJobId,
       });
 
       if (batchCount >= MAX_BATCHES_PER_PASS && processed < total) {
-        await markJobMatchWarmupPending(params.resumeProfileId);
+        await markJobMatchWarmupPending({
+          userId: params.userId,
+          resumeProfileId: params.resumeProfileId,
+          totalCandidateCount: total,
+          processedCount: processed,
+          lastProcessedJobId,
+          preserveProgress: true,
+          reason: null,
+        });
         return {
-          status: "partial" as const,
+          status: "pending" as const,
           processed,
-          total,
+          totalCandidates: total,
+          ready: false,
+          didWork: true,
+          continueRecommended: true,
+          claimReason: "claimed" as const,
         };
       }
     }
 
-    await markJobMatchWarmupReady(params.resumeProfileId, {
+    await markJobMatchWarmupReady({
+      userId: params.userId,
+      resumeProfileId: params.resumeProfileId,
       processedCount: processed,
       totalCandidateCount: total,
+      lastProcessedJobId: effectiveCandidates[effectiveCandidates.length - 1]?.id ?? null,
     });
 
     return {
       status: "ready" as const,
       processed,
-      total,
+      totalCandidates: total,
+      ready: true,
+      didWork: true,
+      continueRecommended: false,
+      claimReason: "claimed" as const,
     };
   } catch (error) {
-    await markJobMatchWarmupFailed(
-      params.resumeProfileId,
-      error instanceof Error ? error.message : "Unknown warmup failure",
-    );
+    await markJobMatchWarmupFailed({
+      userId: params.userId,
+      resumeProfileId: params.resumeProfileId,
+      error,
+    });
     throw error;
   }
 }
+
+export const runWarmProcessor = runJobMatchWarmupPass;
