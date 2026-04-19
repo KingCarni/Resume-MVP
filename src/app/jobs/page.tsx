@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import CreditsPill from "@/components/Billing/CreditsPill";
+import { TARGET_POSITION_OPTIONS } from "@/lib/jobs/roleFamilies";
 
 type ResumeProfileItem = {
   id: string;
@@ -210,6 +211,7 @@ type PersistedJobsPageState = {
   seniority?: string;
   minSalary?: string;
   sort?: SortMode;
+  targetPosition?: string;
   page?: number;
 };
 
@@ -309,12 +311,14 @@ export default function JobsPage() {
   const [seniorityInput, setSeniorityInput] = useState("all");
   const [minSalaryInput, setMinSalaryInput] = useState("");
   const [sortInput, setSortInput] = useState<SortMode>("match");
+  const [targetPositionInput, setTargetPositionInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [appliedLocation, setAppliedLocation] = useState("");
   const [appliedRemote, setAppliedRemote] = useState<RemoteFilter>("all");
   const [appliedSeniority, setAppliedSeniority] = useState("all");
   const [appliedMinSalary, setAppliedMinSalary] = useState("");
   const [appliedSort, setAppliedSort] = useState<SortMode>("match");
+  const [appliedTargetPosition, setAppliedTargetPosition] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
@@ -337,7 +341,8 @@ export default function JobsPage() {
     remoteInput !== appliedRemote ||
     seniorityInput !== appliedSeniority ||
     normalizeInputValue(minSalaryInput) !== appliedMinSalary ||
-    sortInput !== appliedSort;
+    sortInput !== appliedSort ||
+    normalizeInputValue(targetPositionInput) !== appliedTargetPosition;
 
 
   useEffect(() => {
@@ -355,6 +360,7 @@ export default function JobsPage() {
         const nextSeniority = typeof parsed.seniority === "string" && parsed.seniority.trim() ? parsed.seniority : "all";
         const nextMinSalary = normalizeInputValue((parsed.minSalary ?? "").replace(/[^\d]/g, ""));
         const nextSort = isSortMode(parsed.sort) ? parsed.sort : "match";
+        const nextTargetPosition = normalizeInputValue(parsed.targetPosition ?? "");
         const nextPage = typeof parsed.page === "number" && Number.isFinite(parsed.page) && parsed.page > 0
           ? Math.floor(parsed.page)
           : 1;
@@ -371,6 +377,8 @@ export default function JobsPage() {
         setAppliedMinSalary(nextMinSalary);
         setSortInput(nextSort);
         setAppliedSort(nextSort);
+        setTargetPositionInput(nextTargetPosition);
+        setAppliedTargetPosition(nextTargetPosition);
         setPage(nextPage);
 
         if (storedProfileId) {
@@ -406,6 +414,7 @@ export default function JobsPage() {
       seniority: appliedSeniority,
       minSalary: appliedMinSalary,
       sort: appliedSort,
+      targetPosition: appliedTargetPosition,
       page,
     };
 
@@ -417,6 +426,7 @@ export default function JobsPage() {
     appliedSearch,
     appliedSeniority,
     appliedSort,
+    appliedTargetPosition,
     page,
     pageStateReady,
     selectedProfileId,
@@ -441,6 +451,7 @@ export default function JobsPage() {
       location: appliedLocation || undefined,
       seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
       minSalary: appliedMinSalary ? Number(appliedMinSalary) : undefined,
+      targetPosition: appliedTargetPosition || undefined,
     }),
     [
       appliedLocation,
@@ -449,6 +460,7 @@ export default function JobsPage() {
       appliedSearch,
       appliedSeniority,
       selectedProfileId,
+      appliedTargetPosition,
     ],
   );
 
@@ -501,6 +513,7 @@ export default function JobsPage() {
     if (appliedRemote !== "all") params.set("remote", appliedRemote);
     if (appliedSeniority !== "all") params.set("seniority", appliedSeniority);
     if (appliedMinSalary) params.set("minSalary", appliedMinSalary);
+    if (appliedTargetPosition) params.set("targetPosition", appliedTargetPosition);
     params.set("sort", appliedSort);
     params.set("page", String(page));
     params.set("pageSize", "20");
@@ -512,6 +525,7 @@ export default function JobsPage() {
     appliedSearch,
     appliedSeniority,
     appliedSort,
+    appliedTargetPosition,
     page,
     selectedProfileId,
   ]);
@@ -605,6 +619,7 @@ export default function JobsPage() {
     setAppliedSeniority(seniorityInput);
     setAppliedMinSalary(nextMinSalary);
     setAppliedSort(sortInput);
+    setAppliedTargetPosition(normalizeInputValue(targetPositionInput));
     setPage(1);
   }
 
@@ -616,12 +631,14 @@ export default function JobsPage() {
     setSeniorityInput("all");
     setMinSalaryInput("");
     setSortInput(nextSort);
+    setTargetPositionInput("");
     setAppliedSearch("");
     setAppliedLocation("");
     setAppliedRemote("all");
     setAppliedSeniority("all");
     setAppliedMinSalary("");
     setAppliedSort(nextSort);
+    setAppliedTargetPosition("");
     setPage(1);
   }
 
@@ -631,7 +648,7 @@ export default function JobsPage() {
     applyFilters();
   }
 
-  function removeAppliedFilter(kind: "search" | "location" | "remote" | "seniority" | "minSalary" | "sort") {
+  function removeAppliedFilter(kind: "search" | "location" | "remote" | "seniority" | "minSalary" | "sort" | "targetPosition") {
     if (kind === "search") {
       setSearchInput("");
       setAppliedSearch("");
@@ -647,6 +664,9 @@ export default function JobsPage() {
     } else if (kind === "minSalary") {
       setMinSalaryInput("");
       setAppliedMinSalary("");
+    } else if (kind === "targetPosition") {
+      setTargetPositionInput("");
+      setAppliedTargetPosition("");
     } else if (kind === "sort") {
       const nextSort = defaultSort;
       setSortInput(nextSort);
@@ -731,7 +751,7 @@ export default function JobsPage() {
       location: appliedLocation || undefined,
       minSalary: appliedMinSalary || undefined,
       totalJobs,
-      meta: { jobsCount: jobs.length },
+      meta: { jobsCount: jobs.length, targetPosition: appliedTargetPosition || undefined },
     });
   }, [
     appliedLocation,
@@ -740,6 +760,7 @@ export default function JobsPage() {
     appliedSearch,
     appliedSeniority,
     appliedSort,
+    appliedTargetPosition,
     jobs,
     jobsError,
     jobsLoading,
@@ -952,7 +973,7 @@ export default function JobsPage() {
   }, [appliedLocation, appliedMinSalary, appliedRemote, appliedSearch, appliedSeniority, appliedSort, defaultSort]);
 
   return (
-    <main className="min-h-screen pb-10 text-white">
+    <main className="min-h-screen bg-slate-950 text-white">
       <header className="shell-wrap pt-5">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-4">
@@ -987,8 +1008,8 @@ export default function JobsPage() {
         </div>
       </header>
 
-      <div className="shell-wrap py-8">
-        <div className="mb-8 overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_34%),radial-gradient(circle_at_78%_22%,rgba(59,130,246,0.14),transparent_28%),rgba(2,6,23,0.72)] p-6 shadow-[0_26px_80px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -1025,7 +1046,7 @@ export default function JobsPage() {
             {feedback.message}
           </div>
         ) : null}
-        <section className="mb-6 rounded-3xl border border-white/10 bg-slate-950/65 p-4 shadow-[0_24px_70px_rgba(2,6,23,0.28)] backdrop-blur-xl">
+        <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
           <div className="grid gap-4 lg:grid-cols-6">
             <div className="lg:col-span-2">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
@@ -1062,6 +1083,28 @@ export default function JobsPage() {
                   No resume profiles yet. Upload or build one in the Resume tool to unlock best-match ranking.
                 </div>
               ) : null}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Target position
+              </label>
+              <input
+                list="job-target-position-options"
+                value={targetPositionInput}
+                onChange={(event) => setTargetPositionInput(event.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="QA Engineer, Product Manager..."
+                className="w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/50"
+              />
+              <datalist id="job-target-position-options">
+                {TARGET_POSITION_OPTIONS.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
+              <p className="mt-2 text-xs text-slate-400">
+                Use this to prioritize closely related roles first during best-match warmup.
+              </p>
             </div>
 
             <div className="lg:col-span-2">
@@ -1212,7 +1255,7 @@ export default function JobsPage() {
           </div>
         </section>
 
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 backdrop-blur">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <div>
             {jobsLoading ? (
               <span>Refreshing jobs…</span>

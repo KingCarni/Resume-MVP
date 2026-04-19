@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     location?: string;
     seniority?: string;
     minSalary?: number | null;
+    targetPosition?: string;
   };
 
   const resumeProfileId = typeof body.resumeProfileId === "string" ? body.resumeProfileId : "";
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
       location: body.location ?? null,
       seniority: body.seniority ?? null,
       minSalary: typeof body.minSalary === "number" ? body.minSalary : null,
+      targetPosition: typeof body.targetPosition === "string" ? body.targetPosition : null,
     });
 
     return NextResponse.json({

@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
   const location = searchParams.get("location");
   const seniority = searchParams.get("seniority");
   const minSalary = parseNullableInt(searchParams.get("minSalary"));
+  const targetPosition = searchParams.get("targetPosition");
   const sort =
     (searchParams.get("sort") as "match" | "newest" | "salary" | null) ??
     "match";
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
     location,
     seniority,
     minSalary,
+    targetPosition,
     sort,
     page,
     pageSize,

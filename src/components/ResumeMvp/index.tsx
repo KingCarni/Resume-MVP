@@ -5576,6 +5576,8 @@ if (typeof planIndex === "number") {
 
   const [editorMetaGames, setEditorMetaGames] = useState<string[]>([]);
   const [editorMetaMetrics, setEditorMetaMetrics] = useState<string[]>([]);
+  const lastMetaGamesSeedKeyRef = useRef<string>("");
+  const lastMetaMetricsSeedKeyRef = useRef<string>("");
   const [shippedLabelMode, setShippedLabelMode] = useState<"Games" | "Apps">("Games");
 
   const guardrailTerms = useMemo(() => {
@@ -5748,6 +5750,8 @@ if (typeof planIndex === "number") {
       : "";
     return `${jobIds}::${bullets}::${jobs}`;
   }, [analysis]);
+  const metaGamesSeedKey = useMemo(() => `${analysisSeedKey}::games::${metaGames.join("|")}`, [analysisSeedKey, metaGames]);
+  const metaMetricsSeedKey = useMemo(() => `${analysisSeedKey}::metrics::${metaMetrics.join("|")}`, [analysisSeedKey, metaMetrics]);
 
   useEffect(() => {
     if (!analysisSeedKey) return;
@@ -5780,7 +5784,11 @@ if (typeof planIndex === "number") {
   }, [analysisSeedKey, bulletsBySection, preserveStructuredDuringAnalyze, structuredResumeSnapshot]);
 
   useEffect(() => {
+    if (!metaGamesSeedKey) return;
     if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (lastMetaGamesSeedKeyRef.current === metaGamesSeedKey) return;
+
+    lastMetaGamesSeedKeyRef.current = metaGamesSeedKey;
     setEditorMetaGames((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       const cleanedNext = metaGames.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -5789,10 +5797,14 @@ if (typeof planIndex === "number") {
       }
       return metaGames;
     });
-  }, [analysis?.metaBlocks?.gamesShipped, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
+  }, [metaGamesSeedKey, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
 
   useEffect(() => {
+    if (!metaMetricsSeedKey) return;
     if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (lastMetaMetricsSeedKeyRef.current === metaMetricsSeedKey) return;
+
+    lastMetaMetricsSeedKeyRef.current = metaMetricsSeedKey;
     setEditorMetaMetrics((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       const cleanedNext = metaMetrics.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -5801,7 +5813,7 @@ if (typeof planIndex === "number") {
       }
       return metaMetrics;
     });
-  }, [analysis?.metaBlocks?.metrics, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaMetrics]);
+  }, [metaMetricsSeedKey, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaMetrics]);
 
   useEffect(() => {
     setCollapsedSections((prev) => {
