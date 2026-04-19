@@ -775,6 +775,11 @@ export default function JobsPage() {
       const json = (await response.json().catch(() => ({ ok: response.ok }))) as {
         ok?: boolean;
         error?: string;
+        status?: MatchWarmupState["status"];
+        processed?: number;
+        totalCandidates?: number;
+        continueRecommended?: boolean;
+        ready?: boolean;
       };
 
       if (!response.ok || json.ok === false) {
@@ -783,19 +788,38 @@ export default function JobsPage() {
 
       setMatchWarmup((current) => {
         if (!current) return current;
+        const nextStatus = json.status ?? "running";
+        const nextProcessed = typeof json.processed === "number" ? json.processed : current.processedCount;
+        const nextTotal = typeof json.totalCandidates === "number" ? json.totalCandidates : current.totalCandidateCount;
+        const nextReady = Boolean(json.ready);
+        const shouldContinue = Boolean(json.continueRecommended) && !nextReady;
+        const progressPercent = nextTotal > 0 ? Math.max(0, Math.min(100, Math.round((nextProcessed / nextTotal) * 100))) : 0;
+        const nextLabel =
+          nextStatus === "pending"
+            ? manualRetry
+              ? "Queued best-match refresh"
+              : "Best matches queued"
+            : manualRetry
+              ? "Retrying best matches"
+              : "Preparing best matches";
+        const nextMessage =
+          nextTotal > 0
+            ? `Preparing cached best matches (${nextProcessed}/${nextTotal}). You are seeing recent jobs until the cache is ready.`
+            : "Preparing cached best matches now. You are seeing recent jobs until the cache is ready.";
+
         return {
           ...current,
-          status: "running",
-          active: true,
-          ready: false,
-          usedFallback: true,
-          shouldTriggerWarmup: false,
-          shouldPoll: true,
-          shortLabel: manualRetry ? "Retrying best matches" : "Preparing best matches",
-          message:
-            current.totalCandidateCount > 0
-              ? `Preparing cached best matches (${current.processedCount}/${current.totalCandidateCount}). You are seeing recent jobs until the cache is ready.`
-              : "Preparing cached best matches now. You are seeing recent jobs until the cache is ready.",
+          status: nextReady ? "ready" : nextStatus,
+          active: !nextReady,
+          ready: nextReady,
+          usedFallback: !nextReady,
+          processedCount: nextProcessed,
+          totalCandidateCount: nextTotal,
+          progressPercent: nextReady ? 100 : progressPercent,
+          shouldTriggerWarmup: shouldContinue,
+          shouldPoll: shouldContinue,
+          shortLabel: nextReady ? "Best matches ready" : nextLabel,
+          message: nextReady ? "Cached best-match results are ready for this resume profile." : nextMessage,
           lastError: null,
         };
       });
@@ -851,9 +875,10 @@ export default function JobsPage() {
     if (!selectedProfileId) return;
     if (appliedSort !== "match") return;
     if (!matchWarmup?.shouldPoll) return;
+    if (warmupRequestInFlight) return;
 
     const timeout = window.setTimeout(() => {
-      setJobsRefreshNonce((value) => value + 1);
+      void triggerWarmup(false);
     }, 10000);
 
     return () => window.clearTimeout(timeout);
@@ -864,6 +889,7 @@ export default function JobsPage() {
     matchWarmup?.status,
     pageStateReady,
     selectedProfileId,
+    warmupRequestInFlight,
   ]);
 
   async function hideJob(job: JobListItem) {
@@ -1233,25 +1259,19 @@ export default function JobsPage() {
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {matchWarmup.shouldPoll ? (
+                {matchWarmup.shouldPoll || matchWarmup.shouldTriggerWarmup ? (
                   <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
                     Checking every 10s
                   </span>
                 ) : null}
-                {matchWarmup.status === "failed" ? (
-                  <button
-                    type="button"
-                    onClick={() => void triggerWarmup(true)}
-                    disabled={warmupRequestInFlight}
-                    className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {warmupRequestInFlight ? "Retrying…" : "Retry best match"}
-                  </button>
-                ) : warmupRequestInFlight ? (
-                  <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
-                    Starting…
-                  </span>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void triggerWarmup(true)}
+                  disabled={warmupRequestInFlight}
+                  className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {warmupRequestInFlight ? "Refreshing…" : "Refresh / resume best match"}
+                </button>
               </div>
             </div>
           </div>

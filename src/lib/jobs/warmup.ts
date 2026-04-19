@@ -195,9 +195,13 @@ export async function markJobMatchWarmupPending(args: {
   userId: string;
   resumeProfileId: string;
   totalCandidateCount?: number;
+  processedCount?: number;
+  lastProcessedJobId?: string | null;
+  preserveProgress?: boolean;
+  reason?: string | null;
 }) {
   const counts = normalizeWarmupCounts({
-    processedCount: 0,
+    processedCount: args.preserveProgress ? (args.processedCount ?? 0) : 0,
     totalCandidateCount: args.totalCandidateCount ?? 0,
   });
 
@@ -210,8 +214,8 @@ export async function markJobMatchWarmupPending(args: {
       status: "pending",
       totalCandidateCount: counts.totalCandidateCount,
       processedCount: counts.processedCount,
-      lastProcessedJobId: null,
-      lastError: null,
+      lastProcessedJobId: args.preserveProgress ? (args.lastProcessedJobId ?? null) : null,
+      lastError: args.reason ?? null,
       startedAt: null,
       completedAt: null,
     },
@@ -221,6 +225,8 @@ export async function markJobMatchWarmupPending(args: {
       status: "pending",
       totalCandidateCount: counts.totalCandidateCount,
       processedCount: counts.processedCount,
+      lastProcessedJobId: args.preserveProgress ? (args.lastProcessedJobId ?? null) : null,
+      lastError: args.reason ?? null,
     },
   });
 }

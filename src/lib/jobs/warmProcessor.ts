@@ -7,6 +7,7 @@ import {
   getJobMatchWarmupState,
   isJobMatchWarmupReady,
   markJobMatchWarmupFailed,
+  markJobMatchWarmupPending,
   markJobMatchWarmupReady,
   updateJobMatchWarmupProgress,
 } from "@/lib/jobs/warmup";
@@ -220,6 +221,15 @@ export async function runJobMatchWarmupPass(
       });
     }
 
+    await markJobMatchWarmupPending({
+      userId: args.userId,
+      resumeProfileId: args.resumeProfileId,
+      totalCandidateCount: totalCandidates,
+      processedCount,
+      lastProcessedJobId,
+      preserveProgress: true,
+    });
+
     const latest = await getJobMatchWarmupState({
       userId: args.userId,
       resumeProfileId: args.resumeProfileId,
@@ -227,7 +237,7 @@ export async function runJobMatchWarmupPass(
 
     return {
       ok: true,
-      status: latest?.status ?? "running",
+      status: latest?.status ?? "pending",
       processed: latest?.processedCount ?? processedCount,
       totalCandidates: latest?.totalCandidateCount ?? totalCandidates,
       ready: isJobMatchWarmupReady(latest),
