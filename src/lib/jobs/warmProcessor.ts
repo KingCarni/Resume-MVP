@@ -23,7 +23,6 @@ type ResumeProfileRow = {
 
 const MAX_CANDIDATES = 1500;
 const BATCH_SIZE = 40;
-const MAX_BATCHES_PER_PASS = 3;
 
 function ensureStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -144,14 +143,12 @@ export async function runJobMatchWarmupPass(params: {
 
     const total = orderedJobs.length;
     let processed = claim.state?.processedCount ?? 0;
-    let batchCount = 0;
     const startIndex = Math.min(processed, total);
     const resumeProfileInput = toResumeProfileInput(profile);
 
     for (let index = startIndex; index < total; index += BATCH_SIZE) {
       const batch = orderedJobs.slice(index, index + BATCH_SIZE);
       if (batch.length === 0) break;
-      batchCount += 1;
 
       for (const job of batch) {
         const match = scoreResumeToJob(resumeProfileInput, job);
@@ -202,26 +199,6 @@ export async function runJobMatchWarmupPass(params: {
         lastProcessedJobId,
       });
 
-      if (batchCount >= MAX_BATCHES_PER_PASS && processed < total) {
-        await markJobMatchWarmupPending({
-          userId: params.userId,
-          resumeProfileId: params.resumeProfileId,
-          totalCandidateCount: total,
-          processedCount: processed,
-          lastProcessedJobId,
-          preserveProgress: true,
-          reason: null,
-        });
-        return {
-          status: "pending" as const,
-          processed,
-          totalCandidates: total,
-          ready: false,
-          didWork: true,
-          continueRecommended: true,
-          claimReason: "claimed" as const,
-        };
-      }
     }
 
     await markJobMatchWarmupReady({

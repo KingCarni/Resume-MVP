@@ -56,14 +56,20 @@ function normalizeSeniority(value: string | null | undefined) {
   return normalized;
 }
 
-function buildBaseJobWhere(params: Pick<ListJobsParams, "q" | "remote" | "location" | "seniority" | "minSalary">): Prisma.JobWhereInput {
+function buildBaseJobWhere(
+  params: Pick<
+    ListJobsParams,
+    "q" | "remote" | "location" | "seniority" | "minSalary"
+  >,
+): Prisma.JobWhereInput {
   const q = normalizedValue(params.q);
   const remote = normalizeRemote(params.remote);
   const location = normalizedValue(params.location);
   const seniority = normalizeSeniority(params.seniority);
-  const minSalary = typeof params.minSalary === "number" && Number.isFinite(params.minSalary)
-    ? Math.max(0, Math.floor(params.minSalary))
-    : null;
+  const minSalary =
+    typeof params.minSalary === "number" && Number.isFinite(params.minSalary)
+      ? Math.max(0, Math.floor(params.minSalary))
+      : null;
 
   return {
     status: "active",
@@ -88,10 +94,7 @@ function buildBaseJobWhere(params: Pick<ListJobsParams, "q" | "remote" | "locati
     ...(seniority ? { seniority } : {}),
     ...(minSalary != null
       ? {
-          OR: [
-            { salaryMin: { gte: minSalary } },
-            { salaryMax: { gte: minSalary } },
-          ],
+          OR: [{ salaryMin: { gte: minSalary } }, { salaryMax: { gte: minSalary } }],
         }
       : {}),
   };
@@ -209,7 +212,10 @@ export async function listJobs(params: ListJobsParams) {
       ? {
           resumeProfileId: params.resumeProfileId,
           totalScore: { gte: MIN_SCORE_TO_SURFACE },
-          job: baseWhere,
+          job: {
+            ...baseWhere,
+            hiddenBy: { none: { userId: params.userId } },
+          },
         }
       : {};
 
@@ -219,9 +225,7 @@ export async function listJobs(params: ListJobsParams) {
       : 0;
 
   const canUsePartialCache =
-    sort === "match" &&
-    Boolean(params.resumeProfileId) &&
-    partialCacheCount > 0;
+    sort === "match" && Boolean(params.resumeProfileId) && partialCacheCount > 0;
 
   const warmupUiState = getJobMatchWarmupUiState({
     state: warmupState,
@@ -260,18 +264,28 @@ export async function listJobs(params: ListJobsParams) {
     };
   }
 
+  const visibleWhere: Prisma.JobWhereInput = {
+    ...baseWhere,
+    hiddenBy: { none: { userId: params.userId } },
+  };
+
   const [jobs, total] = await Promise.all([
     prisma.job.findMany({
-      where: baseWhere,
+      where: visibleWhere,
       include: { source: true },
       orderBy:
         sort === "salary"
-          ? [{ salaryMax: "desc" }, { salaryMin: "desc" }, { postedAt: "desc" }, { createdAt: "desc" }]
+          ? [
+              { salaryMax: "desc" },
+              { salaryMin: "desc" },
+              { postedAt: "desc" },
+              { createdAt: "desc" },
+            ]
           : [{ postedAt: "desc" }, { createdAt: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
-    prisma.job.count({ where: baseWhere }),
+    prisma.job.count({ where: visibleWhere }),
   ]);
 
   return {
@@ -289,4 +303,98 @@ export async function listJobs(params: ListJobsParams) {
     usedFallback: sort === "match" && Boolean(params.resumeProfileId),
     warmup: warmupUiState,
   };
+}
+
+export async function getJobDetail(jobId: string, userId: string) {
+  return prisma.job.findFirst({
+    where: {
+      id: jobId,
+      status: "active",
+      hiddenBy: {
+        none: { userId },
+      },
+    },
+    include: {
+      source: true,
+      savedBy: {
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      },
+      hiddenBy: {
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+}
+
+export async function listSavedJobs(params: {
+  userId: string;
+  resumeProfileId?: string | null;
+}) {
+  const savedJobs = await prisma.savedJob.findMany({
+    where: {
+      userId: params.userId,
+      job: {
+        status: "active",
+        hiddenBy: {
+          none: { userId: params.userId },
+        },
+      },
+    },
+    orderBy: [{ createdAt: "desc" }],
+    include: {
+      job: {
+        include: {
+          source: true,
+          matches: params.resumeProfileId
+            ? {
+                where: {
+                  userId: params.userId,
+                  resumeProfileId: params.resumeProfileId,
+                },
+                orderBy: { updatedAt: "desc" },
+                take: 1,
+              }
+            : false,
+        },
+      },
+    },
+  });
+
+  return savedJobs.map((savedJob) => {
+    const match = params.resumeProfileId ? savedJob.job.matches[0] ?? null : null;
+    return {
+      id: savedJob.job.id,
+      title: savedJob.job.title,
+      company: savedJob.job.company,
+      location: savedJob.job.location,
+      remoteType: savedJob.job.remoteType,
+      seniority: savedJob.job.seniority,
+      salaryMin: savedJob.job.salaryMin,
+      salaryMax: savedJob.job.salaryMax,
+      salaryCurrency: savedJob.job.salaryCurrency,
+      postedAt: savedJob.job.postedAt,
+      createdAt: savedJob.job.createdAt,
+      savedAt: savedJob.createdAt,
+      source: savedJob.job.source
+        ? {
+            slug: savedJob.job.source.slug,
+            name: savedJob.job.source.name,
+          }
+        : {
+            slug: "unknown",
+            name: "Unknown",
+          },
+      match: match
+        ? {
+            totalScore: match.totalScore,
+            explanationShort: match.explanationShort,
+            matchingSkills: match.matchingSkills,
+            missingSkills: match.missingSkills,
+            computedAt: match.updatedAt,
+          }
+        : null,
+    };
+  });
 }
