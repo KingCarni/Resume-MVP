@@ -1,6 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getJobMatchWarmupState } from "@/lib/jobs/warmup";
+import {
+  getJobMatchWarmupState,
+  getJobMatchWarmupUiState,
+  shouldUseJobMatchCache,
+} from "@/lib/jobs/warmup";
 
 export type JobSort = "match" | "newest" | "salary";
 
@@ -54,6 +58,7 @@ export type JobListResult = {
   totalPages: number;
   usedFallback?: boolean;
   matchCacheReady?: boolean;
+  warmup?: ReturnType<typeof getJobMatchWarmupUiState> | null;
 };
 
 export type SavedJobListRow = {
@@ -446,6 +451,7 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
   let total = await prisma.job.count({ where });
   let usedFallback = false;
   let matchCacheReady = false;
+  let warmup: ReturnType<typeof getJobMatchWarmupUiState> | null = null;
 
   if (input.resumeProfileId && sort === "match") {
     const matchWhere: Prisma.JobMatchWhereInput = {
@@ -463,9 +469,10 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
       where: matchWhere,
     });
 
-    const warmupReady = warmupState?.status === "ready";
+    warmup = getJobMatchWarmupUiState(warmupState);
+    const warmupReady = shouldUseJobMatchCache(warmupState);
 
-    if (warmupReady && cachedCount > 0) {
+    if (warmupReady) {
       const rows = await prisma.jobMatch.findMany({
         where: matchWhere,
         orderBy: [
@@ -585,6 +592,7 @@ export async function listJobs(input: JobQueryInput): Promise<JobListResult> {
     totalPages,
     usedFallback,
     matchCacheReady,
+    warmup,
   };
 }
 

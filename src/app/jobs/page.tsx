@@ -54,6 +54,21 @@ type JobListItem = {
   };
 };
 
+type MatchWarmupState = {
+  status: "idle" | "pending" | "running" | "ready" | "failed" | "stale";
+  ready: boolean;
+  active: boolean;
+  usedFallback: boolean;
+  processedCount: number;
+  totalCandidateCount: number;
+  progressPercent: number;
+  shouldPoll: boolean;
+  shouldTriggerWarmup: boolean;
+  lastError: string | null;
+  shortLabel: string;
+  message: string;
+};
+
 type JobsResponse = {
   ok: boolean;
   items?: JobListItem[];
@@ -63,6 +78,7 @@ type JobsResponse = {
   totalPages?: number;
   usedFallback?: boolean;
   matchCacheReady?: boolean;
+  warmup?: MatchWarmupState | null;
   error?: string;
 };
 
@@ -302,7 +318,9 @@ export default function JobsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
-  const [matchWarmupPending, setMatchWarmupPending] = useState(false);
+  const [matchWarmup, setMatchWarmup] = useState<MatchWarmupState | null>(null);
+  const [warmupRequestInFlight, setWarmupRequestInFlight] = useState(false);
+  const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
@@ -415,6 +433,25 @@ export default function JobsPage() {
     setPage(1);
   }, [selectedProfileId]);
 
+  const warmupRequestPayload = useMemo(
+    () => ({
+      resumeProfileId: selectedProfileId,
+      q: appliedSearch || undefined,
+      remote: appliedRemote !== "all" ? appliedRemote : undefined,
+      location: appliedLocation || undefined,
+      seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
+      minSalary: appliedMinSalary ? Number(appliedMinSalary) : undefined,
+    }),
+    [
+      appliedLocation,
+      appliedMinSalary,
+      appliedRemote,
+      appliedSearch,
+      appliedSeniority,
+      selectedProfileId,
+    ],
+  );
+
   async function loadProfiles() {
     setProfilesLoading(true);
     setProfilesError(null);
@@ -499,10 +536,25 @@ export default function JobsPage() {
         setJobs(items);
         setTotalPages(Math.max(1, json.totalPages ?? 1));
         setTotalJobs(json.total ?? 0);
-        setMatchWarmupPending(
-          !!selectedProfileId &&
-            appliedSort === "match" &&
-            !!json.usedFallback,
+        setMatchWarmup(
+          selectedProfileId && appliedSort === "match"
+            ? json.warmup ?? {
+                status: json.usedFallback ? "idle" : "ready",
+                ready: !json.usedFallback,
+                active: false,
+                usedFallback: !!json.usedFallback,
+                processedCount: 0,
+                totalCandidateCount: 0,
+                progressPercent: json.usedFallback ? 0 : 100,
+                shouldPoll: false,
+                shouldTriggerWarmup: !!json.usedFallback,
+                lastError: null,
+                shortLabel: json.usedFallback ? "Preparing best matches" : "Best match ready",
+                message: json.usedFallback
+                  ? "Best-match cache is not ready yet, so the feed is showing recent jobs."
+                  : "Best-match cache is ready.",
+              }
+            : null,
         );
         setSavedJobIds((current) => {
           let changed = false;
@@ -519,7 +571,7 @@ export default function JobsPage() {
         });
       } catch (error) {
         if (!active) return;
-        setMatchWarmupPending(false);
+        setMatchWarmup(null);
         setJobsError(
           error instanceof Error ? error.message : "Could not load jobs.",
         );
@@ -531,7 +583,7 @@ export default function JobsPage() {
     return () => {
       active = false;
     };
-  }, [pageStateReady, queryString]);
+  }, [jobsRefreshNonce, pageStateReady, queryString]);
 
 
   function clearProfile() {
@@ -709,50 +761,107 @@ export default function JobsPage() {
     });
   }, [profiles.length, profilesLoading, selectedProfileId]);
 
+  async function triggerWarmup(manualRetry = false) {
+    if (!warmupRequestPayload.resumeProfileId || appliedSort !== "match") return;
+    setWarmupRequestInFlight(true);
+
+    try {
+      const response = await fetch("/api/jobs/warm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(warmupRequestPayload),
+      });
+
+      const json = (await response.json().catch(() => ({ ok: response.ok }))) as {
+        ok?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok || json.ok === false) {
+        throw new Error(json.error || "Could not prepare best-match cache.");
+      }
+
+      setMatchWarmup((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          status: "running",
+          active: true,
+          ready: false,
+          usedFallback: true,
+          shouldTriggerWarmup: false,
+          shouldPoll: true,
+          shortLabel: manualRetry ? "Retrying best matches" : "Preparing best matches",
+          message:
+            current.totalCandidateCount > 0
+              ? `Preparing cached best matches (${current.processedCount}/${current.totalCandidateCount}). You are seeing recent jobs until the cache is ready.`
+              : "Preparing cached best matches now. You are seeing recent jobs until the cache is ready.",
+          lastError: null,
+        };
+      });
+      setJobsRefreshNonce((value) => value + 1);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not prepare best-match cache.";
+      setMatchWarmup((current) =>
+        current
+          ? {
+              ...current,
+              status: "failed",
+              active: false,
+              ready: false,
+              usedFallback: true,
+              shouldTriggerWarmup: false,
+              shouldPoll: false,
+              shortLabel: "Best match stalled",
+              message,
+              lastError: message,
+            }
+          : current,
+      );
+      setFeedback({
+        tone: "error",
+        message,
+      });
+    } finally {
+      setWarmupRequestInFlight(false);
+    }
+  }
+
   useEffect(() => {
     if (!pageStateReady) return;
     if (!selectedProfileId) return;
     if (appliedSort !== "match") return;
-    if (!matchWarmupPending) return;
+    if (!matchWarmup?.shouldTriggerWarmup) return;
+    if (warmupRequestInFlight) return;
 
-    let cancelled = false;
-
-    async function warmMatches() {
-      try {
-        await fetch("/api/jobs/warm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resumeProfileId: selectedProfileId,
-            q: appliedSearch || undefined,
-            remote: appliedRemote !== "all" ? appliedRemote : undefined,
-            location: appliedLocation || undefined,
-            seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
-            minSalary: appliedMinSalary ? Number(appliedMinSalary) : undefined,
-          }),
-        });
-      } catch {
-        return;
-      }
-
-      if (!cancelled) {
-        window.location.reload();
-      }
-    }
-
-    void warmMatches();
-
-    return () => {
-      cancelled = true;
-    };
+    void triggerWarmup(false);
   }, [
-    appliedLocation,
-    appliedMinSalary,
-    appliedRemote,
-    appliedSearch,
-    appliedSeniority,
     appliedSort,
-    matchWarmupPending,
+    matchWarmup?.shouldTriggerWarmup,
+    pageStateReady,
+    selectedProfileId,
+    warmupRequestInFlight,
+  ]);
+
+  useEffect(() => {
+    if (!pageStateReady) return;
+    if (!selectedProfileId) return;
+    if (appliedSort !== "match") return;
+    if (!matchWarmup?.shouldPoll) return;
+
+    const timeout = window.setTimeout(() => {
+      setJobsRefreshNonce((value) => value + 1);
+    }, 10000);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    appliedSort,
+    matchWarmup?.processedCount,
+    matchWarmup?.shouldPoll,
+    matchWarmup?.status,
     pageStateReady,
     selectedProfileId,
   ]);
@@ -1106,9 +1215,49 @@ export default function JobsPage() {
           </div>
         </div>
 
-        {matchWarmupPending ? (
-          <div className="mb-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-100">
-            Best match is loading from fallback right now. This profile does not have cached matches yet, so you are seeing recent jobs first while async warmup is wired in.
+        {selectedProfileId && appliedSort === "match" && matchWarmup && matchWarmup.usedFallback ? (
+          <div
+            className={cn(
+              "mb-4 rounded-3xl border p-4 text-sm",
+              matchWarmup.status === "failed"
+                ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                : matchWarmup.status === "stale"
+                  ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
+                  : "border-cyan-400/20 bg-cyan-500/10 text-cyan-100",
+            )}
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-semibold">{matchWarmup.shortLabel}</div>
+                <p className="mt-1 text-sm opacity-95">{matchWarmup.message}</p>
+                {matchWarmup.totalCandidateCount > 0 ? (
+                  <p className="mt-2 text-xs opacity-80">
+                    Progress: {matchWarmup.processedCount}/{matchWarmup.totalCandidateCount} ({matchWarmup.progressPercent}%)
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {matchWarmup.shouldPoll ? (
+                  <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
+                    Checking every 10s
+                  </span>
+                ) : null}
+                {matchWarmup.status === "failed" ? (
+                  <button
+                    type="button"
+                    onClick={() => void triggerWarmup(true)}
+                    disabled={warmupRequestInFlight}
+                    className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {warmupRequestInFlight ? "Retrying…" : "Retry best match"}
+                  </button>
+                ) : warmupRequestInFlight ? (
+                  <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
+                    Starting…
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
         ) : null}
 

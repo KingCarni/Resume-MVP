@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import {
+  markJobMatchWarmupPending,
+  markJobMatchWarmupStale,
+} from "@/lib/jobs/warmup";
+import {
   normalizeResumeProfile,
   ResumeNormalizationInput,
 } from "@/lib/resumeProfiles/normalizeResume";
@@ -308,16 +312,30 @@ function buildProfilePayload(input: BuildResumeProfileInput) {
 }
 
 export async function buildResumeProfile(input: BuildResumeProfileInput) {
-  return prisma.resumeProfile.create({
+  const item = await prisma.resumeProfile.create({
     data: buildProfilePayload(input),
   });
+
+  await markJobMatchWarmupPending({
+    userId: input.userId,
+    resumeProfileId: item.id,
+  });
+
+  return item;
 }
 
 export async function rebuildResumeProfile(resumeProfileId: string, input: BuildResumeProfileInput) {
-  return prisma.resumeProfile.update({
+  const item = await prisma.resumeProfile.update({
     where: { id: resumeProfileId },
     data: buildProfilePayload(input),
   });
+
+  await markJobMatchWarmupStale({
+    userId: input.userId,
+    resumeProfileId,
+  });
+
+  return item;
 }
 
 export async function upsertLatestResumeProfileForUser(input: BuildResumeProfileInput) {

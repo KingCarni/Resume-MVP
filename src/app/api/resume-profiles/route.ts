@@ -9,6 +9,7 @@ import {
   upsertLatestResumeProfileForUser,
 } from "@/lib/resumeProfiles/buildProfile";
 import { prisma } from "@/lib/prisma";
+import { markJobMatchWarmupStale } from "@/lib/jobs/warmup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -318,6 +319,11 @@ export async function PATCH(request: NextRequest) {
         },
       },
     },
+  });
+
+  await markJobMatchWarmupStale({
+    userId,
+    resumeProfileId: id,
   });
 
   return NextResponse.json({ ok: true, item: formatProfileItem(item) });
