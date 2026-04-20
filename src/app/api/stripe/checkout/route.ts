@@ -51,9 +51,9 @@ function normalizePack(x: unknown): Pack | null {
   return null;
 }
 
-function cleanOptionalString(value: unknown) {
+function cleanOptionalString(value: unknown): string | undefined {
   const normalized = String(value ?? "").trim();
-  return normalized ? normalized : null;
+  return normalized ? normalized : undefined;
 }
 
 function normalizeJobsAnalytics(input: unknown): JobsCheckoutAnalytics | null {
