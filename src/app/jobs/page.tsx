@@ -201,6 +201,45 @@ function normalizeInputValue(value: string) {
   return value.trim();
 }
 
+function getWarmupRefreshCadenceText(pollCount: number) {
+  if (pollCount < 3) {
+    return "Refreshes every 10 seconds now, then every 30 seconds.";
+  }
+  return "Refreshes every 30 seconds.";
+}
+
+function getWarmupHeadline(args: {
+  hasRankedMatches: boolean;
+  warmup: MatchWarmupState | null;
+  warmupPollCount: number;
+}) {
+  const { hasRankedMatches, warmup, warmupPollCount } = args;
+
+  if (!warmup?.usedFallback) {
+    return "Best match";
+  }
+
+  const progressKnown = warmup.totalCandidateCount > 0;
+  const rolesRemaining = progressKnown
+    ? Math.max(0, warmup.totalCandidateCount - warmup.processedCount)
+    : null;
+  const completionText = progressKnown
+    ? `${warmup.progressPercent}% complete`
+    : null;
+  const remainingText =
+    rolesRemaining != null
+      ? `${rolesRemaining} role${rolesRemaining === 1 ? "" : "s"} left to rank`
+      : null;
+  const resultsText = hasRankedMatches
+    ? "Best matches so far while search completes"
+    : "Recent jobs while best matches prepare";
+  const cadenceText = getWarmupRefreshCadenceText(warmupPollCount);
+
+  return [resultsText, completionText, remainingText, cadenceText]
+    .filter(Boolean)
+    .join(" • ");
+}
+
 const JOBS_PAGE_STATE_KEY = "jobsPageState:v2";
 
 type PersistedJobsPageState = {
@@ -1285,15 +1324,17 @@ export default function JobsPage() {
                 Showing <span className="font-semibold text-white">{jobs.length}</span> of{" "}
                 <span className="font-semibold text-white">{totalJobs}</span> roles •{" "}
                 <span className="font-semibold text-white">
-                  {selectedProfileId && appliedSort === "match" && matchWarmup?.usedFallback
-                    ? jobs.some((job) => job.match)
-                      ? "Best matches so far while search completes"
-                      : "Recent jobs while best matches prepare"
-                    : appliedSort === "match"
-                      ? "Best match"
-                      : appliedSort === "newest"
-                        ? "Newest"
-                        : "Salary"}
+                  {selectedProfileId && appliedSort === "match"
+                    ? getWarmupHeadline({
+                        hasRankedMatches: jobs.some((job) => job.match),
+                        warmup: matchWarmup,
+                        warmupPollCount,
+                      })
+                    : appliedSort === "newest"
+                      ? "Newest"
+                      : appliedSort === "salary"
+                        ? "Salary"
+                        : "Best match"}
                 </span>
               </span>
             )}
