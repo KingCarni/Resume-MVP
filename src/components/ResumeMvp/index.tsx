@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { TEMPLATE_OPTIONS, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
 
 /** ---------------- Types ---------------- */
 
@@ -69,63 +70,6 @@ type WorkflowChecklistItem = {
   actionLabel?: string;
   onAction?: () => void;
 };
-
-type ResumeTemplateId =
-  | "modern"
-  | "classic"
-  | "minimal"
-  | "executive"
-  | "compact"
-  | "sidebar"
-  | "serif"
-  | "ats"
-  | "arcade"
-  | "neon"
-  | "terminal"
-  | "blueprint"
-  | "monochrome"
-  | "noir"
-  | "paper"
-  | "ink"
-  | "corporate"
-  | "contrast"
-  | "minimalist"
-  | "grid"
-  | "retro"
-  | "pastel"
-  | "aura"
-  | "lavender"
-  | "sunset"
-  | "forest"
-  | "ocean"
-  | "sand"
-  | "royal"
-  | "gold"
-  | "bubblegum"
-  | "limepop"
-  | "citrus"
-  | "electric"
-  | "confetti"
-  | "rainbow"
-  | "sunny"
-  | "watermelon"
-  | "grape"
-  | "tropical"
-  | "mint"
-  | "sky"
-  | "coral"
-  | "flamingo"
-  | "popart"
-  | "arcade2"
-  | "hologram"
-  | "galaxy"
-  | "synthwave"
-  | "lava"
-  | "lemonade"
-  | "cottoncandy"
-  | "sprinkles"
-  | "comic"
-  | "playground";
 
 type ResumeProfile = {
   fullName: string;
@@ -2288,30 +2232,11 @@ function buildResumeHtml(args: {
     profile.portfolio?.trim() ? safe(profile.portfolio) : "",
   ].filter(Boolean);
 
-  const hasBar =
-    template === "modern" ||
-    template === "arcade" ||
-    template === "neon" ||
-    template === "blueprint" ||
-    template === "monochrome" ||
-    template === "noir" ||
-    template === "paper" ||
-    template === "ink" ||
-    template === "corporate" ||
-    template === "contrast" ||
-    template === "minimalist" ||
-    template === "grid" ||
-    template === "retro" ||
-    template === "pastel" ||
-    template === "aura" ||
-    template === "lavender" ||
-    template === "sunset" ||
-    template === "forest" ||
-    template === "ocean" ||
-    template === "sand" ||
-    template === "royal" ||
-    template === "gold" ||
-    template === "terminal";
+  const resolvedTemplate = resolveLegacyResumeTemplateSelection(template);
+  const activeLayoutId = resolvedTemplate.layoutId;
+  const activeCapabilities = resolvedTemplate.layout.capabilities;
+  const activeColorSchemeTheme = resolvedTemplate.colorScheme.theme;
+  const hasBar = activeCapabilities.usesHeaderBar;
 
   // ✅ Meta blocks: if only one exists, it fills the whole row (no blank placeholder box)
   const visibleGames = showShippedBlock ? metaGames : [];
@@ -2413,7 +2338,7 @@ function buildResumeHtml(args: {
     .filter(Boolean)
     .join("");
 
-  if (template === "sidebar") {
+  if (activeLayoutId === "sidebar") {
     const sidebarContact = contactBits.map((c) => `<div class="chip">${c}</div>`).join("");
 
     return `<!doctype html>
@@ -2458,7 +2383,7 @@ function buildResumeHtml(args: {
 </html>`;
   }
 
-  const useChips = template !== "ats" && template !== "terminal";
+  const useChips = activeCapabilities.usesChips && activeColorSchemeTheme.font !== "mono";
 
   const topContact = contactBits
     .map((c) => (useChips ? `<div class="chip">${c}</div>` : `<div>${c}</div>`))
@@ -3798,64 +3723,6 @@ function fileToDataUrl(file: File) {
 
 /** ---------------- Component ---------------- */
 
-const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
-  { id: "modern", label: "Modern (clean)" },
-  { id: "classic", label: "Classic (standard)" },
-  { id: "minimal", label: "Minimal (serif-lite)" },
-  { id: "executive", label: "Executive (premium)" },
-  { id: "compact", label: "Compact (dense)" },
-  { id: "sidebar", label: "Sidebar (2-column)" },
-  { id: "serif", label: "Serif (traditional)" },
-  { id: "ats", label: "ATS (plain)" },
-  { id: "arcade", label: "Arcade (fun)" },
-  { id: "neon", label: "Neon (cyber)" },
-  { id: "terminal", label: "Terminal (dev)" },
-  { id: "blueprint", label: "Blueprint (tech)" },
-  { id: "monochrome", label: "Monochrome (sleek)" },
-  { id: "noir", label: "Noir (moody)" },
-  { id: "paper", label: "Paper (warm serif)" },
-  { id: "ink", label: "Ink (dashed editorial)" },
-  { id: "corporate", label: "Corporate (polished)" },
-  { id: "contrast", label: "High Contrast (bold)" },
-  { id: "minimalist", label: "Minimalist (soft)" },
-  { id: "grid", label: "Grid (blueprint+)" },
-  { id: "retro", label: "Retro (sunburst)" },
-  { id: "pastel", label: "Pastel (gentle)" },
-  { id: "aura", label: "Aura (teal/green)" },
-  { id: "lavender", label: "Lavender (calm)" },
-  { id: "sunset", label: "Sunset (pink/orange)" },
-  { id: "forest", label: "Forest (green)" },
-  { id: "ocean", label: "Ocean (blue)" },
-  { id: "sand", label: "Sand (golden)" },
-  { id: "royal", label: "Royal (blue/purple)" },
-  { id: "gold", label: "Gold (premium)" },
-  { id: "bubblegum", label: "Bubblegum (pink pop)" },
-  { id: "limepop", label: "Lime Pop (bright green)" },
-  { id: "citrus", label: "Citrus (orange/lemon)" },
-  { id: "electric", label: "Electric (cyan/purple)" },
-  { id: "confetti", label: "Confetti (party)" },
-  { id: "rainbow", label: "Rainbow (bold)" },
-  { id: "sunny", label: "Sunny (yellow)" },
-  { id: "watermelon", label: "Watermelon (pink/green)" },
-  { id: "grape", label: "Grape (purple)" },
-  { id: "tropical", label: "Tropical (teal/coral)" },
-  { id: "mint", label: "Mint (fresh)" },
-  { id: "sky", label: "Sky (bright blue)" },
-  { id: "coral", label: "Coral (warm)" },
-  { id: "flamingo", label: "Flamingo (hot pink)" },
-  { id: "popart", label: "Pop Art (comic)" },
-  { id: "arcade2", label: "Arcade+ (extra fun)" },
-  { id: "hologram", label: "Hologram (iridescent)" },
-  { id: "galaxy", label: "Galaxy (space neon)" },
-  { id: "synthwave", label: "Synthwave (80s)" },
-  { id: "lava", label: "Lava (red/orange)" },
-  { id: "lemonade", label: "Lemonade (summer)" },
-  { id: "cottoncandy", label: "Cotton Candy (pastel pop)" },
-  { id: "sprinkles", label: "Sprinkles (cute)" },
-  { id: "comic", label: "Comic (ink + color)" },
-  { id: "playground", label: "Playground (primary)" },
-];
-
 type ResumeMvpProps = {
   mode?: "standard" | "setup";
 };
@@ -4048,8 +3915,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     if (!next) return false;
 
     setTargetPosition(next.targetPosition || "");
-    if (TEMPLATE_OPTIONS.some((option) => option.id === next.template)) {
-      setResumeTemplate(next.template as ResumeTemplateId);
+    if (isLegacyResumeTemplateId(next.template)) {
+      setResumeTemplate(next.template);
     }
     setProfile({
       fullName: next.profile.fullName,
@@ -4167,8 +4034,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           setResumeText(preferredText);
         }
 
-        if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
-          setResumeTemplate(latest.template as ResumeTemplateId);
+        if (latest.template && isLegacyResumeTemplateId(latest.template)) {
+          setResumeTemplate(latest.template);
         }
 
         setResumeSourceMeta({

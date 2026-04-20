@@ -5,65 +5,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { COVER_LETTER_TEMPLATE_OPTIONS as TEMPLATE_OPTIONS, isCoverLetterTemplateId, type CoverLetterTemplateId as ResumeTemplateId } from "@/lib/templates/coverLetterTemplates";
 
 /** ---------------- Types ---------------- */
-
-type ResumeTemplateId =
-  | "modern"
-  | "classic"
-  | "minimal"
-  | "executive"
-  | "compact"
-  | "sidebar"
-  | "serif"
-  | "ats"
-  | "arcade"
-  | "neon"
-  | "terminal"
-  | "blueprint"
-  | "monochrome"
-  | "noir"
-  | "paper"
-  | "ink"
-  | "corporate"
-  | "contrast"
-  | "minimalist"
-  | "grid"
-  | "retro"
-  | "pastel"
-  | "aura"
-  | "lavender"
-  | "sunset"
-  | "forest"
-  | "ocean"
-  | "sand"
-  | "royal"
-  | "gold"
-  | "bubblegum"
-  | "limepop"
-  | "citrus"
-  | "electric"
-  | "confetti"
-  | "rainbow"
-  | "sunny"
-  | "watermelon"
-  | "grape"
-  | "tropical"
-  | "mint"
-  | "sky"
-  | "coral"
-  | "flamingo"
-  | "popart"
-  | "arcade2"
-  | "hologram"
-  | "galaxy"
-  | "synthwave"
-  | "lava"
-  | "lemonade"
-  | "cottoncandy"
-  | "sprinkles"
-  | "comic"
-  | "playground";
 
 type ResumeProfile = {
   fullName: string;
@@ -116,65 +60,6 @@ type LatestResumePayload = {
 };
 
 /** ---------------- Templates (MATCH RESUME 1:1) ---------------- */
-
-const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
-  { id: "modern", label: "Modern (clean)" },
-  { id: "classic", label: "Classic (standard)" },
-  { id: "minimal", label: "Minimal (serif-lite)" },
-  { id: "executive", label: "Executive (premium)" },
-  { id: "compact", label: "Compact (dense)" },
-  { id: "sidebar", label: "Sidebar (2-column)" },
-  { id: "serif", label: "Serif (traditional)" },
-  { id: "ats", label: "ATS (plain)" },
-  { id: "arcade", label: "Arcade (fun)" },
-  { id: "neon", label: "Neon (cyber)" },
-  { id: "terminal", label: "Terminal (dev)" },
-  { id: "blueprint", label: "Blueprint (tech)" },
-
-  { id: "monochrome", label: "Monochrome (sleek)" },
-  { id: "noir", label: "Noir (moody)" },
-  { id: "paper", label: "Paper (warm serif)" },
-  { id: "ink", label: "Ink (dashed editorial)" },
-  { id: "corporate", label: "Corporate (polished)" },
-  { id: "contrast", label: "High Contrast (bold)" },
-  { id: "minimalist", label: "Minimalist (soft)" },
-  { id: "grid", label: "Grid (blueprint+)" },
-  { id: "retro", label: "Retro (sunburst)" },
-  { id: "pastel", label: "Pastel (gentle)" },
-  { id: "aura", label: "Aura (teal/green)" },
-  { id: "lavender", label: "Lavender (calm)" },
-  { id: "sunset", label: "Sunset (pink/orange)" },
-  { id: "forest", label: "Forest (green)" },
-  { id: "ocean", label: "Ocean (blue)" },
-  { id: "sand", label: "Sand (golden)" },
-  { id: "royal", label: "Royal (blue/purple)" },
-  { id: "gold", label: "Gold (premium)" },
-  { id: "bubblegum", label: "Bubblegum (pink pop)" },
-  { id: "limepop", label: "Lime Pop (bright green)" },
-  { id: "citrus", label: "Citrus (orange/lemon)" },
-  { id: "electric", label: "Electric (cyan/purple)" },
-  { id: "confetti", label: "Confetti (party)" },
-  { id: "rainbow", label: "Rainbow (bold)" },
-  { id: "sunny", label: "Sunny (yellow)" },
-  { id: "watermelon", label: "Watermelon (pink/green)" },
-  { id: "grape", label: "Grape (purple)" },
-  { id: "tropical", label: "Tropical (teal/coral)" },
-  { id: "mint", label: "Mint (fresh)" },
-  { id: "sky", label: "Sky (bright blue)" },
-  { id: "coral", label: "Coral (warm)" },
-  { id: "flamingo", label: "Flamingo (hot pink)" },
-  { id: "popart", label: "Pop Art (comic)" },
-  { id: "arcade2", label: "Arcade+ (extra fun)" },
-  { id: "hologram", label: "Hologram (iridescent)" },
-  { id: "galaxy", label: "Galaxy (space neon)" },
-  { id: "synthwave", label: "Synthwave (80s)" },
-  { id: "lava", label: "Lava (red/orange)" },
-  { id: "lemonade", label: "Lemonade (summer)" },
-  { id: "cottoncandy", label: "Cotton Candy (pastel pop)" },
-  { id: "sprinkles", label: "Sprinkles (cute)" },
-  { id: "comic", label: "Comic (ink + color)" },
-  { id: "playground", label: "Playground (primary)" },
-];
 
 /** ---------------- UI bits ---------------- */
 
@@ -1965,8 +1850,8 @@ export default function CoverLetterGenerator() {
           }));
         }
 
-        if (latest.template && TEMPLATE_OPTIONS.some((option) => option.id === latest.template)) {
-          setTemplate(latest.template as ResumeTemplateId);
+        if (latest.template && isCoverLetterTemplateId(latest.template)) {
+          setTemplate(latest.template);
         }
       } catch {
         // ignore hydrate failure
