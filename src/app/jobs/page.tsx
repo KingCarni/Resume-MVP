@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import CreditsPill from "@/components/Billing/CreditsPill";
 import { TARGET_POSITION_OPTIONS } from "@/lib/jobs/roleFamilies";
