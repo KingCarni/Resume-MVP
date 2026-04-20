@@ -7020,9 +7020,14 @@ useEffect(() => {
                 value={resumeTemplate}
                 onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
                 className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                style={{ color: "#111827", backgroundColor: "#ffffff" }}
               >
                 {TEMPLATE_OPTIONS.map((t) => (
-                  <option key={t.id} value={t.id}>
+                  <option
+                    key={t.id}
+                    value={t.id}
+                    style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                  >
                     {t.label}
                   </option>
                 ))}
@@ -7152,62 +7157,34 @@ useEffect(() => {
                       </div>
                     ) : null}
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="grid gap-1">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="grid gap-1">
                         <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Shape</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { value: "circle", label: "Circle" },
-                            { value: "rounded", label: "Rounded" },
-                            { value: "square", label: "Square" },
-                          ].map((option) => {
-                            const isActive = profilePhotoShape === option.value;
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setProfilePhotoShape(option.value as "circle" | "rounded" | "square")}
-                                className={[
-                                  "rounded-xl border px-3 py-3 text-sm font-extrabold transition",
-                                  isActive
-                                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
-                                    : "border-black/10 bg-white text-black hover:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:hover:border-white/20",
-                                ].join(" ")}
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                        <select
+                          value={profilePhotoShape}
+                          onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
+                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                          style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                        >
+                          <option value="circle" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Circle</option>
+                          <option value="rounded" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Rounded</option>
+                          <option value="square" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Square</option>
+                        </select>
+                      </label>
 
-                      <div className="grid gap-1">
+                      <label className="grid gap-1">
                         <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Size</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { value: 88, label: "Small" },
-                            { value: 112, label: "Medium" },
-                            { value: 136, label: "Large" },
-                          ].map((option) => {
-                            const isActive = profilePhotoSize === option.value;
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setProfilePhotoSize(option.value)}
-                                className={[
-                                  "rounded-xl border px-3 py-3 text-sm font-extrabold transition",
-                                  isActive
-                                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
-                                    : "border-black/10 bg-white text-black hover:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:hover:border-white/20",
-                                ].join(" ")}
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                        <select
+                          value={String(profilePhotoSize)}
+                          onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
+                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                          style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                        >
+                          <option value="88" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Small</option>
+                          <option value="112" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Medium</option>
+                          <option value="136" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Large</option>
+                        </select>
+                      </label>
                     </div>
                   </div>
                 </div>

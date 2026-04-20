@@ -36,7 +36,7 @@ export default async function ResumeSetupPage() {
   return (
     <DashboardShell
       title="Resume Setup"
-      subtitle="Create your base Git-a-Job resume for free. Once this is done, you can tailor it per role from AI Job Match."
+      subtitle="Create your base Git-a-Job resume for free. Once this is done, you can tailor it per role."
       topRight={
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/buy-credits" className="shell-primary-btn">
