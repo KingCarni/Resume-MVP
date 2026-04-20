@@ -6856,14 +6856,20 @@ useEffect(() => {
               ))}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap items-stretch gap-2">
               <button
                 type="button"
                 onClick={handleRefreshAtsScore}
                 disabled={!analysis}
                 className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
               >
-                {analysis ? "Refresh ATS + Profile Sync" : isSetupMode ? "Analyze base resume first" : "Analyze resume first"}
+                {analysis
+                  ? "Refresh ATS + Profile Sync"
+                  : isSetupMode
+                    ? "Analyze base resume first"
+                    : isApplyPackFlow
+                      ? "Finalize Resume"
+                      : "Analyze resume first"}
               </button>
               {isSetupMode ? (
                 <button
@@ -6874,16 +6880,21 @@ useEffect(() => {
                 >
                   {profileSyncSaving ? "Finishing setup…" : "Finish Setup & Go to Job Board"}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={continueToCoverLetter}
-                  disabled={!canContinueToCoverLetter}
-                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  Continue to Cover Letter
-                </button>
-              )}
+              ) : isApplyPackFlow ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={continueToCoverLetter}
+                    disabled={!canContinueToCoverLetter}
+                    className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Continue to Cover Letter
+                  </button>
+                  <div className="min-w-[170px] rounded-xl border border-amber-400/30 bg-amber-50/90 px-3 py-2 text-[11px] font-bold text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
+                    Must complete to use Credit Pack
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -6952,7 +6963,7 @@ useEffect(() => {
                   <label className="grid gap-1.5">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
-                        {applyPackBundle?.job?.jobContextText ? "Job context (from AI Job Match)" : "Job posting text"}
+                        {applyPackBundle?.job?.jobContextText ? "Job context (from Job Board)" : "Job posting text"}
                       </div>
 
                       {applyPackBundle?.job?.jobContextText ? (
@@ -6979,16 +6990,16 @@ useEffect(() => {
                       value={jobText}
                       onChange={(e) => setJobText(e.target.value)}
                       rows={6}
-                      placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from AI Job Match" : "Post job description/requirements here"}
+                      placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from Job Board" : "Post job description/requirements here"}
                       className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
                     />
 
                     <div className="text-xs text-black/70 dark:text-slate-200/80">
                       {applyPackBundle?.job?.jobContextText
                         ? jobTextOverrideMode
-                          ? "You are editing a local override. Re-sync anytime to restore the saved AI Job Match job context."
-                          : "This field was prefilled from the saved job you selected in AI Job Match. You can still override it if needed."
-                        : "Paste a job posting manually, or launch this page from AI Job Match to prefill it automatically."}
+                          ? "You are editing a local override. Re-sync anytime to restore the saved Job Board job context."
+                          : "This field was prefilled from the saved job you selected via the Job Board. You can still override it if needed."
+                        : "Paste a job posting manually, or launch this page from the Job Board to prefill it automatically."}
                     </div>
                   </label>
 
@@ -7004,7 +7015,7 @@ useEffect(() => {
                     />
                     {applyPackBundle?.job?.title ? (
                       <div className="text-xs text-black/70 dark:text-slate-200/80">
-                        Prefilled from AI Job Match: {applyPackBundle.job.title}
+                        Prefilled from Job Board: {applyPackBundle.job.title}
                       </div>
                     ) : null}
                   </label>
