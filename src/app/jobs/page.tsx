@@ -896,10 +896,12 @@ export default function JobsPage() {
     if (!selectedProfileId) return;
     if (appliedSort !== "match") return;
     if (!matchWarmup?.shouldPoll) return;
-    if (warmupRequestInFlight) return;
 
     const timeout = window.setTimeout(() => {
-      void triggerWarmup(false);
+      setJobsRefreshNonce((value) => value + 1);
+      if (!warmupRequestInFlight) {
+        void triggerWarmup(false);
+      }
     }, 10000);
 
     return () => window.clearTimeout(timeout);

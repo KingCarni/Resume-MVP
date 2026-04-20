@@ -233,6 +233,7 @@ export async function PATCH(request: NextRequest) {
       updatedAt: true,
       normalizedSkills: true,
       normalizedTitles: true,
+      keywords: true,
       sourceDocumentId: true,
       sourceDocument: {
         select: {

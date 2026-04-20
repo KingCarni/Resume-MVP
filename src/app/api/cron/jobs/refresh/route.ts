@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
       skippedSourceCount: result.skippedSourceCount,
     });
 
-    return noStoreJson({ ok: result.ok, ...result }, { status: result.ok ? 200 : 207 });
+    return noStoreJson(result, { status: result.ok ? 200 : 207 });
   } catch (error) {
     console.error("[jobs-refresh] failed", error);
 
