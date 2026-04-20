@@ -574,7 +574,7 @@ export default function JobsPage() {
                 processedCount: 0,
                 totalCandidateCount: 0,
                 progressPercent: json.usedFallback ? 0 : 100,
-                shouldPoll: false,
+                shouldPoll: !!json.usedFallback,
                 shouldTriggerWarmup: !!json.usedFallback,
                 lastError: null,
                 shortLabel: json.usedFallback ? "Preparing best matches" : "Best match ready",
@@ -822,12 +822,13 @@ export default function JobsPage() {
         throw new Error(json.error || "Could not prepare best-match cache.");
       }
 
+      const nextReady = Boolean(json.ready);
+
       setMatchWarmup((current) => {
         if (!current) return current;
         const nextStatus = json.status ?? "running";
         const nextProcessed = typeof json.processed === "number" ? json.processed : current.processedCount;
         const nextTotal = typeof json.totalCandidates === "number" ? json.totalCandidates : current.totalCandidateCount;
-        const nextReady = Boolean(json.ready);
         const shouldContinue = Boolean(json.continueRecommended) && !nextReady;
         const progressPercent = nextTotal > 0 ? Math.max(0, Math.min(100, Math.round((nextProcessed / nextTotal) * 100))) : 0;
         const nextLabel =
@@ -859,6 +860,11 @@ export default function JobsPage() {
           lastError: null,
         };
       });
+
+      if (nextReady) {
+        setWarmupPollCount(0);
+        setJobsRefreshNonce((value) => value + 1);
+      }
     } catch (error) {
       const message =
         error instanceof Error
