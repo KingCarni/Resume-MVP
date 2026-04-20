@@ -56,6 +56,18 @@ function normalizeSeniority(value: string | null | undefined) {
   return normalized;
 }
 
+function safeDateMs(value: unknown) {
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const ms = new Date(value).getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+  return 0;
+}
+
 function buildBaseJobWhere(
   params: Pick<
     ListJobsParams,
@@ -137,8 +149,8 @@ export async function listMatchCandidateJobIds(params: {
     .filter((job) => !job.hardExcluded)
     .sort((a, b) => {
       if (b.rolePriority !== a.rolePriority) return b.rolePriority - a.rolePriority;
-      const postedA = a.postedAt?.getTime() ?? a.createdAt.getTime();
-      const postedB = b.postedAt?.getTime() ?? b.createdAt.getTime();
+      const postedA = safeDateMs(a.postedAt) || safeDateMs(a.createdAt);
+      const postedB = safeDateMs(b.postedAt) || safeDateMs(b.createdAt);
       return postedB - postedA;
     });
 
@@ -179,8 +191,8 @@ export async function listWarmupCandidateJobIds(params: {
     .filter((job) => !job.hardExcluded)
     .sort((a, b) => {
       if (b.rolePriority !== a.rolePriority) return b.rolePriority - a.rolePriority;
-      const postedA = a.postedAt?.getTime() ?? a.createdAt.getTime();
-      const postedB = b.postedAt?.getTime() ?? b.createdAt.getTime();
+      const postedA = safeDateMs(a.postedAt) || safeDateMs(a.createdAt);
+      const postedB = safeDateMs(b.postedAt) || safeDateMs(b.createdAt);
       return postedB - postedA;
     });
 

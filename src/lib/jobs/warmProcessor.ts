@@ -19,6 +19,7 @@ type ResumeProfileRow = {
   yearsExperience: number | null;
   keywords: unknown;
   summary: string | null;
+  updatedAt: Date;
 };
 
 const MAX_CANDIDATES = 1500;
@@ -26,17 +27,19 @@ const BATCH_SIZE = 40;
 
 function ensureStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return value.filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0,
+  );
 }
 
-function buildWarmupTargetPosition(profile: ResumeProfileRow, explicitTargetPosition?: string | null) {
+function buildWarmupTargetPosition(
+  profile: ResumeProfileRow,
+  explicitTargetPosition?: string | null,
+) {
   const normalizedExplicit = explicitTargetPosition?.trim();
   if (normalizedExplicit) return normalizedExplicit;
 
-  const seeds = [
-    profile.title ?? "",
-    ...ensureStringArray(profile.normalizedTitles).slice(0, 3),
-  ]
+  const seeds = [profile.title ?? "", ...ensureStringArray(profile.normalizedTitles).slice(0, 3)]
     .map((value) => value.trim())
     .filter(Boolean);
 
@@ -54,6 +57,14 @@ function toResumeProfileInput(profile: ResumeProfileRow) {
     keywords: ensureStringArray(profile.keywords),
     summary: profile.summary,
   };
+}
+
+function isDateObject(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
+}
+
+function isFreshCachedMatch(matchUpdatedAt: unknown) {
+  return isDateObject(matchUpdatedAt);
 }
 
 export async function runJobMatchWarmupPass(params: {
@@ -81,6 +92,7 @@ export async function runJobMatchWarmupPass(params: {
       yearsExperience: true,
       keywords: true,
       summary: true,
+      updatedAt: true,
     },
   });
 
@@ -94,7 +106,48 @@ export async function runJobMatchWarmupPass(params: {
     limit: MAX_CANDIDATES,
   });
 
-  const totalCandidates = candidateIds.length;
+  const existingMatches = candidateIds.length
+    ? await prisma.jobMatch.findMany({
+        where: {
+          resumeProfileId: params.resumeProfileId,
+          jobId: { in: candidateIds },
+        },
+        select: {
+          jobId: true,
+          updatedAt: true,
+        },
+      })
+    : [];
+
+  const freshMatchJobIds = new Set(
+    existingMatches
+      .filter((match) => isFreshCachedMatch(match.updatedAt))
+      .map((match) => match.jobId),
+  );
+
+  const jobsNeedingScoreIds = candidateIds.filter((jobId) => !freshMatchJobIds.has(jobId));
+  const totalCandidates = jobsNeedingScoreIds.length;
+
+  if (totalCandidates <= 0) {
+    await markJobMatchWarmupReady({
+      userId: params.userId,
+      resumeProfileId: params.resumeProfileId,
+      processedCount: 0,
+      totalCandidateCount: 0,
+      lastProcessedJobId: null,
+    });
+
+    return {
+      status: "ready" as const,
+      processed: 0,
+      totalCandidates: 0,
+      ready: true,
+      didWork: false,
+      continueRecommended: false,
+      claimReason: "cache-hot" as const,
+    };
+  }
+
   const claim = await claimJobMatchWarmupRun({
     userId: params.userId,
     resumeProfileId: params.resumeProfileId,
@@ -115,7 +168,7 @@ export async function runJobMatchWarmupPass(params: {
 
   try {
     const jobs = await prisma.job.findMany({
-      where: { id: { in: candidateIds }, status: "active" },
+      where: { id: { in: jobsNeedingScoreIds }, status: "active" },
       select: {
         id: true,
         title: true,
@@ -134,7 +187,7 @@ export async function runJobMatchWarmupPass(params: {
       },
     });
 
-    const idOrder = new Map(candidateIds.map((id, index) => [id, index]));
+    const idOrder = new Map(jobsNeedingScoreIds.map((id, index) => [id, index]));
     const orderedJobs = jobs.sort(
       (a, b) =>
         (idOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
@@ -142,11 +195,21 @@ export async function runJobMatchWarmupPass(params: {
     );
 
     const total = orderedJobs.length;
-    let processed = claim.state?.processedCount ?? 0;
-    const startIndex = Math.min(processed, total);
+    let processed = 0;
     const resumeProfileInput = toResumeProfileInput(profile);
 
-    for (let index = startIndex; index < total; index += BATCH_SIZE) {
+    if (claim.state?.processedCount > 0) {
+      await markJobMatchWarmupPending({
+        userId: params.userId,
+        resumeProfileId: params.resumeProfileId,
+        totalCandidateCount: total,
+        processedCount: 0,
+        lastProcessedJobId: null,
+        preserveProgress: false,
+      });
+    }
+
+    for (let index = 0; index < total; index += BATCH_SIZE) {
       const batch = orderedJobs.slice(index, index + BATCH_SIZE);
       if (batch.length === 0) break;
 
@@ -198,7 +261,6 @@ export async function runJobMatchWarmupPass(params: {
         totalCandidateCount: total,
         lastProcessedJobId,
       });
-
     }
 
     await markJobMatchWarmupReady({

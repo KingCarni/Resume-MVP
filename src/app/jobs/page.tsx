@@ -325,6 +325,7 @@ export default function JobsPage() {
   const [matchWarmup, setMatchWarmup] = useState<MatchWarmupState | null>(null);
   const [warmupRequestInFlight, setWarmupRequestInFlight] = useState(false);
   const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
+  const [warmupPollCount, setWarmupPollCount] = useState(0);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
@@ -442,6 +443,19 @@ export default function JobsPage() {
   useEffect(() => {
     setPage(1);
   }, [selectedProfileId]);
+
+  useEffect(() => {
+    setWarmupPollCount(0);
+  }, [
+    selectedProfileId,
+    appliedSearch,
+    appliedLocation,
+    appliedRemote,
+    appliedSeniority,
+    appliedMinSalary,
+    appliedSort,
+    appliedTargetPosition,
+  ]);
 
   const warmupRequestPayload = useMemo(
     () => ({
@@ -784,6 +798,7 @@ export default function JobsPage() {
 
   async function triggerWarmup(manualRetry = false) {
     if (!warmupRequestPayload.resumeProfileId || appliedSort !== "match") return;
+    if (manualRetry) setWarmupPollCount(0);
     setWarmupRequestInFlight(true);
 
     try {
@@ -844,7 +859,6 @@ export default function JobsPage() {
           lastError: null,
         };
       });
-      setJobsRefreshNonce((value) => value + 1);
     } catch (error) {
       const message =
         error instanceof Error
@@ -897,12 +911,11 @@ export default function JobsPage() {
     if (appliedSort !== "match") return;
     if (!matchWarmup?.shouldPoll) return;
 
+    const delayMs = warmupPollCount < 3 ? 10_000 : 30_000;
     const timeout = window.setTimeout(() => {
       setJobsRefreshNonce((value) => value + 1);
-      if (!warmupRequestInFlight) {
-        void triggerWarmup(false);
-      }
-    }, 10000);
+      setWarmupPollCount((value) => value + 1);
+    }, delayMs);
 
     return () => window.clearTimeout(timeout);
   }, [
@@ -912,7 +925,7 @@ export default function JobsPage() {
     matchWarmup?.status,
     pageStateReady,
     selectedProfileId,
-    warmupRequestInFlight,
+    warmupPollCount,
   ]);
 
   async function hideJob(job: JobListItem) {

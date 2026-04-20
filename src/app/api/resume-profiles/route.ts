@@ -269,6 +269,10 @@ export async function PATCH(request: NextRequest) {
     data.normalizedTitles = cleanTagArray(nextTitlesSource);
   }
 
+  if (body.keywords !== undefined) {
+    data.keywords = cleanTagArray(body.keywords);
+  }
+
   if (body.sourceDocumentId !== undefined) {
     const nextSourceDocumentId = String(body.sourceDocumentId ?? "").trim();
 
@@ -299,6 +303,25 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "No profile changes submitted" }, { status: 400 });
   }
 
+  const currentSkills = cleanTagArray(jsonToStringArray(existing.normalizedSkills));
+  const currentTitles = cleanTagArray(jsonToStringArray(existing.normalizedTitles));
+  const currentKeywords = cleanTagArray(jsonToStringArray(existing.keywords));
+
+  const nextSkills = Array.isArray(data.normalizedSkills)
+    ? cleanTagArray(data.normalizedSkills as string[])
+    : currentSkills;
+  const nextTitles = Array.isArray(data.normalizedTitles)
+    ? cleanTagArray(data.normalizedTitles as string[])
+    : currentTitles;
+  const nextKeywords = Array.isArray(data.keywords)
+    ? cleanTagArray(data.keywords as string[])
+    : currentKeywords;
+
+  const rankingRelevantChanged =
+    JSON.stringify(currentSkills) !== JSON.stringify(nextSkills) ||
+    JSON.stringify(currentTitles) !== JSON.stringify(nextTitles) ||
+    JSON.stringify(currentKeywords) !== JSON.stringify(nextKeywords);
+
   const item = await prisma.resumeProfile.update({
     where: { id },
     data,
@@ -311,6 +334,7 @@ export async function PATCH(request: NextRequest) {
       updatedAt: true,
       normalizedSkills: true,
       normalizedTitles: true,
+      keywords: true,
       sourceDocumentId: true,
       sourceDocument: {
         select: {
@@ -322,10 +346,13 @@ export async function PATCH(request: NextRequest) {
     },
   });
 
-  await markJobMatchWarmupStale({
-    userId,
-    resumeProfileId: id,
-  });
+  if (rankingRelevantChanged) {
+    await markJobMatchWarmupStale({
+      userId,
+      resumeProfileId: id,
+      reason: "Profile match metadata changed",
+    });
+  }
 
   return NextResponse.json({ ok: true, item: formatProfileItem(item) });
 }
