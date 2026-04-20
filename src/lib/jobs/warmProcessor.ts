@@ -23,7 +23,6 @@ type ResumeProfileRow = {
 };
 
 const MAX_CANDIDATES = 1500;
-const BATCH_SIZE = 40;
 
 function ensureStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -209,59 +208,70 @@ export async function runJobMatchWarmupPass(params: {
       });
     }
 
-    for (let index = 0; index < total; index += BATCH_SIZE) {
-      const batch = orderedJobs.slice(index, index + BATCH_SIZE);
-      if (batch.length === 0) break;
+    let lastHeartbeat = Date.now();
+    let lastProcessedJobId: string | null = null;
 
-      for (const job of batch) {
-        const match = scoreResumeToJob(resumeProfileInput, job);
+    for (const job of orderedJobs) {
+      const match = scoreResumeToJob(resumeProfileInput, job);
 
-        await prisma.jobMatch.upsert({
-          where: {
-            resumeProfileId_jobId: {
-              resumeProfileId: params.resumeProfileId,
-              jobId: job.id,
-            },
-          },
-          create: {
-            userId: params.userId,
+      await prisma.jobMatch.upsert({
+        where: {
+          resumeProfileId_jobId: {
             resumeProfileId: params.resumeProfileId,
             jobId: job.id,
-            totalScore: match.totalScore,
-            titleScore: match.titleScore,
-            skillScore: match.skillScore,
-            seniorityScore: match.seniorityScore,
-            locationScore: match.locationScore,
-            keywordScore: match.keywordScore,
-            explanationShort: match.explanationShort,
-            missingSkills: match.missingSkills,
-            matchingSkills: match.matchingSkills,
           },
-          update: {
-            totalScore: match.totalScore,
-            titleScore: match.titleScore,
-            skillScore: match.skillScore,
-            seniorityScore: match.seniorityScore,
-            locationScore: match.locationScore,
-            keywordScore: match.keywordScore,
-            explanationShort: match.explanationShort,
-            missingSkills: match.missingSkills,
-            matchingSkills: match.matchingSkills,
-            updatedAt: new Date(),
-          },
-        });
-      }
-
-      processed += batch.length;
-      const lastProcessedJobId = batch[batch.length - 1]?.id ?? null;
-      await markJobMatchWarmupProgress({
-        userId: params.userId,
-        resumeProfileId: params.resumeProfileId,
-        processedCount: processed,
-        totalCandidateCount: total,
-        lastProcessedJobId,
+        },
+        create: {
+          userId: params.userId,
+          resumeProfileId: params.resumeProfileId,
+          jobId: job.id,
+          totalScore: match.totalScore,
+          titleScore: match.titleScore,
+          skillScore: match.skillScore,
+          seniorityScore: match.seniorityScore,
+          locationScore: match.locationScore,
+          keywordScore: match.keywordScore,
+          explanationShort: match.explanationShort,
+          missingSkills: match.missingSkills,
+          matchingSkills: match.matchingSkills,
+        },
+        update: {
+          totalScore: match.totalScore,
+          titleScore: match.titleScore,
+          skillScore: match.skillScore,
+          seniorityScore: match.seniorityScore,
+          locationScore: match.locationScore,
+          keywordScore: match.keywordScore,
+          explanationShort: match.explanationShort,
+          missingSkills: match.missingSkills,
+          matchingSkills: match.matchingSkills,
+          updatedAt: new Date(),
+        },
       });
+
+      processed += 1;
+      lastProcessedJobId = job.id;
+
+      const now = Date.now();
+      if (now - lastHeartbeat >= 10_000) {
+        await markJobMatchWarmupProgress({
+          userId: params.userId,
+          resumeProfileId: params.resumeProfileId,
+          processedCount: processed,
+          totalCandidateCount: total,
+          lastProcessedJobId,
+        });
+        lastHeartbeat = now;
+      }
     }
+
+    await markJobMatchWarmupProgress({
+      userId: params.userId,
+      resumeProfileId: params.resumeProfileId,
+      processedCount: processed,
+      totalCandidateCount: total,
+      lastProcessedJobId,
+    });
 
     await markJobMatchWarmupReady({
       userId: params.userId,

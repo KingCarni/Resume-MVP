@@ -1297,17 +1297,11 @@ export default function JobsPage() {
           </div>
         </div>
 
-        {selectedProfileId && appliedSort === "match" && matchWarmup && matchWarmup.usedFallback ? (
-          <div
-            className={cn(
-              "mb-4 rounded-3xl border p-4 text-sm",
-              matchWarmup.status === "failed"
-                ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
-                : matchWarmup.status === "stale"
-                  ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
-                  : "border-cyan-400/20 bg-cyan-500/10 text-cyan-100",
-            )}
-          >
+        {selectedProfileId &&
+        appliedSort === "match" &&
+        matchWarmup?.usedFallback &&
+        matchWarmup.status === "failed" ? (
+          <div className="mb-4 rounded-3xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="font-semibold">{matchWarmup.shortLabel}</div>
@@ -1318,21 +1312,14 @@ export default function JobsPage() {
                   </p>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {matchWarmup.shouldPoll || matchWarmup.shouldTriggerWarmup ? (
-                  <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]">
-                    Checking every 10s
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void triggerWarmup(true)}
-                  disabled={warmupRequestInFlight}
-                  className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {warmupRequestInFlight ? "Refreshing…" : "Refresh / resume best match"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => void triggerWarmup(true)}
+                disabled={warmupRequestInFlight}
+                className="rounded-2xl bg-white px-4 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {warmupRequestInFlight ? "Refreshing…" : "Retry best match"}
+              </button>
             </div>
           </div>
         ) : null}
