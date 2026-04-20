@@ -445,7 +445,10 @@ export default function SavedJobsPage() {
             </Link>
           </div>
         </div>
-        <div className="mb-8 rounded-[2.25rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_26%),radial-gradient(circle_at_78%_20%,rgba(56,189,248,0.18),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(14,165,233,0.08),transparent_36%),rgba(2,6,23,0.84)] p-6 shadow-[0_30px_90px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+        <div className="relative mb-8 overflow-hidden rounded-[2.25rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_24%),radial-gradient(circle_at_78%_20%,rgba(56,189,248,0.18),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(14,165,233,0.08),transparent_36%),rgba(2,6,23,0.84)] p-6 shadow-[0_30px_90px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+          <div className="pointer-events-none absolute -left-12 top-0 h-40 w-40 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-full bg-sky-400/10 blur-3xl" />
+          <div className="relative">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -487,7 +490,7 @@ export default function SavedJobsPage() {
             {feedback.message}
           </div>
         ) : null}
-        <section className="mb-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-4 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+        <section className="mb-6 rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.1),transparent_24%),rgba(2,6,23,0.78)] p-4 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl">
           <div className="ml-auto max-w-[360px]">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
               Resume profile{profiles.length > 0 ? ` • ${profiles.length}` : ""}
@@ -565,9 +568,10 @@ export default function SavedJobsPage() {
               return (
                 <article
                   key={job.id}
-                  className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.1),transparent_24%),rgba(2,6,23,0.78)] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:border-cyan-400/30 hover:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_26%),rgba(2,6,23,0.82)]"
+                  className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),radial-gradient(circle_at_86%_18%,rgba(59,130,246,0.10),transparent_26%),rgba(2,6,23,0.80)] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:border-cyan-400/30 hover:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_86%_18%,rgba(59,130,246,0.12),transparent_28%),rgba(2,6,23,0.84)]"
                 >
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="pointer-events-none absolute -right-8 top-0 h-28 w-28 rounded-full bg-cyan-400/8 blur-3xl" />
+                  <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="mb-2 flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
@@ -639,7 +643,7 @@ export default function SavedJobsPage() {
                         ))}
                       </div>
                     </div>
-                    <div className="flex min-w-[260px] flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                    <div className="flex min-w-[260px] flex-col gap-3 rounded-[1.6rem] border border-white/10 bg-slate-950/60 p-4 shadow-[0_18px_40px_rgba(2,6,23,0.24)]">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                           Match

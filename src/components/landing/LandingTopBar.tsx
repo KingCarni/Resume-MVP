@@ -53,13 +53,16 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
             </>
           ) : (
             <>
+              <Link href="/buy-credits" className="shell-primary-btn">
+                Buy Credits
+              </Link>
               <Link href="/donate" className="shell-secondary-btn">
                 Donate
               </Link>
               <Link href="/jobs" className="shell-secondary-btn">
                 Browse Jobs
               </Link>
-              <Link href="/resume" className="shell-primary-btn">
+              <Link href="/resume" className="shell-secondary-btn">
                 Start Free
               </Link>
             </>

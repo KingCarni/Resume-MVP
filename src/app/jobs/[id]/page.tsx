@@ -712,9 +712,6 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
             <Link href="/" className="shell-nav-link">
               Home
             </Link>
-            <Link href="/jobs" className="shell-nav-link">
-              Jobs
-            </Link>
             <Link href="/resume" className="shell-nav-link">
               Resume
             </Link>
@@ -858,7 +855,7 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
               ) : null}
             </div>
           </section>
-          <aside className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/10">
+          <aside className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.10),transparent_30%),rgba(2,6,23,0.78)] p-6 shadow-[0_28px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
               Match panel
             </p>
