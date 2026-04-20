@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { normalizeLegacyResumeTemplateId } from "@/lib/templates/resumeTemplates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,5 +47,19 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json({ ok: true, item: latestResume });
+  if (!latestResume) {
+    return NextResponse.json({ ok: true, item: null });
+  }
+
+  const templateMigration = normalizeLegacyResumeTemplateId(latestResume.template);
+
+  return NextResponse.json({
+    ok: true,
+    item: {
+      ...latestResume,
+      template: templateMigration.resolvedLegacyId,
+      originalTemplate: latestResume.template,
+      templateMigration,
+    },
+  });
 }

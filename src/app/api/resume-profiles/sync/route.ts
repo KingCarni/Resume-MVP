@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { buildResumeProfile, rebuildResumeProfile } from "@/lib/resumeProfiles/buildProfile";
 import { sanitizeResumeSourceMeta, sanitizeStructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { normalizeLegacyResumeTemplateId } from "@/lib/templates/resumeTemplates";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -85,6 +86,8 @@ export async function POST(request: NextRequest) {
 
   const profileId = String(body?.profileId ?? "").trim();
   const structuredData = sanitizeStructuredResumeSnapshot(body?.structuredData);
+  const templateMigration = normalizeLegacyResumeTemplateId(body?.template);
+  const normalizedTemplate = templateMigration.resolvedLegacyId;
   const sourceMeta = sanitizeResumeSourceMeta(body?.sourceMeta);
   const structuredDataValue: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput = structuredData
     ? (structuredData as Prisma.InputJsonValue)
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
   let sourceDocumentId = existingProfile?.sourceDocumentId ?? null;
   const documentData = {
     title: nextTitle,
-    template: String(body?.template ?? "").trim() || null,
+    template: normalizedTemplate,
     html: String(body?.html ?? "").trim() || null,
     text: rawText,
     structuredData: structuredDataValue,
@@ -160,5 +163,5 @@ export async function POST(request: NextRequest) {
     ? await rebuildResumeProfile(existingProfile.id, buildInput)
     : await buildResumeProfile(buildInput);
 
-  return NextResponse.json({ ok: true, item: formatProfileItem(item) });
+  return NextResponse.json({ ok: true, item: formatProfileItem(item), templateMigration });
 }

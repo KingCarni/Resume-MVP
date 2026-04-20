@@ -1,3 +1,5 @@
+import { normalizeStoredResumeTemplateValue } from "@/lib/templates/resumeTemplates";
+
 export type StructuredResumeProfile = {
   fullName: string;
   titleLine: string;
@@ -191,7 +193,7 @@ export function sanitizeStructuredResumeSnapshot(value: unknown): StructuredResu
   return {
     version: 1,
     targetPosition: cleanString(input.targetPosition),
-    template: cleanString(input.template) || "modern",
+    template: normalizeStoredResumeTemplateValue(cleanString(input.template) || "modern"),
     profile: {
       fullName: cleanString(profileInput.fullName),
       titleLine: cleanString(profileInput.titleLine),

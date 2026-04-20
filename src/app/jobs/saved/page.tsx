@@ -147,6 +147,9 @@ function feedbackClasses(tone: FeedbackTone) {
     return "border-rose-400/30 bg-rose-500/10 text-rose-100";
   return "border-cyan-400/30 bg-cyan-500/10 text-cyan-100";
 }
+function createApplyPackSessionId() {
+  return `applypack_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export default function SavedJobsPage() {
   const [profiles, setProfiles] = useState<ResumeProfileItem[]>([]);
@@ -480,6 +483,7 @@ export default function SavedJobsPage() {
             </div>
           </div>
         </div>
+      </div>
         {feedback ? (
           <div
             className={cn(

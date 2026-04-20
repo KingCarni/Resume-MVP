@@ -2,10 +2,13 @@ import type { ResumeLayoutId } from "./baseTokens";
 import {
   TEMPLATE_OPTIONS,
   isLegacyResumeTemplateId,
+  normalizeLegacyResumeTemplateId,
+  normalizeStoredResumeTemplateValue,
   resolveLegacyResumeTemplateSelection,
   type LegacyResumeTemplateId,
   type LegacyResumeTemplateOption,
   type LegacyResumeTemplateSelection,
+  type TemplateMigrationInfo,
 } from "./resumeTemplates";
 
 export type CoverLetterTemplateId = LegacyResumeTemplateId;
@@ -18,6 +21,18 @@ export const COVER_LETTER_TEMPLATE_OPTIONS: CoverLetterTemplateOption[] = TEMPLA
 
 export function isCoverLetterTemplateId(value: string): value is CoverLetterTemplateId {
   return isLegacyResumeTemplateId(value);
+}
+
+export function normalizeLegacyCoverLetterTemplateId(
+  value: string | null | undefined,
+): TemplateMigrationInfo {
+  return normalizeLegacyResumeTemplateId(value);
+}
+
+export function normalizeStoredCoverLetterTemplateValue(
+  value: string | null | undefined,
+): CoverLetterTemplateId {
+  return normalizeStoredResumeTemplateValue(value);
 }
 
 export function resolveCoverLetterTemplateSelection(
