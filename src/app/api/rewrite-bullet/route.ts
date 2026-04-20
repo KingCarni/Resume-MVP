@@ -557,6 +557,7 @@ export async function POST(req: Request) {
     let charged: Awaited<ReturnType<typeof chargeCredits>> = {
       ok: true as const,
       balance: await getCreditBalance(dbUser.id),
+      alreadyApplied: false as const,
     };
 
     if (shouldChargeThisRequest) {
@@ -580,7 +581,7 @@ export async function POST(req: Request) {
       }
 
       chargedUserId = dbUser.id;
-      chargedCost = COST_REWRITE;
+      chargedCost = charged.alreadyApplied ? 0 : COST_REWRITE;
     }
 
     const { usableKeywords, blockedKeywords } = sanitizeKeywords({

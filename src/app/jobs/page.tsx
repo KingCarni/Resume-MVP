@@ -1041,6 +1041,9 @@ export default function JobsPage() {
               Git-a-Job
             </Link>
             <div className="hidden items-center gap-2 md:flex">
+              <Link href="/" className="shell-nav-link">
+                Home
+              </Link>
               <Link href="/jobs" className="shell-nav-link">
                 Jobs
               </Link>
@@ -1058,6 +1061,9 @@ export default function JobsPage() {
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <CreditsPill />
+            <Link href="/buy-credits" className="shell-primary-btn">
+              Buy Credits
+            </Link>
             <Link href="/donate" className="shell-secondary-btn">
               Donate
             </Link>

@@ -705,26 +705,37 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
   );
   const overallFitLabel = overallFitBand(overallFitScore);
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/jobs"
-            className="inline-flex items-center gap-2 text-sm font-medium text-cyan-300 transition hover:text-cyan-200"
-          >
-            ← Back to AI Job Match
-          </Link>
-          <div className="flex flex-wrap items-center gap-3">
+    <main className="min-h-screen pb-10 text-white">
+      <div className="shell-wrap py-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/" className="shell-nav-link">
+              Home
+            </Link>
+            <Link href="/jobs" className="shell-nav-link">
+              Jobs
+            </Link>
+            <Link href="/resume" className="shell-nav-link">
+              Resume
+            </Link>
+            <Link href="/cover-letter" className="shell-nav-link">
+              Cover Letter
+            </Link>
+            <Link href="/account" className="shell-nav-link">
+              Account
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/buy-credits" className="shell-primary-btn">
+              Buy Credits
+            </Link>
             <Link
               href={`/jobs/saved${resumeProfileId ? `?resumeProfileId=${encodeURIComponent(resumeProfileId)}` : ""}`}
-              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+              className="shell-secondary-btn"
             >
               Saved Jobs
             </Link>
-            <Link
-              href="/account"
-              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
-            >
+            <Link href="/account" className="shell-secondary-btn">
               Account
             </Link>
           </div>
@@ -740,7 +751,7 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
           </div>
         ) : null}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/10">
+          <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(56,189,248,0.12),transparent_28%),rgba(2,6,23,0.76)] p-6 shadow-[0_28px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
                 {job.source.name}

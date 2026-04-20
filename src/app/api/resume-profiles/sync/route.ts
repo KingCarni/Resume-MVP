@@ -1,5 +1,5 @@
 
-import { DocumentType } from "@prisma/client";
+import { DocumentType, Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -86,6 +86,9 @@ export async function POST(request: NextRequest) {
   const profileId = String(body?.profileId ?? "").trim();
   const structuredData = sanitizeStructuredResumeSnapshot(body?.structuredData);
   const sourceMeta = sanitizeResumeSourceMeta(body?.sourceMeta);
+  const structuredDataValue: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput = structuredData
+    ? (structuredData as Prisma.InputJsonValue)
+    : Prisma.JsonNull;
   const existingProfile = await prisma.resumeProfile.findFirst({
     where: profileId ? { userId, id: profileId } : { userId },
     orderBy: { updatedAt: "desc" },
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
     template: String(body?.template ?? "").trim() || null,
     html: String(body?.html ?? "").trim() || null,
     text: rawText,
-    structuredData,
+    structuredData: structuredDataValue,
     sourceFileName: sourceMeta?.fileName ?? null,
     sourceMimeType: sourceMeta?.mimeType ?? null,
     sourceFileExtension: sourceMeta?.extension ?? null,

@@ -416,9 +416,36 @@ export default function SavedJobsPage() {
     [selectedProfileId],
   );
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20 backdrop-blur">
+    <main className="min-h-screen pb-10 text-white">
+      <div className="shell-wrap py-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/" className="shell-nav-link">
+              Home
+            </Link>
+            <Link href="/jobs" className="shell-nav-link">
+              Jobs
+            </Link>
+            <Link href="/resume" className="shell-nav-link">
+              Resume
+            </Link>
+            <Link href="/cover-letter" className="shell-nav-link">
+              Cover Letter
+            </Link>
+            <Link href="/account" className="shell-nav-link">
+              Account
+            </Link>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/buy-credits" className="shell-primary-btn">
+              Buy Credits
+            </Link>
+            <Link href="/donate" className="shell-secondary-btn">
+              Donate
+            </Link>
+          </div>
+        </div>
+        <div className="mb-8 rounded-[2.25rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_26%),radial-gradient(circle_at_78%_20%,rgba(56,189,248,0.18),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(14,165,233,0.08),transparent_36%),rgba(2,6,23,0.84)] p-6 shadow-[0_30px_90px_rgba(2,6,23,0.45)] backdrop-blur-xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
               <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
@@ -460,7 +487,7 @@ export default function SavedJobsPage() {
             {feedback.message}
           </div>
         ) : null}
-        <section className="mb-6 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <section className="mb-6 rounded-[2rem] border border-white/10 bg-slate-950/70 p-4 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl">
           <div className="ml-auto max-w-[360px]">
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
               Resume profile{profiles.length > 0 ? ` • ${profiles.length}` : ""}
@@ -494,7 +521,7 @@ export default function SavedJobsPage() {
             {Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
-                className="animate-pulse rounded-3xl border border-white/10 bg-white/5 p-5"
+                className="animate-pulse rounded-[2rem] border border-white/10 bg-slate-950/70 p-5 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl"
               >
                 <div className="h-5 w-56 rounded bg-white/10" />
                 <div className="mt-3 h-4 w-40 rounded bg-white/10" />
@@ -508,7 +535,7 @@ export default function SavedJobsPage() {
             <p className="mt-2 text-sm text-rose-100/90">{error}</p>
           </div>
         ) : jobs.length === 0 ? (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
+          <div className="rounded-[2rem] border border-white/10 bg-slate-950/70 p-8 text-center shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl">
             <h2 className="text-xl font-semibold text-white">
               No saved jobs yet
             </h2>
@@ -538,7 +565,7 @@ export default function SavedJobsPage() {
               return (
                 <article
                   key={job.id}
-                  className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/10 transition hover:border-cyan-400/30 hover:bg-white/[0.07]"
+                  className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.1),transparent_24%),rgba(2,6,23,0.78)] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.35)] backdrop-blur-xl transition hover:border-cyan-400/30 hover:bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.14),transparent_26%),rgba(2,6,23,0.82)]"
                 >
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">

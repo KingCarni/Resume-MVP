@@ -22,6 +22,10 @@ export default async function AccountPage() {
             <Link href="/cover-letter" className="shell-nav-link">Cover Letter</Link>
             <Link href="/account" className="shell-nav-link">Account</Link>
           </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
+            <Link href="/donate" className="shell-secondary-btn">Donate</Link>
+          </div>
         </div>
 
         <div className="shell-panel overflow-hidden">

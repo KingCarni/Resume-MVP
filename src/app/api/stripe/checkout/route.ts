@@ -1,6 +1,7 @@
 // src/app/api/stripe/checkout/route.ts
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import type { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -85,27 +86,29 @@ async function writeJobsPurchaseEvent(args: {
   event: string;
   creditsCost: number;
   analytics: JobsCheckoutAnalytics;
-  meta?: Record<string, unknown>;
+  meta?: Prisma.InputJsonValue;
 }) {
+  const metaJson: Prisma.InputJsonObject = {
+    tag: BOOT_TAG,
+    category: "jobs",
+    event: args.event,
+    path: args.analytics.route ?? "/buy-credits",
+    route: args.analytics.route ?? "/buy-credits",
+    jobId: args.analytics.jobId ?? null,
+    resumeProfileId: args.analytics.resumeProfileId ?? null,
+    company: args.analytics.company ?? null,
+    jobTitle: args.analytics.jobTitle ?? null,
+    sourceSlug: args.analytics.sourceSlug ?? null,
+    mode: args.analytics.mode ?? null,
+    creditsCost: args.creditsCost,
+    meta: args.meta ?? null,
+  };
+
   await prisma.event.create({
     data: {
       userId: args.userId,
       type: "purchase",
-      metaJson: {
-        tag: BOOT_TAG,
-        category: "jobs",
-        event: args.event,
-        path: args.analytics.route ?? "/buy-credits",
-        route: args.analytics.route ?? "/buy-credits",
-        jobId: args.analytics.jobId ?? null,
-        resumeProfileId: args.analytics.resumeProfileId ?? null,
-        company: args.analytics.company ?? null,
-        jobTitle: args.analytics.jobTitle ?? null,
-        sourceSlug: args.analytics.sourceSlug ?? null,
-        mode: args.analytics.mode ?? null,
-        creditsCost: args.creditsCost,
-        meta: args.meta ?? null,
-      },
+      metaJson,
     },
   });
 }
