@@ -37,6 +37,10 @@ const trustPoints = [
     title: "Job context carries into your application workflow.",
     body: "When you decide a role is worth pursuing, that same job context flows into resume and cover-letter tailoring so you are not starting over from scratch.",
   },
+  {
+    title: "The score stays tied to real next steps.",
+    body: "The fit panel is meant to help you decide whether to open, save, or tailor a role instead of flooding you with fake precision or filler AI noise.",
+  },
 ];
 
 const productActions = [
@@ -96,7 +100,7 @@ export default async function HomePage() {
                 Jobs-first application workflow
               </div>
               <h1 className="mt-5 max-w-3xl text-4xl font-bold leading-none tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Start with real roles. Find your job. 
+                Start with real roles. Find your job.
                 <br />
                 Tailor faster.
                 <br />
@@ -212,7 +216,7 @@ export default async function HomePage() {
             <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/60 px-6 py-8 sm:px-8">
               <div className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Why it works</div>
               <h2 className="mt-4 text-3xl font-bold tracking-tight text-white">Why the match feels usable.</h2>
-              <div className="mt-6 space-y-4">
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {trustPoints.map((item) => (
                   <div key={item.title} className="flex gap-3 rounded-3xl border border-white/10 bg-white/[0.03] px-4 py-4">
                     <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-300" />
@@ -273,6 +277,9 @@ export default async function HomePage() {
               </Link>
               <Link href="/account" className="shell-secondary-btn">
                 Open account hub
+              </Link>
+              <Link href="/buy-credits" className="shell-secondary-btn">
+                Buy Credits
               </Link>
             </div>
           </div>

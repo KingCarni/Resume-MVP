@@ -11,15 +11,12 @@ type Props = {
 export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props) {
   return (
     <header className="shell-wrap pt-5">
-      <div className="flex items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
         <div className="flex items-center gap-4">
           <Link href="/" className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl">
             Git-a-Job
           </Link>
           <div className="hidden items-center gap-2 md:flex">
-            <Link href="/" className="shell-nav-link">
-              Home
-            </Link>
             <Link href="/resume" className="shell-nav-link">
               Resume
             </Link>
@@ -32,11 +29,11 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {isAuthed ? (
             <>
-              <div className="hidden rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold tracking-[0.18em] text-cyan-100 uppercase sm:block">
-                Credits {credits}
+              <div className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-5 py-3 text-sm font-semibold text-cyan-100">
+                Credits: {credits}
               </div>
               <Link href="/buy-credits" className="shell-primary-btn">
                 Buy Credits

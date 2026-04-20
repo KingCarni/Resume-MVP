@@ -38,8 +38,19 @@ export default async function ResumeSetupPage() {
       title="Resume Setup"
       subtitle="Create your base Git-a-Job resume for free. Once this is done, you can tailor it per role from AI Job Match."
       topRight={
-        <div className="flex items-center gap-2">
-          <Link href="/jobs" className="shell-primary-btn">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/buy-credits" className="shell-primary-btn">
+            Buy Credits
+          </Link>
+          <a
+            href="https://git-a-job.com/donate"
+            target="_blank"
+            rel="noreferrer"
+            className="shell-secondary-btn"
+          >
+            Donate
+          </a>
+          <Link href="/jobs" className="shell-secondary-btn">
             Browse Jobs
           </Link>
           <Link href="/account" className="shell-secondary-btn">

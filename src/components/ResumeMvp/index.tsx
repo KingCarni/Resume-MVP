@@ -6832,14 +6832,6 @@ useEffect(() => {
                   {isSetupMode ? " · First-time setup is free" : ""}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${atsScoreDirty ? "border-amber-300 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-                  {analysis ? (atsScoreDirty ? "ATS score needs refresh" : "ATS score current") : "Analyze to create ATS score"}
-                </span>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${profileSyncDirty ? "border-amber-300 bg-amber-50 text-amber-900" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
-                  {analysis ? (profileSyncDirty ? "Resume profile sync pending" : "Resume profile synced") : "Resume profile not synced yet"}
-                </span>
-              </div>
             </div>
 
             <div className="mt-3 grid gap-2">
@@ -6892,18 +6884,6 @@ useEffect(() => {
                   Continue to Cover Letter
                 </button>
               )}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-extrabold">Inputs</h2>
-              <div className="text-xs text-slate-600 dark:text-slate-300">{isSetupMode ? "Setup mode · build your base resume once, then tailor per job later." : "Job-aware resume mode"}</div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-slate-100/90">
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
-                {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
-              </span>
             </div>
           </div>
 
@@ -7039,7 +7019,7 @@ useEffect(() => {
               <select
                 value={resumeTemplate}
                 onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
+                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
               >
                 {TEMPLATE_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -7173,31 +7153,61 @@ useEffect(() => {
                     ) : null}
 
                     <div className="grid grid-cols-2 gap-3">
-                      <label className="grid gap-1">
+                      <div className="grid gap-1">
                         <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Shape</span>
-                        <select
-                          value={profilePhotoShape}
-                          onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
-                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
-                        >
-                          <option value="circle">Circle</option>
-                          <option value="rounded">Rounded</option>
-                          <option value="square">Square</option>
-                        </select>
-                      </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: "circle", label: "Circle" },
+                            { value: "rounded", label: "Rounded" },
+                            { value: "square", label: "Square" },
+                          ].map((option) => {
+                            const isActive = profilePhotoShape === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setProfilePhotoShape(option.value as "circle" | "rounded" | "square")}
+                                className={[
+                                  "rounded-xl border px-3 py-3 text-sm font-extrabold transition",
+                                  isActive
+                                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
+                                    : "border-black/10 bg-white text-black hover:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:hover:border-white/20",
+                                ].join(" ")}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                      <label className="grid gap-1">
+                      <div className="grid gap-1">
                         <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Size</span>
-                        <select
-                          value={String(profilePhotoSize)}
-                          onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
-                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
-                        >
-                          <option value="88">Small</option>
-                          <option value="112">Medium</option>
-                          <option value="136">Large</option>
-                        </select>
-                      </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: 88, label: "Small" },
+                            { value: 112, label: "Medium" },
+                            { value: 136, label: "Large" },
+                          ].map((option) => {
+                            const isActive = profilePhotoSize === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setProfilePhotoSize(option.value)}
+                                className={[
+                                  "rounded-xl border px-3 py-3 text-sm font-extrabold transition",
+                                  isActive
+                                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]"
+                                    : "border-black/10 bg-white text-black hover:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:hover:border-white/20",
+                                ].join(" ")}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
