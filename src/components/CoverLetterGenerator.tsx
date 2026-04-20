@@ -1877,6 +1877,7 @@ export default function CoverLetterGenerator() {
   const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const trackedCoverLetterEntryRef = useRef("");
   const latestResumeHydratedRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
 
@@ -1888,9 +1889,8 @@ export default function CoverLetterGenerator() {
 
   const isApplyPackFlow = useMemo(() => {
     const queryBundle = String(searchParams.get("bundle") || "").trim();
-    const storedBundle = String(applyPackBundle?.bundle || "").trim();
-    return shouldHydrateJobContext && (queryBundle === "apply-pack" || storedBundle === "apply-pack");
-  }, [shouldHydrateJobContext, searchParams, applyPackBundle]);
+    return shouldHydrateJobContext && queryBundle === "apply-pack";
+  }, [shouldHydrateJobContext, searchParamsKey]);
 
   const applyPackPricingEligible = useMemo(() => {
     if (!isApplyPackFlow || jobTextOverrideMode) return false;
@@ -2009,13 +2009,10 @@ export default function CoverLetterGenerator() {
 
       const storedJobId = String(parsed?.jobId || "").trim();
       const storedJobText = String(parsed?.job?.jobContextText || "").trim();
+      const sameRequestedJob = !queryJobId || queryJobId === storedJobId;
+      const shouldFetchContext = !!queryJobId && (!sameRequestedJob || !storedJobText);
 
-      const needsFreshJobContext =
-        queryBundle === "apply-pack" &&
-        queryJobId &&
-        (queryJobId !== storedJobId || !storedJobText);
-
-      if (needsFreshJobContext) {
+      if (shouldFetchContext) {
         try {
           const response = await fetch(`/api/jobs/${encodeURIComponent(queryJobId)}/context`, {
             method: "GET",
@@ -2027,15 +2024,17 @@ export default function CoverLetterGenerator() {
 
           if (response.ok && json?.ok && json.item) {
             const nextBundle: ApplyPackBundle = {
-              bundle: "apply-pack",
+              bundle: queryBundle === "apply-pack" ? "apply-pack" : undefined,
               jobId: queryJobId,
               resumeProfileId:
                 queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
               createdAt: new Date().toISOString(),
               nextStep: parsed?.nextStep || "cover-letter",
               bundleSessionId:
-                String(parsed?.bundleSessionId || "").trim() ||
-                `applypack_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+                queryBundle === "apply-pack"
+                  ? String(parsed?.bundleSessionId || "").trim() ||
+                    `applypack_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+                  : undefined,
               sourceSlug: String(parsed?.sourceSlug || "").trim() || undefined,
               job: json.item,
             };
@@ -2050,15 +2049,14 @@ export default function CoverLetterGenerator() {
             return;
           }
         } catch {
-          // fall through to stored bundle
+          // fall through to stored bundle when available
         }
       }
 
-      if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
+      if (!parsed || cancelled) return;
 
       setApplyPackBundle(parsed);
 
-      const sameRequestedJob = !queryJobId || queryJobId === storedJobId;
       if (sameRequestedJob && storedJobText) {
         setJobText((current) => (current.trim() ? current : storedJobText));
       }
@@ -2329,9 +2327,10 @@ export default function CoverLetterGenerator() {
             {/* File input */}
             <label className="grid gap-1.5">
               <div className="text-xs font-extrabold text-black/90 dark:text-white/80">
-                {applyPackActive ? "Resume file (recommended)" : "Resume file (optional)"}
+                Resume source
               </div>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
                 onChange={(e) => {
@@ -2347,29 +2346,41 @@ export default function CoverLetterGenerator() {
                   setError(null);
                   setFile(f);
                 }}
-                className="block w-full text-sm text-black dark:text-white
-                file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
-                file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
-                file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                className="sr-only"
               />
 
-              {file ? (
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="text-xs font-extrabold text-black/90 dark:text-white/80">{file.name}</div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-xl border border-emerald-700/40 bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Choose File
+                </button>
+
+                <div className="text-sm font-semibold text-black/80 dark:text-white/85">
+                  {file
+                    ? file.name
+                    : resumeText.trim()
+                      ? "Using your latest synced resume profile"
+                      : "No synced resume loaded yet"}
+                </div>
+
+                {file ? (
                   <button
                     type="button"
                     onClick={clearFile}
-                    className="text-sm font-extrabold underline opacity-80 hover:opacity-100 text-black dark:text-white"
+                    className="text-sm font-extrabold underline opacity-80 transition hover:opacity-100 text-black dark:text-white"
                   >
                     Clear
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
+
               <div className="text-xs text-black/60 dark:text-white/80">
-                {applyPackActive
-                ? "Your latest saved resume is loaded when available. Upload a new file only if you want to replace it for this cover letter."
-                : "Use your latest synced resume profile or upload a resume document. Pasted resume text is no longer used here."}
+                {resumeText.trim()
+                  ? "Your synced resume profile is loaded for this cover letter. Upload a new file only if you want to replace it for this run."
+                  : "Load a synced resume profile first, or upload a resume document for this cover letter."}
               </div>
             </label>
 
