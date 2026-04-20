@@ -6900,10 +6900,14 @@ useEffect(() => {
 
           <div className="mt-3 grid gap-3">
             <div id="resume-source" className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">{isSetupMode ? "Upload your base resume" : "Upload resume file"}</div>
+              <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">{isSetupMode ? "Upload your base resume" : "Resume source"}</div>
               {isSetupMode ? (
                 <div className="text-[11px] text-slate-600 dark:text-slate-300">This first setup is free. DOCX is still the best source when you have it.</div>
-              ) : null}
+              ) : (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                  Your current synced resume profile is loaded automatically in job flow. Upload a new file only if you want to replace it for this pass.
+                </div>
+              )}
 
               <input
                 id="resume-upload"
@@ -6925,12 +6929,25 @@ useEffect(() => {
                   );
                   resetDerivedState();
                 }}
-                className="block w-full text-sm text-black
-                  file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
-                  file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
-                  file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                  dark:text-slate-100 dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                className="sr-only"
               />
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Choose File
+                </button>
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {file
+                    ? `Current: ${file.name}`
+                    : !isSetupMode && (latestResumeMeta || resumeText.trim())
+                      ? "Current: User Profile"
+                      : "No file chosen"}
+                </div>
+              </div>
 
               {/* ✅ Exact wording you asked for when PDFs are sketchy */}
               {fileIsPdf ? (
@@ -6942,6 +6959,12 @@ useEffect(() => {
                   Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
                 </div>
               )}
+
+              {!isSetupMode && !file && (latestResumeMeta || resumeText.trim()) ? (
+                <div className="mt-1 rounded-lg border border-emerald-500/20 bg-emerald-50/80 px-3 py-2 text-[11px] font-semibold text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+                  Header details, summary, education, shipped products, and key metrics are auto-filled from your current saved resume data when available.
+                </div>
+              ) : null}
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
