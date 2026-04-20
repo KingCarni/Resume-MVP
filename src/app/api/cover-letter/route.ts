@@ -413,22 +413,6 @@ function buildPrompt(args: {
     blockedTerms,
     targetTerms,
   } = args;
-
-  const today = new Date().toLocaleDateString("en-CA", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  const headerLines = [
-    fullName ? fullName : "",
-    [locationLine, phone, email].filter(Boolean).join(" • "),
-    linkedin ? linkedin : "",
-    today,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
   const greeting = hiringManager ? `Hi ${hiringManager},` : "Dear Hiring Manager,";
 
   const lengthGuide =
@@ -462,14 +446,12 @@ function buildPrompt(args: {
 You are writing a job application cover letter.
 
 OUTPUT FORMAT (exact):
-1) Start with the header block (name/contact/date) IF provided.
+1) Greeting line
 2) Blank line
-3) Greeting line
-4) Blank line
-5) Body paragraphs
-6) If includeBullets=true: blank line + exactly 3 impact bullets
-7) Blank line
-8) Sign-off: "Sincerely," then name (if available, else omit name line)
+3) Body paragraphs only
+4) If includeBullets=true: blank line + exactly 3 impact bullets
+5) Do NOT include any header/contact block
+6) Do NOT include any closing/sign-off line
 
 Role context:
 - Company: ${targetCompany || "(not provided)"}
@@ -479,6 +461,11 @@ Role context:
 
 Greeting line (use exactly):
 ${greeting}
+
+Additional formatting rules:
+- Do NOT output the candidate's name, address, email, phone, LinkedIn, or date anywhere in the letter body.
+- Do NOT include a closing such as "Sincerely," "Regards," or the candidate name at the end.
+- The app renders header details and the optional signature block separately.
 
 Rules:
 ${rules}

@@ -1640,6 +1640,46 @@ function stripLegacyHeaderBlock(text: string) {
   return text;
 }
 
+function stripLegacySignatureBlock(text: string) {
+  if (!text) return "";
+
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+
+  let end = lines.length - 1;
+  while (end >= 0 && !lines[end]?.trim()) end--;
+
+  if (end < 0) return "";
+
+  const closingSet = new Set([
+    "sincerely,",
+    "sincerely",
+    "best regards,",
+    "best regards",
+    "regards,",
+    "regards",
+    "kind regards,",
+    "kind regards",
+    "thank you,",
+    "thank you",
+  ]);
+
+  const nameSet = new Set(["[your name]", "your name"]);
+
+  const last = lines[end]?.trim().toLowerCase() ?? "";
+  const prev = end - 1 >= 0 ? lines[end - 1]?.trim().toLowerCase() ?? "" : "";
+
+  if (closingSet.has(last)) {
+    end -= 1;
+  } else if (nameSet.has(last) && closingSet.has(prev)) {
+    end -= 2;
+  }
+
+  while (end >= 0 && !lines[end]?.trim()) end--;
+
+  return lines.slice(0, end + 1).join("\n").trim();
+}
+
+
 function buildCoverLetterHtml(args: {
   template: ResumeTemplateId;
   profile: ResumeProfile;
@@ -2215,7 +2255,7 @@ export default function CoverLetterGenerator() {
       const rawText = payload.coverLetter?.trim();
       if (!rawText) throw new Error("Empty cover letter returned");
 
-      const cleanedText = stripLegacyHeaderBlock(rawText);
+      const cleanedText = stripLegacySignatureBlock(stripLegacyHeaderBlock(rawText));
 
       setCoverLetterDraft(cleanedText);
     } catch (e: any) {
@@ -2298,7 +2338,7 @@ export default function CoverLetterGenerator() {
                   const f = e.target.files?.[0] ?? null;
 
                   if (f && f.size > 3.5 * 1024 * 1024) {
-                    setError("File too large. Please upload a smaller file (under ~3.5MB) or paste text instead.");
+                    setError("File too large. Please upload a smaller file (under ~3.5MB).");
                     e.target.value = "";
                     setFile(null);
                     return;
@@ -2329,25 +2369,9 @@ export default function CoverLetterGenerator() {
               <div className="text-xs text-black/60 dark:text-white/80">
                 {applyPackActive
                 ? "Your latest saved resume is loaded when available. Upload a new file only if you want to replace it for this cover letter."
-                : "If you upload a file, it replaces the currently loaded saved resume text for this cover letter."}
+                : "Use your latest synced resume profile or upload a resume document. Pasted resume text is no longer used here."}
               </div>
             </label>
-
-                  {/* Resume text */}
-          <label className="grid gap-1.5">
-            <div className="text-xs font-extrabold text-black/90">
-              {applyPackActive ? "Resume text" : "Resume text (paste if not uploading)"}
-            </div>
-
-            <textarea
-              value={resumeText}
-              onChange={(e) => setResumeText(e.target.value)}
-              rows={applyPackActive ? 6 : 8}
-              className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm text-black outline-none
-                        placeholder:text-black/80 focus:border-black/20
-                        dark:bg-white dark:text-white dark:placeholder:text-white/40"
-            />
-          </label>
 
             {/* Job text */}
             <label className="grid gap-1.5">
@@ -2370,10 +2394,10 @@ export default function CoverLetterGenerator() {
               <select
                 value={template}
                 onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black" style={{ color: "#000" }}
               >
                 {TEMPLATE_OPTIONS.map((t) => (
-                  <option key={t.id} value={t.id}>
+                  <option key={t.id} value={t.id} style={{ color: "#000", backgroundColor: "#fff" }}>
                     {t.label}
                   </option>
                 ))}
@@ -2445,11 +2469,11 @@ export default function CoverLetterGenerator() {
                 <select
                   value={length}
                   onChange={(e) => setLength(e.target.value as any)}
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black" style={{ color: "#000" }}
                 >
-                  <option value="short">Short</option>
-                  <option value="standard">Standard</option>
-                  <option value="detailed">Detailed</option>
+                  <option value="short" style={{ color: "#000", backgroundColor: "#fff" }}>Short</option>
+                  <option value="standard" style={{ color: "#000", backgroundColor: "#fff" }}>Standard</option>
+                  <option value="detailed" style={{ color: "#000", backgroundColor: "#fff" }}>Detailed</option>
                 </select>
               </label>
             </div>
