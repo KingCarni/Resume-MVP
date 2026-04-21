@@ -1,6 +1,11 @@
 import type { ResumeLayoutId } from "./baseTokens";
+import type { ColorSchemeId } from "./colorSchemes";
 import {
   TEMPLATE_OPTIONS,
+  RESUME_COLOR_SCHEME_OPTIONS,
+  RESUME_LAYOUT_OPTIONS,
+  buildResumeTemplateSelection,
+  getRecommendedColorSchemeForLayout,
   isLegacyResumeTemplateId,
   normalizeLegacyResumeTemplateId,
   normalizeStoredResumeTemplateValue,
@@ -8,6 +13,8 @@ import {
   type LegacyResumeTemplateId,
   type LegacyResumeTemplateOption,
   type LegacyResumeTemplateSelection,
+  type ResumeColorSchemeOption,
+  type ResumeLayoutOption,
   type TemplateMigrationInfo,
 } from "./resumeTemplates";
 
@@ -43,4 +50,25 @@ export function resolveCoverLetterTemplateSelection(
     ...selection,
     coverLetterLayoutId: selection.layoutId,
   };
+}
+
+
+export const COVER_LETTER_LAYOUT_OPTIONS: ResumeLayoutOption[] = RESUME_LAYOUT_OPTIONS;
+export const COVER_LETTER_COLOR_SCHEME_OPTIONS: ResumeColorSchemeOption[] = RESUME_COLOR_SCHEME_OPTIONS;
+
+export function buildCoverLetterTemplateSelection(
+  layoutId: ResumeLayoutId,
+  colorSchemeId: ColorSchemeId,
+): CoverLetterTemplateSelection {
+  const selection = buildResumeTemplateSelection(layoutId, colorSchemeId);
+  return {
+    ...selection,
+    coverLetterLayoutId: selection.layoutId,
+  };
+}
+
+export function getRecommendedColorSchemeForCoverLetterLayout(
+  layoutId: ResumeLayoutId,
+): ColorSchemeId {
+  return getRecommendedColorSchemeForLayout(layoutId);
 }

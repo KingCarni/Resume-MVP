@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
-import { buildResumeTemplateSelection, getRecommendedColorSchemeForLayout, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, RESUME_COLOR_SCHEME_OPTIONS, RESUME_LAYOUT_OPTIONS, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
+import { buildResumeTemplateSelection, getRecommendedColorSchemeForLayout, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, RESUME_COLOR_SCHEME_OPTIONS, RESUME_LAYOUT_CATEGORY_LABELS, RESUME_LAYOUT_CATEGORY_ORDER, RESUME_LAYOUT_OPTIONS, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
 
 /** ---------------- Types ---------------- */
 
@@ -6938,23 +6938,12 @@ useEffect(() => {
                     className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
                     style={{ color: "#111827", backgroundColor: "#ffffff" }}
                   >
-                    {["ats-safe", "professional", "editorial", "technical", "creative"].map((category) => {
+                    {RESUME_LAYOUT_CATEGORY_ORDER.map((category) => {
                       const options = RESUME_LAYOUT_OPTIONS.filter((option) => option.category === category);
                       if (!options.length) return null;
 
-                      const categoryLabel =
-                        category === "ats-safe"
-                          ? "ATS Safe"
-                          : category === "professional"
-                            ? "Professional"
-                            : category === "editorial"
-                              ? "Editorial"
-                              : category === "technical"
-                                ? "Technical"
-                                : "Creative";
-
                       return (
-                        <optgroup key={category} label={categoryLabel}>
+                        <optgroup key={category} label={RESUME_LAYOUT_CATEGORY_LABELS[category]}>
                           {options.map((option) => (
                             <option
                               key={option.id}
@@ -6986,23 +6975,12 @@ useEffect(() => {
                     className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
                     style={{ color: "#111827", backgroundColor: "#ffffff" }}
                   >
-                    {["professional", "warm", "soft", "bold", "dark"].map((category) => {
+                    {[...new Set(RESUME_COLOR_SCHEME_OPTIONS.map((option) => option.category))].map((category) => {
                       const options = RESUME_COLOR_SCHEME_OPTIONS.filter((option) => option.category === category);
                       if (!options.length) return null;
 
-                      const categoryLabel =
-                        category === "professional"
-                          ? "Professional"
-                          : category === "warm"
-                            ? "Warm / Paper"
-                            : category === "soft"
-                              ? "Soft Modern"
-                              : category === "bold"
-                                ? "Bold / Expressive"
-                                : "Technical / Dark";
-
                       return (
-                        <optgroup key={category} label={categoryLabel}>
+                        <optgroup key={category} label={options[0]?.categoryLabel ?? "Color Schemes"}>
                           {options.map((option) => (
                             <option
                               key={option.id}

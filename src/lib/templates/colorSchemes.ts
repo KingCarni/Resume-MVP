@@ -901,6 +901,104 @@ export const COLOR_SCHEMES: Record<ColorSchemeId, ColorSchemeDefinition> = {
   }),
 };
 
+
+export const COLOR_SCHEME_CATEGORY_ORDER: ColorSchemeCategory[] = [
+  "professional",
+  "warm",
+  "soft",
+  "bold",
+  "dark",
+];
+
+export const COLOR_SCHEME_CATEGORY_LABELS: Record<ColorSchemeCategory, string> = {
+  professional: "Professional",
+  warm: "Warm / Paper",
+  soft: "Soft Modern",
+  bold: "Bold / Expressive",
+  dark: "Technical / Dark",
+};
+
+export const COLOR_SCHEME_ORDER: ColorSchemeId[] = [
+  "modern",
+  "classic",
+  "minimal",
+  "executive",
+  "serif",
+  "ats",
+  "corporate",
+  "monochrome",
+  "contrast",
+  "paper",
+  "sand",
+  "gold",
+  "sunset",
+  "forest",
+  "ocean",
+  "royal",
+  "sky",
+  "mint",
+  "lavender",
+  "aura",
+  "pastel",
+  "minimalist",
+  "bubblegum",
+  "coral",
+  "citrus",
+  "lemonade",
+  "sunny",
+  "watermelon",
+  "grape",
+  "tropical",
+  "arcade",
+  "arcade2",
+  "blueprint",
+  "grid",
+  "retro",
+  "electric",
+  "confetti",
+  "rainbow",
+  "popart",
+  "comic",
+  "playground",
+  "terminal",
+  "noir",
+  "neon",
+  "hologram",
+  "galaxy",
+  "synthwave",
+  "lava",
+  "flamingo",
+  "limepop",
+  "cottoncandy",
+  "sprinkles",
+  "ink",
+];
+
+export const FEATURED_COLOR_SCHEME_IDS: ColorSchemeId[] = [
+  "modern",
+  "classic",
+  "minimal",
+  "executive",
+  "paper",
+  "sand",
+  "lavender",
+  "forest",
+  "ocean",
+  "royal",
+  "terminal",
+  "noir",
+];
+
+export function getOrderedColorSchemes(): ColorSchemeDefinition[] {
+  return COLOR_SCHEME_ORDER.map((id) => COLOR_SCHEMES[id]).filter(Boolean);
+}
+
+export function getColorSchemesByCategory(
+  category: ColorSchemeCategory,
+): ColorSchemeDefinition[] {
+  return getOrderedColorSchemes().filter((scheme) => scheme.category === category);
+}
+
 export const DEFAULT_COLOR_SCHEME_ID: ColorSchemeId = "modern";
 
 export function getColorScheme(id: ColorSchemeId): ColorSchemeDefinition {

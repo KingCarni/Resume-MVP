@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
-import { COVER_LETTER_TEMPLATE_OPTIONS as TEMPLATE_OPTIONS, isCoverLetterTemplateId, type CoverLetterTemplateId as ResumeTemplateId } from "@/lib/templates/coverLetterTemplates";
+import { buildCoverLetterTemplateSelection, COVER_LETTER_COLOR_SCHEME_OPTIONS, COVER_LETTER_LAYOUT_OPTIONS, getRecommendedColorSchemeForCoverLetterLayout, isCoverLetterTemplateId, resolveCoverLetterTemplateSelection, type CoverLetterTemplateId as ResumeTemplateId } from "@/lib/templates/coverLetterTemplates";
 
 /** ---------------- Types ---------------- */
 
@@ -1811,6 +1811,8 @@ export default function CoverLetterGenerator() {
 
   const applyPackActive = shouldHydrateJobContext && !!applyPackBundle?.job?.jobContextText;
 
+  const selectedTemplate = useMemo(() => resolveCoverLetterTemplateSelection(template), [template]);
+
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
     const hasJob = jobText.trim().length > 0;
@@ -2190,7 +2192,6 @@ export default function CoverLetterGenerator() {
     });
   }, [coverLetterDraft, template, profile, includeSignature, signatureClosing, signatureName]);
 
-  const templateLabel = TEMPLATE_OPTIONS.find((t) => t.id === template)?.label ?? template;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 text-black dark:text-white">
@@ -2284,22 +2285,122 @@ export default function CoverLetterGenerator() {
               />
             </label>
 
-            {/* Template selector */}
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Template</div>
-              <select
-                value={template}
-                onChange={(e) => setTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black" style={{ color: "#000" }}
+            {/* Template + Color Scheme */}
+            <div className="grid gap-3 rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div>
+                <div className="text-xs font-extrabold text-black/90 dark:text-white/80">Cover letter style</div>
+                <div className="mt-1 text-[11px] text-black/65 dark:text-white/70">
+                  Layout changes structure. Color scheme only changes the visual theme.
+                </div>
+              </div>
+
+              <label className="grid gap-1.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-white/75">
+                  Template layout
+                </div>
+                <select
+                  value={selectedTemplate.layoutId}
+                  onChange={(e) => {
+                    const next = buildCoverLetterTemplateSelection(
+                      e.target.value as typeof selectedTemplate.layoutId,
+                      selectedTemplate.colorSchemeId,
+                    );
+                    setTemplate(next.legacyId);
+                  }}
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black"
+                  style={{ color: "#000", backgroundColor: "#fff" }}
+                >
+                  {["ats-safe", "professional", "editorial", "technical", "creative"].map((category) => {
+                    const options = COVER_LETTER_LAYOUT_OPTIONS.filter((option) => option.category === category);
+                    if (!options.length) return null;
+
+                    const categoryLabel =
+                      category === "ats-safe"
+                        ? "ATS Safe"
+                        : category === "professional"
+                          ? "Professional"
+                          : category === "editorial"
+                            ? "Editorial"
+                            : category === "technical"
+                              ? "Technical"
+                              : "Creative";
+
+                    return (
+                      <optgroup key={category} label={categoryLabel}>
+                        {options.map((option) => (
+                          <option key={option.id} value={option.id} style={{ color: "#000", backgroundColor: "#fff" }}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <label className="grid gap-1.5">
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-white/75">
+                  Color scheme
+                </div>
+                <select
+                  value={selectedTemplate.colorSchemeId}
+                  onChange={(e) => {
+                    const next = buildCoverLetterTemplateSelection(
+                      selectedTemplate.layoutId,
+                      e.target.value as typeof selectedTemplate.colorSchemeId,
+                    );
+                    setTemplate(next.legacyId);
+                  }}
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black"
+                  style={{ color: "#000", backgroundColor: "#fff" }}
+                >
+                  {["professional", "warm", "soft", "bold", "dark"].map((category) => {
+                    const options = COVER_LETTER_COLOR_SCHEME_OPTIONS.filter((option) => option.category === category);
+                    if (!options.length) return null;
+
+                    const categoryLabel =
+                      category === "professional"
+                        ? "Professional"
+                        : category === "warm"
+                          ? "Warm / Paper"
+                          : category === "soft"
+                            ? "Soft Modern"
+                            : category === "bold"
+                              ? "Bold / Expressive"
+                              : "Technical / Dark";
+
+                    return (
+                      <optgroup key={category} label={categoryLabel}>
+                        {options.map((option) => (
+                          <option key={option.id} value={option.id} style={{ color: "#000", backgroundColor: "#fff" }}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <div className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-[11px] text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-white/75">
+                <span className="font-extrabold text-black/85 dark:text-white/90">Current:</span>{" "}
+                {selectedTemplate.layout.label} + {selectedTemplate.colorScheme.label}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = buildCoverLetterTemplateSelection(
+                    selectedTemplate.layoutId,
+                    getRecommendedColorSchemeForCoverLetterLayout(selectedTemplate.layoutId),
+                  );
+                  setTemplate(next.legacyId);
+                }}
+                className="w-full rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
               >
-                {TEMPLATE_OPTIONS.map((t) => (
-                  <option key={t.id} value={t.id} style={{ color: "#000", backgroundColor: "#fff" }}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <div className="text-xs text-black/90 dark:text-white/80">Selected: {templateLabel}</div>
-            </label>
+                Reset this layout to its recommended color
+              </button>
+            </div>
 
             {/* Header details */}
             <div className="rounded-2xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
