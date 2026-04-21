@@ -8,7 +8,6 @@ import {
 import {
   COLOR_SCHEMES,
   DEFAULT_COLOR_SCHEME_ID,
-  type ColorSchemeCategory,
   type ColorSchemeDefinition,
   type ColorSchemeId,
 } from "./colorSchemes";
@@ -152,7 +151,7 @@ const EXPLICIT_TEMPLATE_ALIASES: Record<string, LegacyResumeTemplateId> = {
   gridblueprintplus: "grid",
   paperwarmserif: "paper",
   inkdashededitorial: "ink",
-  corporatepolished: "corporate",
+  corporatepolishedtheme: "corporate",
   minimalistsoft: "minimalist",
   arcadefun: "arcade",
   arcadeextrafun: "arcade2",
@@ -281,15 +280,17 @@ export type ResumeLayoutOption = {
   legacyIds: LegacyResumeTemplateId[];
 };
 
+type ResumeColorSchemeCategory = "professional" | "warm" | "soft" | "bold" | "dark";
+
 export type ResumeColorSchemeOption = {
   id: ColorSchemeId;
   label: string;
-  category: ColorSchemeCategory;
+  category: ResumeColorSchemeCategory;
   categoryLabel: string;
   legacyIds: LegacyResumeTemplateId[];
 };
 
-const RESUME_COLOR_SCHEME_CATEGORY_LABELS: Record<ColorSchemeCategory, string> = {
+const RESUME_COLOR_SCHEME_CATEGORY_LABELS: Record<ResumeColorSchemeCategory, string> = {
   professional: "Professional",
   warm: "Warm",
   soft: "Soft",
@@ -325,8 +326,8 @@ export const RESUME_LAYOUT_CATEGORY_LABELS: Record<TemplateCategory, string> = {
 export const RESUME_COLOR_SCHEME_OPTIONS: ResumeColorSchemeOption[] = Object.values(COLOR_SCHEMES).map((scheme) => ({
   id: scheme.id,
   label: scheme.label,
-  category: scheme.category,
-  categoryLabel: RESUME_COLOR_SCHEME_CATEGORY_LABELS[scheme.category],
+  category: scheme.category as ResumeColorSchemeCategory,
+  categoryLabel: RESUME_COLOR_SCHEME_CATEGORY_LABELS[scheme.category as ResumeColorSchemeCategory],
   legacyIds: Object.entries(LEGACY_TEMPLATE_CONFIG)
     .filter(([, config]) => config.colorSchemeId === scheme.id)
     .map(([id]) => id as LegacyResumeTemplateId),
