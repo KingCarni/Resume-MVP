@@ -53,6 +53,12 @@ const LEGACY_TEMPLATE_CONFIG = {
   executive: { label: "Executive (premium)", layoutId: "executive", colorSchemeId: "executive" },
   compact: { label: "Compact (dense)", layoutId: "compact", colorSchemeId: "classic" },
   sidebar: { label: "Sidebar (2-column)", layoutId: "sidebar", colorSchemeId: "modern" },
+  sidebarright: { label: "Sidebar Right", layoutId: "sidebar-right", colorSchemeId: "modern" },
+  gridblueprint: { label: "Grid Blueprint", layoutId: "grid-blueprint", colorSchemeId: "blueprint" },
+  profilepanel: { label: "Profile Panel", layoutId: "profile-panel", colorSchemeId: "minimal" },
+  timelineprofessional: { label: "Timeline Professional", layoutId: "timeline", colorSchemeId: "classic" },
+  corporatepolishedlayout: { label: "Corporate Polished", layoutId: "corporate-polished", colorSchemeId: "corporate" },
+  technicalgridlayout: { label: "Technical Grid", layoutId: "technical-grid", colorSchemeId: "terminal" },
   serif: { label: "Serif (traditional)", layoutId: "serif", colorSchemeId: "serif" },
   ats: { label: "ATS (plain)", layoutId: "ats", colorSchemeId: "ats" },
   arcade: { label: "Arcade (fun)", layoutId: "modern", colorSchemeId: "arcade" },
@@ -127,6 +133,19 @@ const EXPLICIT_TEMPLATE_ALIASES: Record<string, LegacyResumeTemplateId> = {
   sidebarlayout: "sidebar",
   sidebar2column: "sidebar",
   twocolumnsidebar: "sidebar",
+  sidebarright: "sidebarright",
+  rightsidebar: "sidebarright",
+  sidebarrightlayout: "sidebarright",
+  gridblueprint: "gridblueprint",
+  blueprintlayout: "gridblueprint",
+  profilepanel: "profilepanel",
+  profilepanelresume: "profilepanel",
+  timelineprofessional: "timelineprofessional",
+  timeline: "timelineprofessional",
+  corporatepolished: "corporatepolishedlayout",
+  corporatepolishedlayout: "corporatepolishedlayout",
+  technicalgrid: "technicalgridlayout",
+  technicalgridlayout: "technicalgridlayout",
   compactdense: "compact",
   highcontrast: "contrast",
   blueprinttech: "blueprint",
@@ -266,7 +285,16 @@ export type ResumeColorSchemeOption = {
   id: ColorSchemeId;
   label: string;
   category: ColorSchemeCategory;
+  categoryLabel: string;
   legacyIds: LegacyResumeTemplateId[];
+};
+
+const RESUME_COLOR_SCHEME_CATEGORY_LABELS: Record<ColorSchemeCategory, string> = {
+  professional: "Professional",
+  warm: "Warm",
+  soft: "Soft",
+  bold: "Bold",
+  dark: "Dark",
 };
 
 export const RESUME_LAYOUT_OPTIONS: ResumeLayoutOption[] = Object.values(RESUME_LAYOUTS).map((layout) => ({
@@ -298,6 +326,7 @@ export const RESUME_COLOR_SCHEME_OPTIONS: ResumeColorSchemeOption[] = Object.val
   id: scheme.id,
   label: scheme.label,
   category: scheme.category,
+  categoryLabel: RESUME_COLOR_SCHEME_CATEGORY_LABELS[scheme.category],
   legacyIds: Object.entries(LEGACY_TEMPLATE_CONFIG)
     .filter(([, config]) => config.colorSchemeId === scheme.id)
     .map(([id]) => id as LegacyResumeTemplateId),
@@ -310,6 +339,12 @@ const DEFAULT_TEMPLATE_BY_LAYOUT: Record<ResumeLayoutId, LegacyResumeTemplateId>
   executive: "executive",
   compact: "compact",
   sidebar: "sidebar",
+  "sidebar-right": "sidebarright",
+  "grid-blueprint": "gridblueprint",
+  "profile-panel": "profilepanel",
+  timeline: "timelineprofessional",
+  "corporate-polished": "corporatepolishedlayout",
+  "technical-grid": "technicalgridlayout",
   serif: "serif",
   ats: "ats",
 };

@@ -1028,7 +1028,10 @@ export default function JobsPage() {
     if (appliedRemote !== "all") pills.push({ key: "remote", label: `Remote: ${titleCase(appliedRemote)}` });
     if (appliedSeniority !== "all") pills.push({ key: "seniority", label: `Seniority: ${titleCase(appliedSeniority)}` });
     if (appliedMinSalary) pills.push({ key: "minSalary", label: `Min salary: ${appliedMinSalary}` });
-    if (appliedSort !== defaultSort) pills.push({ key: "sort", label: `Sort: ${appliedSort === "match" ? "Best match" : appliedSort === "newest" ? "Newest" : "Salary"}` });
+    if (appliedSort !== defaultSort) {
+      const sortLabel = appliedSort === "newest" ? "Newest" : "Salary";
+      pills.push({ key: "sort", label: `Sort: ${sortLabel}` });
+    }
     return pills;
   }, [appliedLocation, appliedMinSalary, appliedRemote, appliedSearch, appliedSeniority, appliedSort, defaultSort]);
 

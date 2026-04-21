@@ -20,7 +20,13 @@ export type ResumeLayoutId =
   | "compact"
   | "sidebar"
   | "serif"
-  | "ats";
+  | "ats"
+  | "sidebar-right"
+  | "grid-blueprint"
+  | "profile-panel"
+  | "timeline"
+  | "corporate-polished"
+  | "technical-grid";
 
 export type TemplateCapabilityFlags = {
   supportsPhoto: boolean;
@@ -157,6 +163,84 @@ export const RESUME_LAYOUTS: Record<ResumeLayoutId, ResumeLayoutDefinition> = {
       supportsSidebar: false,
       supportsCards: false,
       usesHeaderBar: false,
+      usesChips: false,
+      atsSafetyTier: "high",
+    },
+  },
+  "sidebar-right": {
+    id: "sidebar-right",
+    label: "Sidebar Right",
+    category: "professional",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: true,
+      supportsCards: true,
+      usesHeaderBar: false,
+      usesChips: true,
+      atsSafetyTier: "medium",
+    },
+  },
+  "grid-blueprint": {
+    id: "grid-blueprint",
+    label: "Grid Blueprint",
+    category: "technical",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: false,
+      supportsCards: true,
+      usesHeaderBar: true,
+      usesChips: true,
+      atsSafetyTier: "medium",
+    },
+  },
+  "profile-panel": {
+    id: "profile-panel",
+    label: "Profile Panel",
+    category: "professional",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: false,
+      supportsCards: true,
+      usesHeaderBar: true,
+      usesChips: true,
+      atsSafetyTier: "medium",
+    },
+  },
+  timeline: {
+    id: "timeline",
+    label: "Timeline Professional",
+    category: "professional",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: false,
+      supportsCards: false,
+      usesHeaderBar: false,
+      usesChips: true,
+      atsSafetyTier: "high",
+    },
+  },
+  "corporate-polished": {
+    id: "corporate-polished",
+    label: "Corporate Polished",
+    category: "professional",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: false,
+      supportsCards: true,
+      usesHeaderBar: true,
+      usesChips: true,
+      atsSafetyTier: "medium",
+    },
+  },
+  "technical-grid": {
+    id: "technical-grid",
+    label: "Technical Grid",
+    category: "technical",
+    capabilities: {
+      supportsPhoto: true,
+      supportsSidebar: false,
+      supportsCards: true,
+      usesHeaderBar: true,
       usesChips: false,
       atsSafetyTier: "high",
     },

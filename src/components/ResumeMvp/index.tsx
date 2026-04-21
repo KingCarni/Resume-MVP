@@ -177,6 +177,8 @@ type ApplyPackBundle = {
   resumeProfileId?: string;
   nextStep?: string;
   createdAt?: string;
+  sourceSlug?: string;
+  bundleSessionId?: string;
   job?: {
     id?: string;
     title?: string;
@@ -200,9 +202,13 @@ type AnalyzeResponse = {
   error?: string;
   matchScore?: number;
   missingKeywords?: string[];
+  presentKeywords?: string[];
   bullets?: unknown[];
   rewritePlan?: RewritePlanItem[];
-  debug?: unknown;
+  debug?: {
+    rawText?: string | null;
+    normalizedText?: string | null;
+  } | null;
   ats?: AnalyzeAtsPayload;
 
   metaBlocks?: {
@@ -213,6 +219,10 @@ type AnalyzeResponse = {
 
   experienceJobs?: ExperienceJobFromApi[];
   bulletJobIds?: string[];
+  autoResumeProfile?: {
+    id?: string | null;
+    title?: string | null;
+  } | null;
 };
 
 /** ---------------- Credits cost labels ---------------- */
@@ -908,7 +918,7 @@ ${headerContactChipsCss()}
 `.trim();
 }
 
-function templateStylesResume(template: ResumeTemplateId) {
+function templateStylesResume(template: ResumeTemplateId): string {
   return `
 ${templateStyles(template)}
 
@@ -941,7 +951,7 @@ ${templateStyles(template)}
  * - Lowercase variables matching cover letter generator
  * - .page uses --pagebg
  */
-function templateStyles(template: ResumeTemplateId) {
+function templateStyles(template: ResumeTemplateId): string {
   const classicCss = `
 :root{
   --ink:#111;
@@ -1144,6 +1154,30 @@ li { margin: 4px 0; }
 .job { margin-top: 8px; padding-top: 8px; }
 ${printLockCss()}
 `.trim();
+  }
+
+  if (template === "sidebarright") {
+    return templateStylesResume("sidebar");
+  }
+
+  if (template === "gridblueprint") {
+    return templateStylesResume("blueprint");
+  }
+
+  if (template === "profilepanel") {
+    return templateStylesResume("minimal");
+  }
+
+  if (template === "timelineprofessional") {
+    return templateStylesResume("classic");
+  }
+
+  if (template === "corporatepolishedlayout") {
+    return templateStylesResume("corporate");
+  }
+
+  if (template === "technicalgridlayout") {
+    return templateStylesResume("terminal");
   }
 
   if (template === "serif") {
@@ -2338,7 +2372,47 @@ function buildResumeHtml(args: {
     .filter(Boolean)
     .join("");
 
-  if (activeLayoutId === "sidebar") {
+  const jobsHtmlTimeline = sections
+    .map((sec) => {
+      const list = (bulletsBySection[sec.id] || []).map((x: string) => String(x ?? "").trim()).filter(Boolean);
+      const company = safe(sec.company || "Company");
+      const role = safe(sec.title || "Role");
+      const metaLeft = [sec.dates?.trim() ? safe(sec.dates) : "", sec.location?.trim() ? safe(sec.location) : ""]
+        .filter(Boolean)
+        .join(" • ");
+      const bulletsHtml =
+        list.length > 0
+          ? `<ul>${list.map((b: string) => `<li>${safe(b)}</li>`).join("")}</ul>`
+          : `<div class="summary">No bullets added yet.</div>`;
+
+      return `
+        <div class="job timeline-job">
+          <div class="timeline-meta">${metaLeft || "Experience"}</div>
+          <div class="timeline-body">
+            <div class="jobtitle"><span class="jobcompany">${company}</span> — ${role}</div>
+            ${bulletsHtml}
+          </div>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+  const useRailLayout = ["grid-blueprint", "technical-grid", "profile-panel"].includes(activeLayoutId);
+  const useTimelineLayout = activeLayoutId === "timeline";
+  const useCorporateLayout = activeLayoutId === "corporate-polished";
+
+  const layoutCss = `
+    ${activeLayoutId === "sidebar-right" ? `.page{ grid-template-columns: 1.35fr .85fr; } .main{ order:1; } .side{ order:2; }` : ""}
+    ${useRailLayout ? `.content.rail-layout{ display:grid; grid-template-columns:${activeLayoutId === "profile-panel" ? "320px 1fr" : "minmax(240px,.8fr) 1.2fr"}; gap:18px; align-items:start; } .rail-column,.main-column{ display:grid; gap:16px; } .rail-layout .section{ margin:0; }` : ""}
+    ${activeLayoutId === "grid-blueprint" ? `.rail-layout .box, .rail-layout .section{ border-style:dashed; } .rail-layout .main-column .section:first-child{ background:rgba(37,99,235,.04); padding:12px; border:1px dashed var(--line); }` : ""}
+    ${activeLayoutId === "technical-grid" ? `.rail-layout .box, .rail-layout .section{ border-style:dashed; } .rail-layout .jobhead{ align-items:flex-start; } .rail-layout ul{ margin-left:16px; }` : ""}
+    ${activeLayoutId === "profile-panel" ? `.top.profile-panel-top{ border-bottom:none; padding-bottom:0; } .profile-summary-card{ border:1px solid var(--line); background:var(--cardbg); padding:14px; border-radius:var(--radius); box-shadow:var(--shadow); } .profile-summary-card .summary{ margin-top:8px; }` : ""}
+    ${useTimelineLayout ? `.timeline-layout .job.timeline-job{ display:grid; grid-template-columns:160px 1fr; gap:16px; border-top:1px solid var(--line); padding-top:12px; } .timeline-layout .timeline-meta{ color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; } .timeline-layout .timeline-body ul{ margin-top:8px; }` : ""}
+    ${useCorporateLayout ? `.content.corporate-layout{ display:grid; gap:18px; } .corporate-layout .section{ border:1px solid var(--line); padding:14px; background:var(--cardbg); border-radius:var(--radius); box-shadow:0 12px 30px rgba(2,6,23,.05); } .corporate-layout .h{ border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:12px; }` : ""}
+  `;
+
+  if (activeLayoutId === "sidebar" || activeLayoutId === "sidebar-right") {
     const sidebarContact = contactBits.map((c) => `<div class="chip">${c}</div>`).join("");
 
     return `<!doctype html>
@@ -2402,6 +2476,34 @@ function buildResumeHtml(args: {
          <div class="summary">${safe(profile.summary || "")}</div>
        </div>`;
 
+  const experienceHtml = `
+      <div class="section experience-section">
+        <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Experience</div>
+        ${(useTimelineLayout ? jobsHtmlTimeline : jobsHtml) || `<div class="summary">No experience sections yet.</div>`}
+      </div>`;
+
+  const contentHtml = useRailLayout
+    ? `
+      <div class="content rail-layout">
+        <div class="rail-column">
+          ${activeLayoutId === "profile-panel" ? `<div class="profile-summary-card"><div class="h">Profile</div><div class="summary">${safe(profile.summary || "")}</div></div>` : summaryBlock}
+          ${metaHtml}
+          ${educationHtml}
+          ${expertiseHtml}
+        </div>
+        <div class="main-column">
+          ${experienceHtml}
+        </div>
+      </div>`
+    : `
+      <div class="content ${useTimelineLayout ? "timeline-layout" : useCorporateLayout ? "corporate-layout" : ""}">
+        ${summaryBlock}
+        ${metaHtml}
+        ${educationHtml}
+        ${expertiseHtml}
+        ${experienceHtml}
+      </div>`;
+
   return `<!doctype html>
 <html>
 <head>
@@ -2410,10 +2512,10 @@ function buildResumeHtml(args: {
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
     ${templateStylesResume(template)}
+    ${layoutCss}
     ${
-      template === "terminal"
+      template === "terminal" || template === "technicalgridlayout"
         ? `
-/* ✅ Terminal contact layout parity (no chips, simple stacked lines) */
 .top .contact{
   margin-top: 10px !important;
   display: grid !important;
@@ -2426,7 +2528,7 @@ function buildResumeHtml(args: {
 </head>
 <body>
   <div class="page">
-    <div class="top">
+    <div class="top ${activeLayoutId === "profile-panel" ? "profile-panel-top" : ""}">
       <div class="top-main">
         <div class="top-copy">
           <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
@@ -2436,24 +2538,14 @@ function buildResumeHtml(args: {
             ${topContact}
           </div>
 
-          ${inlineSummary}
+          ${activeLayoutId === "profile-panel" ? "" : inlineSummary}
         </div>
 
         ${standardPhotoHtml}
       </div>
     </div>
 
-    <div class="content">
-      ${summaryBlock}
-      ${metaHtml}
-      ${educationHtml}
-      ${expertiseHtml}
-
-      <div class="section">
-        <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Experience</div>
-        ${jobsHtml || `<div class="summary">No experience sections yet.</div>`}
-      </div>
-    </div>
+    ${contentHtml}
   </div>
 </body>
 </html>`;
@@ -3990,7 +4082,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
               });
               setLatestResumeMeta({
                 title: String(matchedProfile?.title || "Resume profile").trim() || "Resume profile",
-                createdAt: String(matchedProfile?.updatedAt || "").trim() || null,
+                createdAt: String(matchedProfile?.updatedAt || "").trim(),
               });
 
               return {
@@ -4129,6 +4221,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             | null;
 
           if (response.ok && json?.ok && json.item) {
+            const fetchedJob = json.item;
             const nextBundle: ApplyPackBundle = {
               bundle: "apply-pack",
               jobId: queryJobId,
@@ -4136,7 +4229,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
                 queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
               createdAt: new Date().toISOString(),
               nextStep: queryNext || parsed?.nextStep || "resume",
-              job: json.item,
+              job: fetchedJob,
             };
 
             if (queryBundle === "apply-pack") {
@@ -4146,8 +4239,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             if (cancelled) return;
 
             setApplyPackBundle(queryBundle === "apply-pack" ? nextBundle : null);
-            setJobText((current) => (current.trim() ? current : String(json.item.jobContextText || "").trim()));
-            setTargetPosition((current) => (current.trim() ? current : String(json.item.title || "").trim()));
+            setJobText((current) => (current.trim() ? current : String(fetchedJob.jobContextText || "").trim()));
+            setTargetPosition((current) => (current.trim() ? current : String(fetchedJob.title || "").trim()));
             setJobTextOverrideMode(false);
             return;
           }
