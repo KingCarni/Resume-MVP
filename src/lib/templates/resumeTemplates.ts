@@ -29,7 +29,12 @@ export type TemplateMigrationInfo = {
   matchedFrom: string | null;
 };
 
+export type CompositeResumeTemplateId = `layout:${ResumeLayoutId}|scheme:${ColorSchemeId}`;
+
+export type ResumeTemplateId = LegacyResumeTemplateId | CompositeResumeTemplateId;
+
 export type LegacyResumeTemplateSelection = {
+  templateId: ResumeTemplateId;
   legacyId: LegacyResumeTemplateId;
   label: string;
   layoutId: ResumeLayoutId;
@@ -246,10 +251,50 @@ export function normalizeLegacyResumeTemplateId(
   };
 }
 
+
+function isResumeLayoutId(value: string): value is ResumeLayoutId {
+  return value in RESUME_LAYOUTS;
+}
+
+function isColorSchemeId(value: string): value is ColorSchemeId {
+  return value in COLOR_SCHEMES;
+}
+
+export function buildCompositeResumeTemplateId(
+  layoutId: ResumeLayoutId,
+  colorSchemeId: ColorSchemeId,
+): CompositeResumeTemplateId {
+  return `layout:${layoutId}|scheme:${colorSchemeId}`;
+}
+
+export function parseCompositeResumeTemplateId(
+  value: string | null | undefined,
+): { layoutId: ResumeLayoutId; colorSchemeId: ColorSchemeId; templateId: CompositeResumeTemplateId } | null {
+  const trimmedValue = String(value ?? '').trim();
+  const match = /^layout:([^|]+)\|scheme:(.+)$/i.exec(trimmedValue);
+  if (!match) return null;
+
+  const layoutId = match[1] as ResumeLayoutId;
+  const colorSchemeId = match[2] as ColorSchemeId;
+
+  if (!isResumeLayoutId(layoutId) || !isColorSchemeId(colorSchemeId)) return null;
+
+  return {
+    layoutId,
+    colorSchemeId,
+    templateId: buildCompositeResumeTemplateId(layoutId, colorSchemeId),
+  };
+}
+
 export function normalizeStoredResumeTemplateValue(
   value: string | null | undefined,
   fallbackId: LegacyResumeTemplateId = DEFAULT_LEGACY_TEMPLATE_ID,
-): LegacyResumeTemplateId {
+): ResumeTemplateId {
+  const composite = parseCompositeResumeTemplateId(value);
+  if (composite) {
+    return composite.templateId;
+  }
+
   return normalizeLegacyResumeTemplateId(value, fallbackId).resolvedLegacyId;
 }
 
@@ -257,10 +302,34 @@ export function resolveLegacyResumeTemplateSelection(
   templateId: string | null | undefined,
   fallbackId: LegacyResumeTemplateId = DEFAULT_LEGACY_TEMPLATE_ID,
 ): LegacyResumeTemplateSelection {
+  const composite = parseCompositeResumeTemplateId(templateId);
+
+  if (composite) {
+    const fallbackLegacyId = DEFAULT_TEMPLATE_BY_LAYOUT[composite.layoutId] ?? fallbackId;
+
+    return {
+      templateId: composite.templateId,
+      legacyId: fallbackLegacyId,
+      label: `${RESUME_LAYOUTS[composite.layoutId]?.label ?? composite.layoutId} + ${COLOR_SCHEMES[composite.colorSchemeId]?.label ?? composite.colorSchemeId}`,
+      layoutId: composite.layoutId,
+      colorSchemeId: composite.colorSchemeId,
+      layout: RESUME_LAYOUTS[composite.layoutId] ?? RESUME_LAYOUTS[DEFAULT_RESUME_LAYOUT_ID],
+      colorScheme: COLOR_SCHEMES[composite.colorSchemeId] ?? COLOR_SCHEMES[DEFAULT_COLOR_SCHEME_ID],
+      migration: {
+        input: composite.templateId,
+        normalizedInput: composite.templateId,
+        resolvedLegacyId: fallbackLegacyId,
+        reason: 'exact',
+        matchedFrom: composite.templateId,
+      },
+    };
+  }
+
   const migration = normalizeLegacyResumeTemplateId(templateId, fallbackId);
   const config = LEGACY_TEMPLATE_CONFIG[migration.resolvedLegacyId];
 
   return {
+    templateId: migration.resolvedLegacyId,
     legacyId: migration.resolvedLegacyId,
     label: config.label,
     layoutId: config.layoutId,
@@ -270,8 +339,6 @@ export function resolveLegacyResumeTemplateSelection(
     migration,
   };
 }
-
-export type ResumeTemplateId = LegacyResumeTemplateId;
 
 export type ResumeLayoutOption = {
   id: ResumeLayoutId;
@@ -362,16 +429,7 @@ export function buildResumeTemplateSelection(
     return resolveLegacyResumeTemplateSelection(exactMatch[0]);
   }
 
-  const sameLayoutMatch = Object.entries(LEGACY_TEMPLATE_CONFIG).find(
-    ([, config]) => config.layoutId === layoutId,
-  );
-
-  if (sameLayoutMatch) {
-    return resolveLegacyResumeTemplateSelection(sameLayoutMatch[0]);
-  }
-
-  const fallbackId = DEFAULT_TEMPLATE_BY_LAYOUT[layoutId] ?? DEFAULT_LEGACY_TEMPLATE_ID;
-  return resolveLegacyResumeTemplateSelection(fallbackId);
+  return resolveLegacyResumeTemplateSelection(buildCompositeResumeTemplateId(layoutId, colorSchemeId));
 }
 
 export function getRecommendedColorSchemeForLayout(layoutId: ResumeLayoutId): ColorSchemeId {

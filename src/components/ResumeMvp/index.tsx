@@ -7026,7 +7026,7 @@ useEffect(() => {
                         e.target.value as typeof selectedTemplate.layoutId,
                         selectedTemplate.colorSchemeId,
                       );
-                      setResumeTemplate(next.legacyId);
+                      setResumeTemplate(next.templateId);
                     }}
                     className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
                     style={{ color: "#111827", backgroundColor: "#ffffff" }}
@@ -7063,7 +7063,7 @@ useEffect(() => {
                         selectedTemplate.layoutId,
                         e.target.value as typeof selectedTemplate.colorSchemeId,
                       );
-                      setResumeTemplate(next.legacyId);
+                      setResumeTemplate(next.templateId);
                     }}
                     className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
                     style={{ color: "#111827", backgroundColor: "#ffffff" }}
@@ -7101,7 +7101,7 @@ useEffect(() => {
                       selectedTemplate.layoutId,
                       getRecommendedColorSchemeForLayout(selectedTemplate.layoutId),
                     );
-                    setResumeTemplate(next.legacyId);
+                    setResumeTemplate(next.templateId);
                   }}
                   className="w-full rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
                 >
