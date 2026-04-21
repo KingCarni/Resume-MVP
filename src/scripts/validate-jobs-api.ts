@@ -71,18 +71,18 @@ async function validatePaginationAndStableSorting(userId: string, resumeProfileI
   });
 
   assert(
-    JSON.stringify(page1a.items.map((item) => item.id)) === JSON.stringify(page1b.items.map((item) => item.id)),
+    JSON.stringify(page1a.jobs.map((item) => item.id)) === JSON.stringify(page1b.jobs.map((item) => item.id)),
     "Stable sorting failed: page 1 order changed across identical requests."
   );
 
-  for (let i = 1; i < page1a.items.length; i += 1) {
-    const previous = newestSortValue(page1a.items[i - 1]);
-    const current = newestSortValue(page1a.items[i]);
+  for (let i = 1; i < page1a.jobs.length; i += 1) {
+    const previous = newestSortValue(page1a.jobs[i - 1]);
+    const current = newestSortValue(page1a.jobs[i]);
     assert(previous >= current, "Newest sorting failed: results are not descending by postedAt/createdAt.");
   }
 
-  const page1Ids = new Set(page1a.items.map((item) => item.id));
-  const overlap = page2.items.filter((item) => page1Ids.has(item.id));
+  const page1Ids = new Set(page1a.jobs.map((item) => item.id));
+  const overlap = page2.jobs.filter((item) => page1Ids.has(item.id));
   assert(overlap.length === 0, "Pagination failed: page 1 and page 2 contain overlapping jobs.");
 
   console.log("[PASS] /api/jobs pagination and newest sorting are stable");
@@ -114,7 +114,7 @@ async function validateHiddenJobsExclusion(userId: string, resumeProfileId: stri
     pageSize: 50,
   });
 
-  const leaked = result.items.filter((item) => hiddenIds.has(item.id));
+  const leaked = result.jobs.filter((item) => hiddenIds.has(item.id));
   assert(leaked.length === 0, "Hidden jobs leaked into visible listJobs results.");
 
   console.log("[PASS] hidden jobs are excluded from visible results");
