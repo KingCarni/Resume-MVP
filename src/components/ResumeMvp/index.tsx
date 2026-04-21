@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
-import { TEMPLATE_OPTIONS, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
+import { buildResumeTemplateSelection, getRecommendedColorSchemeForLayout, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, RESUME_COLOR_SCHEME_OPTIONS, RESUME_LAYOUT_OPTIONS, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
 
 /** ---------------- Types ---------------- */
 
@@ -3798,6 +3798,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const [showExpertiseOnResume, setShowExpertiseOnResume] = useState(true);
 
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplateId>("modern");
+  const selectedTemplate = resolveLegacyResumeTemplateSelection(resumeTemplate);
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
     titleLine: "",
@@ -6913,26 +6914,129 @@ useEffect(() => {
               </div>
             ) : null}
 
-            {/* Template */}
+            {/* Template + Color Scheme */}
             <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Template</div>
+              <div className="mb-1 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Resume style</div>
+              <div className="mb-3 text-[11px] text-black/65 dark:text-slate-300/75">
+                Real layout + separate palette. Layout changes structure. Color scheme only changes the visual theme.
+              </div>
 
-              <select
-                value={resumeTemplate}
-                onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
-                style={{ color: "#111827", backgroundColor: "#ffffff" }}
-              >
-                {TEMPLATE_OPTIONS.map((t) => (
-                  <option
-                    key={t.id}
-                    value={t.id}
+              <div className="grid gap-3">
+                <label className="grid gap-1.5">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">
+                    Template layout
+                  </div>
+                  <select
+                    value={selectedTemplate.layoutId}
+                    onChange={(e) => {
+                      const next = buildResumeTemplateSelection(
+                        e.target.value as typeof selectedTemplate.layoutId,
+                        selectedTemplate.colorSchemeId,
+                      );
+                      setResumeTemplate(next.legacyId);
+                    }}
+                    className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
                     style={{ color: "#111827", backgroundColor: "#ffffff" }}
                   >
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+                    {["ats-safe", "professional", "editorial", "technical", "creative"].map((category) => {
+                      const options = RESUME_LAYOUT_OPTIONS.filter((option) => option.category === category);
+                      if (!options.length) return null;
+
+                      const categoryLabel =
+                        category === "ats-safe"
+                          ? "ATS Safe"
+                          : category === "professional"
+                            ? "Professional"
+                            : category === "editorial"
+                              ? "Editorial"
+                              : category === "technical"
+                                ? "Technical"
+                                : "Creative";
+
+                      return (
+                        <optgroup key={category} label={categoryLabel}>
+                          {options.map((option) => (
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </label>
+
+                <label className="grid gap-1.5">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">
+                    Color scheme
+                  </div>
+                  <select
+                    value={selectedTemplate.colorSchemeId}
+                    onChange={(e) => {
+                      const next = buildResumeTemplateSelection(
+                        selectedTemplate.layoutId,
+                        e.target.value as typeof selectedTemplate.colorSchemeId,
+                      );
+                      setResumeTemplate(next.legacyId);
+                    }}
+                    className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                    style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                  >
+                    {["professional", "warm", "soft", "bold", "dark"].map((category) => {
+                      const options = RESUME_COLOR_SCHEME_OPTIONS.filter((option) => option.category === category);
+                      if (!options.length) return null;
+
+                      const categoryLabel =
+                        category === "professional"
+                          ? "Professional"
+                          : category === "warm"
+                            ? "Warm / Paper"
+                            : category === "soft"
+                              ? "Soft Modern"
+                              : category === "bold"
+                                ? "Bold / Expressive"
+                                : "Technical / Dark";
+
+                      return (
+                        <optgroup key={category} label={categoryLabel}>
+                          {options.map((option) => (
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </label>
+
+                <div className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-[11px] text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-slate-300/80">
+                  <span className="font-extrabold text-black/85 dark:text-slate-100/90">Current:</span>{" "}
+                  {selectedTemplate.layout.label} + {selectedTemplate.colorScheme.label}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = buildResumeTemplateSelection(
+                      selectedTemplate.layoutId,
+                      getRecommendedColorSchemeForLayout(selectedTemplate.layoutId),
+                    );
+                    setResumeTemplate(next.legacyId);
+                  }}
+                  className="w-full rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                >
+                  Reset this layout to its recommended color
+                </button>
+              </div>
             </div>
 
             {/* Header details */}
