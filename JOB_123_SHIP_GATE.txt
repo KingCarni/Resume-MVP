@@ -1,0 +1,46 @@
+Git-a-Job - JOB-123 Ship Gate
+
+Release decision must answer yes to all blocker questions below.
+
+Blocker gate
+- Can a signed-in user browse jobs successfully?
+- Can a user open a job detail page successfully?
+- Can a user hand off into resume successfully?
+- Can a user hand off into cover letter successfully?
+- Can a user use Tailor Both / Apply Pack without stale or wrong pricing context?
+- Are credits charged correctly in tested job-triggered flows?
+- Are saved jobs and hidden jobs behaving consistently?
+- Are resume/cover-letter template selectors understandable and stable?
+- Do representative preview/PDF outputs avoid obvious clipping or corruption?
+
+Important non-blockers that still must be logged
+- Minor spacing/polish issues
+- Non-critical palette inconsistencies
+- Minor copy cleanup opportunities
+- Low-priority selector taxonomy cleanup
+
+Pre-ship evidence to capture
+- Screenshot of jobs feed
+- Screenshot of job detail page
+- Screenshot of Tailor Resume handoff
+- Screenshot of Cover Letter handoff
+- Screenshot of Apply Pack state
+- One exported resume PDF
+- One exported cover letter PDF
+- Credit ledger proof for one 5-credit and one 8-credit action
+
+Recommended smoke sequence
+1. Sign in
+2. Open /jobs
+3. Open a good-fit job
+4. Save job
+5. Tailor Resume
+6. Return and Generate Cover Letter
+7. Return and Tailor Both
+8. Open /jobs/saved and repeat one handoff
+9. Export one resume PDF
+10. Export one cover letter PDF
+
+Go / no-go rule
+- GO only if core loop is intact and pricing/context are correct
+- NO-GO if any flow mischarges, loses job context, or fails to open key pages

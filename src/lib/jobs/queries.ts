@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, SeniorityLevel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   getJobMatchWarmupState,
@@ -50,10 +50,15 @@ function normalizeRemote(value: string | null | undefined) {
   return null;
 }
 
-function normalizeSeniority(value: string | null | undefined) {
+function normalizeSeniority(value: string | null | undefined): SeniorityLevel | null {
   const normalized = normalizedValue(value).toLowerCase();
   if (!normalized || normalized === "all") return null;
-  return normalized;
+
+  if ((Object.values(SeniorityLevel) as string[]).includes(normalized)) {
+    return normalized as SeniorityLevel;
+  }
+
+  return null;
 }
 
 function safeDateMs(value: unknown) {
