@@ -63,7 +63,6 @@ async function loadBrowserDeps() {
     };
   }
 
-  // ✅ Local dev: use full puppeteer (bundled Chromium), OR local Chrome via env
   const puppeteerImport = (await import("puppeteer")) as any;
   const puppeteer = puppeteerImport.default ?? puppeteerImport;
 
@@ -89,13 +88,11 @@ async function loadBrowserDeps() {
 }
 
 export async function POST(req: Request) {
-  // Track whether we charged so we can refund on any failure after the charge.
   let chargedCost = 0;
   let chargedUserId = "";
   let chargedBalanceAfter = 0;
 
   try {
-    // ✅ Require login
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
     if (!email) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -103,7 +100,6 @@ export async function POST(req: Request) {
     const dbUser = await prisma.user.findUnique({ where: { email } });
     if (!dbUser) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
 
-    // ✅ Parse + validate BEFORE charging
     const body = (await req.json()) as Partial<Body>;
     const html = String(body.html ?? "");
     const filename = safeFilename(body.filename ?? "resume");
@@ -112,12 +108,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing html" }, { status: 400 });
     }
 
-    // Optional sanity limit (prevents megabytes of HTML)
     if (html.length > 1_200_000) {
       return NextResponse.json({ ok: false, error: "html too large" }, { status: 400 });
     }
 
-    // ✅ Charge credits
     const COST_PDF = 5;
     const charged = await chargeCredits({
       userId: dbUser.id,
@@ -131,12 +125,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
-    // Record for potential refund
     chargedCost = COST_PDF;
     chargedUserId = dbUser.id;
     chargedBalanceAfter = charged.balance;
 
-    // --- Render PDF ---
     const deps = await loadBrowserDeps();
 
     if (!deps.executablePath) {
@@ -145,7 +137,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Letter @ 96dpi
     const LETTER_W = 816;
     const LETTER_H = 1056;
 
@@ -159,17 +150,46 @@ export async function POST(req: Request) {
     try {
       const page = await browser.newPage();
 
-      // Match iframe preview: "screen" media
       if (typeof page.emulateMediaType === "function") {
         await page.emulateMediaType("screen");
       }
 
       await page.setContent(html, { waitUntil: "networkidle0" });
 
+      await page.addStyleTag({
+        content: `
+          html { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          img { break-inside: avoid; page-break-inside: avoid; }
+          .page, .resume-page, .resume-shell, .resume-preview-page { break-inside: avoid; page-break-inside: avoid; }
+        `,
+      });
+
       await page
         .evaluate(async () => {
           const fonts = (document as unknown as { fonts?: { ready?: Promise<void> } }).fonts;
           if (fonts?.ready) await fonts.ready;
+
+          const images = Array.from(document.images || []);
+          await Promise.all(
+            images.map(async (img) => {
+              try {
+                if ((img as HTMLImageElement).decode) {
+                  await (img as HTMLImageElement).decode();
+                  return;
+                }
+              } catch {}
+
+              if (!img.complete) {
+                await new Promise<void>((resolve) => {
+                  const done = () => resolve();
+                  img.addEventListener("load", done, { once: true });
+                  img.addEventListener("error", done, { once: true });
+                  setTimeout(done, 1200);
+                });
+              }
+            }),
+          );
         })
         .catch(() => {});
 
@@ -182,7 +202,6 @@ export async function POST(req: Request) {
         margin: { top: "0in", right: "0in", bottom: "0in", left: "0in" },
       });
 
-      // ✅ TS-proof: force a *real* ArrayBuffer (never SharedArrayBuffer)
       const copy = new Uint8Array(pdfBytes.byteLength);
       copy.set(pdfBytes);
       const arrayBuffer: ArrayBuffer = copy.buffer;
@@ -203,7 +222,6 @@ export async function POST(req: Request) {
   } catch (e: any) {
     const message = e?.message ? String(e.message) : String(e);
 
-    // ✅ Refund if we already charged and something failed afterward
     if (chargedCost > 0 && chargedUserId) {
       try {
         const refunded = await refundCredits({

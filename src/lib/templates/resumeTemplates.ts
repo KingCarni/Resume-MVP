@@ -278,6 +278,22 @@ export const RESUME_LAYOUT_OPTIONS: ResumeLayoutOption[] = Object.values(RESUME_
     .map(([id]) => id as LegacyResumeTemplateId),
 }));
 
+export const RESUME_LAYOUT_CATEGORY_ORDER: TemplateCategory[] = [
+  "ats-safe",
+  "professional",
+  "editorial",
+  "technical",
+  "creative",
+];
+
+export const RESUME_LAYOUT_CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  "ats-safe": "ATS Safe",
+  professional: "Professional",
+  editorial: "Editorial",
+  technical: "Technical",
+  creative: "Creative",
+};
+
 export const RESUME_COLOR_SCHEME_OPTIONS: ResumeColorSchemeOption[] = Object.values(COLOR_SCHEMES).map((scheme) => ({
   id: scheme.id,
   label: scheme.label,
