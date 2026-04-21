@@ -2422,7 +2422,7 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStylesResume(template)}
+    ${templateStylesResume(resolvedTemplate.colorSchemeId as ResumeTemplateId)}
   </style>
 </head>
 <body>
@@ -2511,10 +2511,10 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStylesResume(template)}
+    ${templateStylesResume(resolvedTemplate.colorSchemeId as ResumeTemplateId)}
     ${layoutCss}
     ${
-      template === "terminal" || template === "technicalgridlayout"
+      resolvedTemplate.colorSchemeId === "terminal" || activeColorSchemeTheme.font === "mono"
         ? `
 .top .contact{
   margin-top: 10px !important;
