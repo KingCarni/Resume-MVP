@@ -1479,6 +1479,7 @@ function buildResumeHtml(args: {
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
     ${templateStylesResume(resolvedTemplate.colorSchemeId as ResumeTemplateId)}
+    ${layoutCss}
   </style>
 </head>
 <body>
