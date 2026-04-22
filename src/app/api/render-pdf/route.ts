@@ -162,7 +162,7 @@ async function renderPdfFromHtml(html: string): Promise<{ bytes: Uint8Array; deb
     });
 
     if (typeof page.emulateMediaType === "function") {
-      await page.emulateMediaType("screen");
+      await page.emulateMediaType("print");
     }
 
     await page.addStyleTag({
@@ -171,6 +171,7 @@ async function renderPdfFromHtml(html: string): Promise<{ bytes: Uint8Array; deb
         body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         img { break-inside: avoid; page-break-inside: avoid; }
         .page, .resume-page, .resume-shell, .resume-preview-page, .cover-letter-page { break-inside: avoid; page-break-inside: avoid; }
+        .cover-header, .letter-card, .sig { break-inside: avoid-page; page-break-inside: avoid; }
       `,
     });
 
@@ -179,10 +180,10 @@ async function renderPdfFromHtml(html: string): Promise<{ bytes: Uint8Array; deb
       printBackground: true,
       preferCSSPageSize: true,
       margin: {
-        top: "0.5in",
-        right: "0.5in",
-        bottom: "0.5in",
-        left: "0.5in",
+        top: "0in",
+        right: "0in",
+        bottom: "0in",
+        left: "0in",
       },
     });
 

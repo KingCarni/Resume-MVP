@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import { sanitizeStructuredResumeSnapshot, structuredSnapshotToResumeText, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
-import { buildCoverLetterTemplateSelection, COVER_LETTER_COLOR_SCHEME_OPTIONS, COVER_LETTER_LAYOUT_OPTIONS, getRecommendedColorSchemeForCoverLetterLayout, isCoverLetterTemplateId, resolveCoverLetterTemplateSelection, type CoverLetterTemplateId as ResumeTemplateId } from "@/lib/templates/coverLetterTemplates";
+import { buildCoverLetterTemplateSelection, COVER_LETTER_COLOR_SCHEME_OPTIONS, COVER_LETTER_LAYOUT_CATEGORY_LABELS, COVER_LETTER_LAYOUT_CATEGORY_ORDER, COVER_LETTER_LAYOUT_OPTIONS, getRecommendedColorSchemeForCoverLetterLayout, normalizeStoredCoverLetterTemplateValue, resolveCoverLetterTemplateSelection, type CoverLetterLayoutId, type CoverLetterTemplateId as ResumeTemplateId } from "@/lib/templates/coverLetterTemplates";
 
 /** ---------------- Types ---------------- */
 
@@ -18,6 +18,34 @@ type ResumeProfile = {
 };
 
 type ApiResp = { ok: true; coverLetter: string } | { ok: false; error?: string };
+
+const COVER_LETTER_COLOR_CATEGORY_LABELS: Record<string, string> = {
+  professional: "Professional",
+  warm: "Warm / Paper",
+  soft: "Soft Modern",
+  bold: "Bold / Expressive",
+  dark: "Technical / Dark",
+};
+
+const COVER_LETTER_ALLOWED_COLOR_CATEGORIES: Record<CoverLetterLayoutId, string[]> = {
+  ats: ["professional"],
+  classic: ["professional", "warm"],
+  modern: ["professional", "soft"],
+  executive: ["professional", "warm"],
+  serif: ["professional", "warm"],
+};
+
+function getCompatibleCoverLetterColorSchemeOptions(layoutId: CoverLetterLayoutId) {
+  const allowedCategories = new Set(COVER_LETTER_ALLOWED_COLOR_CATEGORIES[layoutId] ?? ["professional"]);
+  return COVER_LETTER_COLOR_SCHEME_OPTIONS.filter((option) => allowedCategories.has(option.category));
+}
+
+function isCoverLetterColorSchemeCompatible(
+  layoutId: CoverLetterLayoutId,
+  colorSchemeId: string,
+) {
+  return getCompatibleCoverLetterColorSchemeOptions(layoutId).some((option) => option.id === colorSchemeId);
+}
 
 type ApplyPackBundle = {
   bundle?: string;
@@ -1437,14 +1465,23 @@ function templateStyles(template: ResumeTemplateId) {
  * Cover letter wrapper
  */
 function templateStylesCover(template: ResumeTemplateId) {
+  const selection = resolveCoverLetterTemplateSelection(template);
   const letterCardBg = `var(--cardbg, var(--pagebg, #fff))`;
+  const baseCss = templateStyles(selection.colorSchemeId);
 
   return `
-${templateStyles(template)}
+${baseCss}
 
-/* ---- Cover letter additions (MATCH ResumeMvp) ---- */
+/* ---- Cover letter additions (JOB-124) ---- */
+body { line-height: 1.55; }
+.page { overflow: visible; }
+.top { display: block; }
+.contact { justify-items: start; text-align: left; }
 .cover-wrap { margin-top: 14px; }
-
+.cover-header { display: grid; gap: 12px; }
+.cover-meta { display: grid; gap: 8px; }
+.cover-date { font-size: 12px; color: var(--muted); }
+.cover-contact-stack { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
 .letter-card{
   border: 1px var(--borderstyle, solid) var(--line, #e7e7e7);
   border-radius: calc(var(--radius, 16px) - 2px);
@@ -1452,31 +1489,157 @@ ${templateStyles(template)}
   background: ${letterCardBg};
   box-shadow: none;
 }
-
-.letter { font-size: 13px; line-height: 1.65; }
+.letter { font-size: 13px; line-height: 1.7; }
 .letter .p { margin: 0 0 12px 0; white-space: pre-wrap; }
-
-.sig { margin-top: 16px; }
-
-/* ✅ Print/PDF parity — keep theme backgrounds (do not force white) */
+.sig { margin-top: 20px; }
+.sig-name { margin-top: 6px; font-weight: 800; }
+.cover-layout-classic .top {
+  padding: 22px 26px 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+.cover-layout-classic .cover-header { gap: 12px; }
+.cover-layout-classic .name { font-size: 28px; }
+.cover-layout-classic .cover-meta { gap: 8px; }
+.cover-layout-classic .content { padding-top: 16px; }
+.cover-layout-classic .letter-card {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  padding: 16px 0 0;
+  background: transparent;
+}
+.cover-layout-modern .top {
+  padding: 24px 26px 18px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+.cover-layout-modern .cover-header {
+  grid-template-columns: minmax(0, 1.1fr) minmax(220px, .9fr);
+  align-items: start;
+  gap: 20px;
+}
+.cover-layout-modern .cover-meta { justify-items: end; text-align: right; gap: 10px; }
+.cover-layout-modern .cover-date { text-align: right; }
+.cover-layout-modern .letter-card { box-shadow: 0 8px 24px rgba(0,0,0,.04); }
+.cover-layout-executive .top {
+  padding: 24px 26px 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0)), var(--headerbg);
+}
+.cover-layout-executive .cover-header {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, .95fr);
+  align-items: start;
+  gap: 20px;
+}
+.cover-layout-executive .name { font-size: 32px; }
+.cover-layout-executive .cover-meta { justify-items: end; text-align: right; gap: 10px; }
+.cover-layout-executive .contact { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.cover-layout-executive .chip-link { max-width: 100%; overflow-wrap: anywhere; }
+.cover-layout-executive .cover-date { font-weight: 800; }
+.cover-layout-executive .letter-card { padding: 20px; }
+.cover-layout-serif .page { max-width: 820px; }
+.cover-layout-serif .letter,
+.cover-layout-serif .cover-contact-stack,
+.cover-layout-serif .cover-date {
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+.cover-layout-serif .top {
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+.cover-layout-serif .cover-header { justify-items: center; }
+.cover-layout-serif .contact { justify-items: center; text-align: center; }
+.cover-layout-serif .content { padding-top: 16px; }
+.cover-layout-serif .letter-card {
+  border-radius: 0;
+  border-style: dashed;
+}
+.cover-layout-ats .page {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0 auto;
+  background: #fff;
+}
+.cover-layout-ats .top {
+  padding: 20px 26px 12px;
+  background: #fff;
+  border-bottom: 1px solid #111;
+}
+.cover-layout-ats .name { font-size: 24px; }
+.cover-layout-ats .cover-header,
+.cover-layout-ats .contact { gap: 6px; }
+.cover-layout-ats .contact { display: block; }
+.cover-layout-ats .letter-card {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.cover-layout-ats .letter { font-size: 12.5px; line-height: 1.55; }
+@media (max-width: 720px) {
+  .cover-layout-modern .top,
+  .cover-layout-executive .cover-header {
+    grid-template-columns: 1fr;
+  }
+  .cover-layout-modern .cover-meta,
+  .cover-layout-modern .cover-date,
+  .cover-layout-executive .cover-meta,
+  .cover-layout-executive .contact {
+    justify-items: start;
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+@page {
+  size: Letter;
+  margin: 0.5in;
+}
 @media print {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  html, body{
-    background: var(--bodybg) !important;
-  }
-  body{
+  html, body { background: #fff !important; }
+  body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-  }
-  .page{
-    background: var(--pagebg) !important;
-    box-shadow: none !important;
     margin: 0 !important;
   }
-  .top:after{ display:none !important; }
-  .letter-card{
-    background: ${letterCardBg} !important;
+  .page {
+    width: auto !important;
+    max-width: none !important;
+    background: var(--pagebg) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    overflow: visible !important;
   }
+  .top,
+  .content,
+  .letter-card,
+  .cover-header,
+  .cover-contact-stack,
+  .cover-date,
+  .sig {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+  .p {
+    orphans: 3;
+    widows: 3;
+  }
+  .top:after { display:none !important; }
+  .letter-card {
+    background: ${letterCardBg} !important;
+    box-shadow: none !important;
+  }
+  .cover-layout-classic .letter-card,
+  .cover-layout-serif .letter-card,
+  .cover-layout-ats .letter-card {
+    padding-top: 0 !important;
+  }
+  .cover-layout-ats .page { background: #fff !important; }
+  .cover-layout-ats .letter-card { background: transparent !important; }
 }
 `.trim();
 }
@@ -1574,82 +1737,97 @@ function buildCoverLetterHtml(args: {
   signatureClosing: string;
 }) {
   const safe = (s: string) => escapeHtml(s || "");
-  const {
-    template,
-    profile,
-    bodyText,
-    includeSignature,
-    signatureClosing,
-    signatureName,
-  } = args;
+  const { template, profile, bodyText, includeSignature, signatureClosing, signatureName } = args;
+  const selection = resolveCoverLetterTemplateSelection(template);
+  const layoutId: CoverLetterLayoutId = selection.coverLetterLayoutId;
 
-  const contactBits = [
-    profile.email?.trim() ? safe(profile.email) : "",
-    profile.phone?.trim() ? safe(profile.phone) : "",
-    profile.linkedin?.trim() ? safe(profile.linkedin) : "",
-  ].filter(Boolean);
+  const contactItems = [
+    profile.locationLine?.trim() ? { key: "location", value: safe(profile.locationLine) } : null,
+    profile.email?.trim() ? { key: "email", value: safe(profile.email) } : null,
+    profile.phone?.trim() ? { key: "phone", value: safe(profile.phone) } : null,
+    profile.linkedin?.trim() ? { key: "linkedin", value: safe(profile.linkedin) } : null,
+  ].filter(Boolean) as Array<{ key: string; value: string }>;
 
-  const useChips = template !== "terminal" && template !== "ats" && template !== "compact";
-
-  const topContact = useChips
-    ? contactBits.map((c) => `<div class="chip">${c}</div>`).join("")
-    : contactBits.map((c) => `<div>${c}</div>`).join("<br/>");
+  const contactBits = contactItems.map((item) => item.value);
+  const executiveContactHtml = contactItems
+    .map((item) => `<div class="chip${item.key === "linkedin" ? " chip-link" : ""}">${item.value}</div>`)
+    .join("");
+  const contactStackHtml = contactBits.map((c) => `<div>${c}</div>`).join("");
 
   const paras = splitParagraphs(bodyText);
   const parasHtml = paras.map((p) => `<div class="p">${safe(p)}</div>`).join("");
 
   const sigClosing = signatureClosing.trim() ? safe(signatureClosing.trim()) : "";
   const sigName = signatureName.trim() ? safe(signatureName.trim()) : "";
-
   const signatureHtml =
     includeSignature && (sigClosing || sigName)
-      ? `<div class="sig">
-          ${sigClosing ? `${sigClosing}<br/>` : ""}
-          ${sigName}
-        </div>`
+      ? `<div class="sig">${sigClosing ? `<div>${sigClosing}</div>` : ""}${sigName ? `<div class="sig-name">${sigName}</div>` : ""}</div>`
       : "";
 
-  if (template === "sidebar") {
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cover Letter - ${safe(profile.fullName || "Updated")}</title>
-  <style>${templateStylesCover(template)}</style>
-</head>
-<body>
-  <div class="page">
-    <div class="side">
-      <h1 class="name">${safe(profile.fullName || "")}</h1>
-      <div class="title">Cover Letter</div>
-      <div class="contact">
-        ${[
-          profile.locationLine?.trim() ? safe(profile.locationLine) : "",
-          profile.email?.trim() ? safe(profile.email) : "",
-          profile.phone?.trim() ? safe(profile.phone) : "",
-          profile.linkedin?.trim() ? safe(profile.linkedin) : "",
-        ]
-          .filter(Boolean)
-          .map((c) => `<div>${c}</div>`)
-          .join("")}
-      </div>
-    </div>
+  const now = new Date();
+  const dateLine = safe(
+    now.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+  );
 
-    <div class="main">
-      <div class="cover-wrap">
-        <div class="letter-card">
-          <div class="letter">
-            ${parasHtml || `<div class="p">No cover letter text yet.</div>`}
-            ${signatureHtml}
-          </div>
+  const headerHtmlByLayout: Record<CoverLetterLayoutId, string> = {
+    ats: `
+      <div class="cover-header">
+        <div>
+          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+        </div>
+        <div class="cover-meta">
+          <div class="cover-contact-stack">${contactStackHtml}</div>
+          <div class="cover-date">${dateLine}</div>
         </div>
       </div>
-    </div>
-  </div>
-</body>
-</html>`;
-  }
+    `,
+    classic: `
+      <div class="cover-header">
+        <div>
+          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+        </div>
+        <div class="cover-meta">
+          <div class="cover-contact-stack">${contactStackHtml}</div>
+          <div class="cover-date">${dateLine}</div>
+        </div>
+      </div>
+    `,
+    modern: `
+      <div class="cover-header">
+        <div>
+          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+        </div>
+        <div class="cover-meta">
+          <div class="cover-contact-stack">${contactStackHtml}</div>
+          <div class="cover-date">${dateLine}</div>
+        </div>
+      </div>
+    `,
+    executive: `
+      <div class="cover-header">
+        <div>
+          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+        </div>
+        <div class="cover-meta">
+          <div class="contact">${executiveContactHtml}</div>
+          <div class="cover-date">${dateLine}</div>
+        </div>
+      </div>
+    `,
+    serif: `
+      <div class="cover-header">
+        <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+        <div class="cover-meta">
+          <div class="cover-contact-stack">${contactStackHtml}</div>
+          <div class="cover-date">${dateLine}</div>
+        </div>
+      </div>
+    `,
+  };
 
   return `<!doctype html>
 <html>
@@ -1659,18 +1837,11 @@ function buildCoverLetterHtml(args: {
   <title>Cover Letter - ${safe(profile.fullName || "Updated")}</title>
   <style>${templateStylesCover(template)}</style>
 </head>
-<body>
-  <div class="page">
+<body class="cover-layout-${layoutId}">
+  <div class="page cover-layout-${layoutId}">
     <div class="top">
-      <div>
-        <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
-        <div class="title">Cover Letter</div>
-      </div>
-      <div class="contact">
-        ${topContact}
-      </div>
+      ${headerHtmlByLayout[layoutId]}
     </div>
-
     <div class="content">
       <div class="cover-wrap">
         <div class="letter-card">
@@ -1812,6 +1983,20 @@ export default function CoverLetterGenerator() {
   const applyPackActive = shouldHydrateJobContext && !!applyPackBundle?.job?.jobContextText;
 
   const selectedTemplate = useMemo(() => resolveCoverLetterTemplateSelection(template), [template]);
+  useEffect(() => {
+    if (isCoverLetterColorSchemeCompatible(selectedTemplate.coverLetterLayoutId, selectedTemplate.colorSchemeId)) {
+      return;
+    }
+
+    const next = buildCoverLetterTemplateSelection(
+      selectedTemplate.coverLetterLayoutId,
+      getRecommendedColorSchemeForCoverLetterLayout(selectedTemplate.coverLetterLayoutId),
+    );
+
+    if (next.templateId !== template) {
+      setTemplate(next.templateId);
+    }
+  }, [selectedTemplate, template]);
 
   const canGenerate = useMemo(() => {
     const hasResume = !!file || resumeText.trim().length > 0;
@@ -1852,8 +2037,8 @@ export default function CoverLetterGenerator() {
           }));
         }
 
-        if (latest.template && isCoverLetterTemplateId(latest.template)) {
-          setTemplate(latest.template);
+        if (latest.template) {
+          setTemplate(normalizeStoredCoverLetterTemplateValue(latest.template));
         }
       } catch {
         // ignore hydrate failure
@@ -2299,31 +2484,27 @@ export default function CoverLetterGenerator() {
                   Template layout
                 </div>
                 <select
-                  value={selectedTemplate.layoutId}
+                  value={selectedTemplate.coverLetterLayoutId}
                   onChange={(e) => {
                     const next = buildCoverLetterTemplateSelection(
-                      e.target.value as typeof selectedTemplate.layoutId,
-                      selectedTemplate.colorSchemeId,
+                      e.target.value as CoverLetterLayoutId,
+                      isCoverLetterColorSchemeCompatible(
+                        e.target.value as CoverLetterLayoutId,
+                        selectedTemplate.colorSchemeId,
+                      )
+                        ? selectedTemplate.colorSchemeId
+                        : getRecommendedColorSchemeForCoverLetterLayout(e.target.value as CoverLetterLayoutId),
                     );
-                    setTemplate(next.legacyId);
+                    setTemplate(next.templateId);
                   }}
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black"
                   style={{ color: "#000", backgroundColor: "#fff" }}
                 >
-                  {["ats-safe", "professional", "editorial", "technical", "creative"].map((category) => {
+                  {COVER_LETTER_LAYOUT_CATEGORY_ORDER.map((category) => {
                     const options = COVER_LETTER_LAYOUT_OPTIONS.filter((option) => option.category === category);
                     if (!options.length) return null;
 
-                    const categoryLabel =
-                      category === "ats-safe"
-                        ? "ATS Safe"
-                        : category === "professional"
-                          ? "Professional"
-                          : category === "editorial"
-                            ? "Editorial"
-                            : category === "technical"
-                              ? "Technical"
-                              : "Creative";
+                    const categoryLabel = COVER_LETTER_LAYOUT_CATEGORY_LABELS[category];
 
                     return (
                       <optgroup key={category} label={categoryLabel}>
@@ -2346,31 +2527,28 @@ export default function CoverLetterGenerator() {
                   value={selectedTemplate.colorSchemeId}
                   onChange={(e) => {
                     const next = buildCoverLetterTemplateSelection(
-                      selectedTemplate.layoutId,
+                      selectedTemplate.coverLetterLayoutId,
                       e.target.value as typeof selectedTemplate.colorSchemeId,
                     );
-                    setTemplate(next.legacyId);
+                    setTemplate(next.templateId);
                   }}
                   className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black"
                   style={{ color: "#000", backgroundColor: "#fff" }}
                 >
-                  {["professional", "warm", "soft", "bold", "dark"].map((category) => {
-                    const options = COVER_LETTER_COLOR_SCHEME_OPTIONS.filter((option) => option.category === category);
+                  {Array.from(
+                    new Set(
+                      getCompatibleCoverLetterColorSchemeOptions(selectedTemplate.coverLetterLayoutId).map(
+                        (option) => option.category,
+                      ),
+                    ),
+                  ).map((category) => {
+                    const options = getCompatibleCoverLetterColorSchemeOptions(
+                      selectedTemplate.coverLetterLayoutId,
+                    ).filter((option) => option.category === category);
                     if (!options.length) return null;
 
-                    const categoryLabel =
-                      category === "professional"
-                        ? "Professional"
-                        : category === "warm"
-                          ? "Warm / Paper"
-                          : category === "soft"
-                            ? "Soft Modern"
-                            : category === "bold"
-                              ? "Bold / Expressive"
-                              : "Technical / Dark";
-
                     return (
-                      <optgroup key={category} label={categoryLabel}>
+                      <optgroup key={category} label={COVER_LETTER_COLOR_CATEGORY_LABELS[category] ?? category}>
                         {options.map((option) => (
                           <option key={option.id} value={option.id} style={{ color: "#000", backgroundColor: "#fff" }}>
                             {option.label}
@@ -2391,10 +2569,10 @@ export default function CoverLetterGenerator() {
                 type="button"
                 onClick={() => {
                   const next = buildCoverLetterTemplateSelection(
-                    selectedTemplate.layoutId,
-                    getRecommendedColorSchemeForCoverLetterLayout(selectedTemplate.layoutId),
+                    selectedTemplate.coverLetterLayoutId,
+                    getRecommendedColorSchemeForCoverLetterLayout(selectedTemplate.coverLetterLayoutId),
                   );
-                  setTemplate(next.legacyId);
+                  setTemplate(next.templateId);
                 }}
                 className="w-full rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
               >
