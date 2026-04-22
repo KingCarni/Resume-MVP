@@ -3066,6 +3066,30 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return hasResume && hasJob && hasTargetPosition;
   }, [file, resumeText, resumeHtmlDraft, jobText, targetPosition, isSetupMode]);
 
+  const guideMissingAnalyzeRequirements = useCallback(() => {
+    const hasResume = !!file || resumeText.trim().length > 0 || !!resumeHtmlDraft.trim();
+
+    if (!hasResume) {
+      setError("Add or load a resume before analyzing.");
+      scrollToSection("resume-source");
+      return false;
+    }
+
+    if (!isSetupMode && !targetPosition.trim()) {
+      setError("Add a target position before analyzing your resume.");
+      scrollToSection("job-setup");
+      return false;
+    }
+
+    if (!isSetupMode && !jobText.trim()) {
+      setError("Paste a job posting or launch from the Job Board before analyzing.");
+      scrollToSection("job-setup");
+      return false;
+    }
+
+    return true;
+  }, [file, resumeText, resumeHtmlDraft, isSetupMode, targetPosition, jobText, scrollToSection]);
+
   const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
     if (!next) return false;
@@ -3122,43 +3146,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       if (!options?.force && latestResumeHydratedRef.current) return null;
 
       const preferredProfileId = String(options?.preferredProfileId || "").trim();
-
-      if (preferredProfileId) {
-        try {
-          const response = await fetch("/api/resume-profiles", { method: "GET", cache: "no-store" });
-          const payload = (await parseApiResponse(response)) as { ok?: boolean; items?: Array<Record<string, unknown>> } | string;
-
-          if (response.ok && typeof payload !== "string" && payload?.ok && Array.isArray(payload.items)) {
-            const matchedProfile = payload.items.find((item) => String(item?.id || "").trim() === preferredProfileId) as
-              | { rawText?: string | null; title?: string | null; updatedAt?: string | null }
-              | undefined;
-
-            const profileText = String(matchedProfile?.rawText || "").trim();
-            if (profileText) {
-              latestResumeHydratedRef.current = true;
-              setResumeText(profileText);
-              setResumeSourceMeta({
-                fileName: String(matchedProfile?.title || "").trim() || null,
-                mimeType: null,
-                extension: null,
-                sourceKind: "resume_profile",
-              });
-              setLatestResumeMeta({
-                title: String(matchedProfile?.title || "Resume profile").trim() || "Resume profile",
-                createdAt: String(matchedProfile?.updatedAt || "").trim(),
-              });
-
-              return {
-                text: profileText,
-                structuredText: "",
-                htmlText: "",
-              };
-            }
-          }
-        } catch {
-          // fall back to latest saved resume
-        }
-      }
+      void preferredProfileId;
 
       try {
         const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
@@ -3553,8 +3541,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }
 
   async function handleAnalyze() {
-    if (!isSetupMode && !targetPosition.trim()) {
-      setError("Target position is required for ATS analysis.");
+    if (!guideMissingAnalyzeRequirements()) {
       return;
     }
 
@@ -5674,12 +5661,15 @@ const syncResumeProfileDraft = useCallback(async () => {
   const finishSetupAndGoToJobs = useCallback(async () => {
     const syncedProfileId = await syncResumeProfileDraft();
     if (syncedProfileId) {
-      router.push("/jobs");
+      router.push(`/jobs?resumeProfileId=${encodeURIComponent(syncedProfileId)}`);
       return;
     }
 
     if (!profileSyncDirty && analysis) {
-      router.push("/jobs");
+      const storedProfileId = typeof window !== "undefined"
+        ? String(window.localStorage.getItem("activeResumeProfileId") || "").trim()
+        : "";
+      router.push(storedProfileId ? `/jobs?resumeProfileId=${encodeURIComponent(storedProfileId)}` : "/jobs");
     }
   }, [syncResumeProfileDraft, router, profileSyncDirty, analysis]);
 
@@ -5703,12 +5693,16 @@ useEffect(() => {
 }, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
 
   const handleRefreshAtsScore = useCallback(async () => {
+    if (!analysis && !guideMissingAnalyzeRequirements()) {
+      return;
+    }
+
     setConfirmedAtsScore(liveAtsScore);
     setAtsScoreUpdatedAt(Date.now());
     setAtsScoreInitialized(true);
     const syncedProfileId = await syncResumeProfileDraft();
     await refreshCurrentJobMatch(syncedProfileId);
-  }, [liveAtsScore, syncResumeProfileDraft, refreshCurrentJobMatch]);
+  }, [analysis, guideMissingAnalyzeRequirements, liveAtsScore, syncResumeProfileDraft, refreshCurrentJobMatch]);
 
   
   async function handleCopyOutput() {
@@ -6343,13 +6337,24 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={handleAnalyze}
-                  disabled={!canAnalyze || loadingAnalyze}
+                  disabled={loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
                   {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : applyPackPricingEligible ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : applyPackPricingEligible ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
 
-                
+                {!canAnalyze ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-100/90 px-3 py-2 text-xs font-bold text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
+                    {isSetupMode
+                      ? "Add or load a base resume first, then analyze it to finish setup."
+                      : !targetPosition.trim()
+                        ? "Add a target position to continue."
+                        : !jobText.trim()
+                          ? "Paste a job posting or launch from the Job Board to continue."
+                          : "Add or load a resume before analyzing."}
+                  </div>
+                ) : null}
+
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input
                     type="checkbox"

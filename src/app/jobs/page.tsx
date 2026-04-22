@@ -1181,10 +1181,6 @@ export default function JobsPage() {
                 <div className="font-semibold text-white">
                   {jobsLoading ? "Loading roles..." : `${totalJobs} role${totalJobs === 1 ? "" : "s"} found`}
                 </div>
-                <div className="mt-1">
-                  Browse is free. Match trust and tailoring are what make this
-                  feature pay off.
-                </div>
               </div>
             </div>
           </div>

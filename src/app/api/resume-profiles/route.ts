@@ -366,7 +366,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const id = String(searchParams.get("id") ?? "").trim();
+  const body = (await request.json().catch(() => null)) as { id?: string | null } | null;
+  const id = String(searchParams.get("id") ?? body?.id ?? "").trim();
 
   if (!id) {
     return NextResponse.json({ ok: false, error: "Missing profile id" }, { status: 400 });

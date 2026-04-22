@@ -43,7 +43,7 @@ export default async function ResumeSetupPage() {
             Buy Credits
           </Link>
           <a
-            href="https://git-a-job.com/donate"
+            href="/account/donate"
             target="_blank"
             rel="noreferrer"
             className="shell-secondary-btn"
@@ -52,6 +52,9 @@ export default async function ResumeSetupPage() {
           </a>
           <Link href="/jobs" className="shell-secondary-btn">
             Browse Jobs
+          </Link>
+          <Link href="/jobs/saved" className="shell-secondary-btn">
+            Saved Jobs
           </Link>
           <Link href="/account" className="shell-secondary-btn">
             Account

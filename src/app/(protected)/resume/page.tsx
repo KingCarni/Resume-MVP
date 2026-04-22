@@ -69,12 +69,16 @@ export default async function Page(props: {
         <div className="flex items-center gap-2">
           <CreditsPill />
 
+          <Link href="/jobs/saved" className="shell-secondary-btn">
+            Saved Jobs
+          </Link>
+
           <Link href={buyCreditsHref} className="shell-primary-btn">
             Buy Credits
           </Link>
 
           <a
-            href="https://git-a-job.com/donate"
+            href="/account/donate"
             target="_blank"
             rel="noreferrer"
             className="shell-secondary-btn"

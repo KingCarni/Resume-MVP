@@ -2,6 +2,7 @@
 import DashboardShell from "@/components/layout/DashboardShell";
 import CreditsPill from "@/components/Billing/CreditsPill";
 import BuyCreditsButton from "@/components/Billing/BuyCreditsButton";
+import Link from "next/link";
 
 export default function Page() {
   return (
@@ -12,8 +13,12 @@ export default function Page() {
         <div className="flex items-center gap-2">
           <CreditsPill />
 
+          <Link href="/jobs/saved" className="shell-secondary-btn">
+            Saved Jobs
+          </Link>
+
           <a
-            href="https://git-a-job.com/donate"
+            href="/account/donate"
             target="_blank"
             rel="noreferrer"
             className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black hover:bg-emerald-700"

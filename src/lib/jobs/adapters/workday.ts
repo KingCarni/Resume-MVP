@@ -161,6 +161,42 @@ function buildSourceUrl(candidate: WorkdayCandidate, job: WorkdayJobSummary): st
   return `${candidate.sourceBase}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+function parseWorkdayPostedAt(value: string | null | undefined): string | null {
+  const raw = sanitizeTextBlock(value ?? "");
+  if (!raw) return null;
+
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString();
+
+  const lower = raw.toLowerCase();
+  const now = new Date();
+
+  if (/posted\s+today/.test(lower)) return now.toISOString();
+  if (/posted\s+yesterday/.test(lower)) {
+    return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  const match = lower.match(/posted\s+(\d+)\s+(hour|day|week|month)s?\s+ago/);
+  if (!match) return null;
+
+  const amount = Number(match[1] ?? 0);
+  const unit = match[2] ?? "";
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const unitMs = unit === "hour"
+    ? 60 * 60 * 1000
+    : unit === "day"
+      ? 24 * 60 * 60 * 1000
+      : unit === "week"
+        ? 7 * 24 * 60 * 60 * 1000
+        : unit === "month"
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+
+  if (!unitMs) return null;
+  return new Date(now.getTime() - amount * unitMs).toISOString();
+}
+
 export const workdayAdapter: JobsAdapter = {
   slug: "workday",
 
@@ -215,7 +251,7 @@ export const workdayAdapter: JobsAdapter = {
               responsibilitiesText: inferred.responsibilitiesText,
               applyUrl: buildSourceUrl(candidate, job),
               sourceUrl: buildSourceUrl(candidate, job),
-              postedAt: job.postedOn ?? null,
+              postedAt: parseWorkdayPostedAt(job.postedOn),
               rawPayload: {
                 candidate: candidate.label,
                 job,

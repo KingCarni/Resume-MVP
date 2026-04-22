@@ -48,6 +48,55 @@ async function fetchText(url: string, fetchImpl?: typeof fetch): Promise<string>
   return response.text();
 }
 
+function parseJsonLdJobs(html: string, companyBase: string): BambooHrJobSummary[] {
+  const scriptPattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const jobs: BambooHrJobSummary[] = [];
+  const seen = new Set<string>();
+
+  let match: RegExpExecArray | null;
+  while ((match = scriptPattern.exec(html))) {
+    const raw = sanitizeTextBlock(match[1] ?? "");
+    if (!raw) continue;
+
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+        const record = item as Record<string, unknown>;
+        if (String(record["@type"] ?? "").toLowerCase() !== "jobposting") continue;
+
+        const title = sanitizeTextBlock(String(record.title ?? ""));
+        if (!title) continue;
+
+        const rawHref = sanitizeTextBlock(String(record.url ?? ""));
+        const sourceUrl = rawHref
+          ? rawHref.startsWith("http")
+            ? rawHref
+            : `${companyBase}${rawHref.startsWith("/") ? rawHref : `/${rawHref}`}`
+          : null;
+        const uniqueKey = sourceUrl || title;
+        if (!uniqueKey || seen.has(uniqueKey)) continue;
+        seen.add(uniqueKey);
+
+        jobs.push({
+          title,
+          sourceUrl,
+          applyUrl: sourceUrl,
+          location: null,
+          employmentType: sanitizeTextBlock(String(record.employmentType ?? "")) || null,
+          department: null,
+          description: stripHtml(String(record.description ?? title)),
+        });
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return jobs;
+}
+
 function parseEmbeddedJson(html: string): Record<string, unknown> | null {
   const patterns = [
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/i,
@@ -193,7 +242,7 @@ function parseJsonJobs(jsonValue: Record<string, unknown>, companyBase: string):
 }
 
 async function collectBambooHrJobs(companyBase: string, fetchImpl?: typeof fetch): Promise<BambooHrJobSummary[]> {
-  const listUrls = [`${companyBase}/careers/`, `${companyBase}/careers/list`, `${companyBase}/jobs/`];
+  const listUrls = [`${companyBase}/careers/`, `${companyBase}/careers`, `${companyBase}/careers/list`, `${companyBase}/jobs/`, `${companyBase}/jobs`];
   let lastError: Error | null = null;
 
   for (const listUrl of listUrls) {
@@ -201,8 +250,9 @@ async function collectBambooHrJobs(companyBase: string, fetchImpl?: typeof fetch
       const html = await fetchText(listUrl, fetchImpl);
       const embeddedJson = parseEmbeddedJson(html);
       const jobsFromJson = embeddedJson ? parseJsonJobs(embeddedJson, companyBase) : [];
+      const jobsFromJsonLd = parseJsonLdJobs(html, companyBase);
       const jobsFromAnchors = parseAnchorJobs(html, companyBase);
-      const jobs = [...jobsFromJson, ...jobsFromAnchors];
+      const jobs = [...jobsFromJson, ...jobsFromJsonLd, ...jobsFromAnchors];
       if (jobs.length) return jobs;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Unknown BambooHR adapter failure");
