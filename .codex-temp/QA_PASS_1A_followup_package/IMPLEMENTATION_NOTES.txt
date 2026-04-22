@@ -1,0 +1,31 @@
+QA Pass 1A follow-up package
+
+Scope
+- Fix FTUE -> Jobs handoff so it only continues after a successful profile sync and carries resumeProfileId into /jobs.
+- Improve resume/profile sync recovery so job-aware resume entry can rehydrate the saved resume text before syncing instead of silently failing.
+- Reattach/anchor profile sync to the latest saved resume document when a profile has no sourceDocumentId.
+- Harden Workday posted date parsing for strings like "Posted Today" / "Posted Yesterday" / relative labels.
+- Improve BambooHR collection with broader list URLs, JSON-LD parsing, and a browser-like user-agent.
+
+Files
+- src/components/ResumeMvp/index.tsx
+- src/app/api/resume-profiles/sync/route.ts
+- src/lib/jobs/adapters/workday.ts
+- src/lib/jobs/adapters/bamboohr.ts
+
+Expected results
+1. Finish Setup / Update Profile & Go to Job Board should stop silently falling through. If sync succeeds, it should go to /jobs?resumeProfileId=... . If sync does not succeed, it should show an error instead of pretending completion worked.
+2. Opening a job and jumping into /resume should have a better chance to recover the saved resume text/profile linkage because sync now rehydrates from the saved resume path before giving up.
+3. Profiles with no attached resume document should reuse the latest saved resume document during sync instead of remaining permanently detached.
+4. Workday imports should no longer fail when postedOn is a relative label rather than a machine date.
+5. BambooHR has a stronger extraction path, but still validate against real boards locally because live fetch testing was not possible here.
+
+Suggested local smoke tests
+- FTUE: complete setup, click Go to Job Board, confirm landing on /jobs and confirm resumeProfileId is present in the URL.
+- Jobs -> View Job -> Tailor Resume: confirm the resume page no longer opens with a detached/empty resume state for the active profile.
+- Workday:
+  npx tsx src/scripts/import-jobs.ts --adapter workday --board Workday
+  npx tsx src/scripts/import-jobs.ts --adapter workday --board https://workday.wd5.myworkdayjobs.com/en-US/Workday
+- BambooHR:
+  npx tsx src/scripts/import-jobs.ts --adapter bamboohr --board taosolutions
+  npx tsx src/scripts/import-jobs.ts --adapter bamboohr --board https://taosolutions.bamboohr.com/careers

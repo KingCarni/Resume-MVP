@@ -1,0 +1,41 @@
+Apply the attached follow-up package exactly as provided.
+
+Project root:
+C:\projects\resume-mvp
+
+Files to replace with the attached .txt versions:
+- src/components/ResumeMvp/index.tsx
+- src/app/api/resume-profiles/sync/route.ts
+- src/lib/jobs/adapters/workday.ts
+- src/lib/jobs/adapters/bamboohr.ts
+
+Implementation rules:
+- Replace the full contents of each target file with the attached file contents.
+- Do not rewrite unrelated files.
+- Do not refactor outside the supplied files.
+- Preserve existing behavior outside the follow-up scope.
+
+After applying, run these checks:
+1. npx prisma generate
+2. changed-only eslint on the 4 files above
+3. transpile/parse sanity on the changed files
+4. DO NOT push
+
+Then run these manual smoke-test commands and report the output:
+- npx tsx src/scripts/import-jobs.ts --adapter workday --board Workday
+- npx tsx src/scripts/import-jobs.ts --adapter workday --board https://workday.wd5.myworkdayjobs.com/en-US/Workday
+- npx tsx src/scripts/import-jobs.ts --adapter bamboohr --board taosolutions
+- npx tsx src/scripts/import-jobs.ts --adapter bamboohr --board https://taosolutions.bamboohr.com/careers
+
+Then report back with:
+- files changed
+- deviations if any
+- validation results
+- smoke-test results
+- whether FTUE -> Jobs handoff now routes correctly
+- whether resume/job handoff still shows a detached profile/no attached resume state
+- local commit SHA if a commit was made
+
+Create a local git commit only if everything applies cleanly.
+Commit message:
+fix(ftue/jobs): harden profile sync handoff and adapter follow-up
