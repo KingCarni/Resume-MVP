@@ -51,8 +51,8 @@ async function main() {
       ? Number(args.get("refreshHours"))
       : null;
 
-    if (!adapter || !["greenhouse", "lever", "ashby"].includes(adapter)) {
-      throw new Error("Missing or invalid --adapter. Use greenhouse, lever, or ashby.");
+    if (!adapter || !["greenhouse", "lever", "ashby", "workday", "bamboohr"].includes(adapter)) {
+      throw new Error("Missing or invalid --adapter. Use greenhouse, lever, ashby, workday, or bamboohr.");
     }
 
     if (!tokenOrSite) {

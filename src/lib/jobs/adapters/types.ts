@@ -1,6 +1,6 @@
 import type { EmploymentType, NormalizedJobInput, RemoteType } from "@/lib/jobs/types";
 
-export type JobsAdapterSlug = "greenhouse" | "lever" | "ashby";
+export type JobsAdapterSlug = "greenhouse" | "lever" | "ashby" | "workday" | "bamboohr";
 
 export type AdapterFetchArgs = {
   tokenOrSite: string;

@@ -146,17 +146,27 @@ function normalizeRawPayload(
   return value as Prisma.InputJsonValue;
 }
 
+const ADAPTER_DISPLAY_NAMES: Record<JobsAdapterSlug, string> = {
+  greenhouse: "Greenhouse",
+  lever: "Lever",
+  ashby: "Ashby",
+  workday: "Workday",
+  bamboohr: "BambooHR",
+};
+
 async function ensureSource(slug: JobsAdapterSlug) {
+  const displayName = ADAPTER_DISPLAY_NAMES[slug] ?? slug.charAt(0).toUpperCase() + slug.slice(1);
+
   return prisma.jobSource.upsert({
     where: { slug },
     update: {
-      name: slug.charAt(0).toUpperCase() + slug.slice(1),
+      name: displayName,
       kind: "ats_feed",
       isActive: true,
     },
     create: {
       slug,
-      name: slug.charAt(0).toUpperCase() + slug.slice(1),
+      name: displayName,
       kind: "ats_feed",
       isActive: true,
     },

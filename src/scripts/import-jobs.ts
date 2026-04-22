@@ -35,8 +35,8 @@ async function main() {
   const includeCompensation = args.get("includeCompensation") !== "false";
   const companyOverride = args.get("company") ?? null;
 
-  if (!adapter || !["greenhouse", "lever", "ashby"].includes(adapter)) {
-    throw new Error("Missing or invalid --adapter. Use one of: greenhouse, lever, ashby.");
+  if (!adapter || !["greenhouse", "lever", "ashby", "workday", "bamboohr"].includes(adapter)) {
+    throw new Error("Missing or invalid --adapter. Use one of: greenhouse, lever, ashby, workday, bamboohr.");
   }
 
   if (!tokenOrSite) {
