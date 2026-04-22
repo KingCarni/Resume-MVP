@@ -384,6 +384,8 @@ export async function listSavedJobs(params: {
   userId: string;
   resumeProfileId?: string | null;
 }) {
+  const resumeProfileId = params.resumeProfileId ?? "__none__";
+
   const savedJobs = await prisma.savedJob.findMany({
     where: {
       userId: params.userId,
@@ -404,25 +406,26 @@ export async function listSavedJobs(params: {
             take: 1,
             orderBy: { updatedAt: "desc" },
           },
-          matches: params.resumeProfileId
-            ? {
-                where: {
-                  userId: params.userId,
-                  resumeProfileId: params.resumeProfileId,
-                },
-                orderBy: { updatedAt: "desc" },
-                take: 1,
-              }
-            : false,
+          matches: {
+            where: {
+              userId: params.userId,
+              resumeProfileId,
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 1,
+          },
         },
       },
     },
   });
 
   return savedJobs
-    .filter((savedJob) => savedJob.job.applications.length === 0)
+    .filter((savedJob) => {
+      const application = savedJob.job.applications[0] ?? null;
+      return application === null;
+    })
     .map((savedJob) => {
-      const match = params.resumeProfileId ? savedJob.job.matches[0] ?? null : null;
+      const match = params.resumeProfileId ? (savedJob.job.matches[0] ?? null) : null;
       return {
         id: savedJob.job.id,
         title: savedJob.job.title,
@@ -463,77 +466,87 @@ export async function listAppliedJobs(params: {
   userId: string;
   resumeProfileId?: string | null;
 }) {
-  const applications = await prisma.jobApplication.findMany({
+  const resumeProfileId = params.resumeProfileId ?? "__none__";
+
+  const jobs = await prisma.job.findMany({
     where: {
-      userId: params.userId,
-      job: {
-        status: "active",
-        hiddenBy: { none: { userId: params.userId } },
+      status: "active",
+      hiddenBy: { none: { userId: params.userId } },
+      applications: {
+        some: { userId: params.userId },
       },
     },
-    orderBy: [{ updatedAt: "desc" }],
     include: {
-      job: {
-        include: {
-          source: true,
-          matches: params.resumeProfileId
-            ? {
-                where: {
-                  userId: params.userId,
-                  resumeProfileId: params.resumeProfileId,
-                },
-                orderBy: { updatedAt: "desc" },
-                take: 1,
-              }
-            : false,
-          savedBy: {
-            where: { userId: params.userId },
-            take: 1,
-            orderBy: { createdAt: "desc" },
-          },
+      source: true,
+      applications: {
+        where: { userId: params.userId },
+        take: 1,
+        orderBy: { updatedAt: "desc" },
+      },
+      matches: {
+        where: {
+          userId: params.userId,
+          resumeProfileId,
         },
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+      },
+      savedBy: {
+        where: { userId: params.userId },
+        take: 1,
+        orderBy: { createdAt: "desc" },
       },
     },
   });
 
-  return applications.map((application) => {
-    const match = params.resumeProfileId ? application.job.matches[0] ?? null : null;
-    return {
-      id: application.job.id,
-      title: application.job.title,
-      company: application.job.company,
-      location: application.job.location,
-      remoteType: application.job.remoteType,
-      seniority: application.job.seniority,
-      salaryMin: application.job.salaryMin,
-      salaryMax: application.job.salaryMax,
-      salaryCurrency: application.job.salaryCurrency,
-      postedAt: application.job.postedAt,
-      createdAt: application.job.createdAt,
-      savedAt: application.job.savedBy[0]?.createdAt ?? null,
-      source: application.job.source
-        ? {
-            slug: application.job.source.slug,
-            name: application.job.source.name,
-          }
-        : {
-            slug: "unknown",
-            name: "Unknown",
-          },
-      application: {
-        status: application.status,
-        appliedAt: application.appliedAt,
-        updatedAt: application.updatedAt,
-      },
-      match: match
-        ? {
-            totalScore: match.totalScore,
-            explanationShort: match.explanationShort,
-            matchingSkills: match.matchingSkills,
-            missingSkills: match.missingSkills,
-            computedAt: match.updatedAt,
-          }
-        : null,
-    };
-  });
+  return jobs
+    .sort((a, b) => {
+      const aUpdatedAt = a.applications[0]?.updatedAt ?? a.updatedAt;
+      const bUpdatedAt = b.applications[0]?.updatedAt ?? b.updatedAt;
+      return safeDateMs(bUpdatedAt) - safeDateMs(aUpdatedAt);
+    })
+    .map((job) => {
+      const application = job.applications[0] ?? null;
+      const match = params.resumeProfileId ? (job.matches[0] ?? null) : null;
+
+      return {
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        remoteType: job.remoteType,
+        seniority: job.seniority,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        salaryCurrency: job.salaryCurrency,
+        postedAt: job.postedAt,
+        createdAt: job.createdAt,
+        savedAt: job.savedBy[0]?.createdAt ?? null,
+        source: job.source
+          ? {
+              slug: job.source.slug,
+              name: job.source.name,
+            }
+          : {
+              slug: "unknown",
+              name: "Unknown",
+            },
+        application: application
+          ? {
+              status: application.status,
+              appliedAt: application.appliedAt,
+              updatedAt: application.updatedAt,
+            }
+          : null,
+        match: match
+          ? {
+              totalScore: match.totalScore,
+              explanationShort: match.explanationShort,
+              matchingSkills: match.matchingSkills,
+              missingSkills: match.missingSkills,
+              computedAt: match.updatedAt,
+            }
+          : null,
+      };
+    });
 }
