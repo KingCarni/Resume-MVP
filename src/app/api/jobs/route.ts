@@ -86,6 +86,13 @@ export async function GET(request: NextRequest) {
       source: job.source
         ? { slug: job.source.slug, name: job.source.name }
         : { slug: "unknown", name: "Unknown" },
+      application: job.application
+        ? {
+            status: job.application.status,
+            appliedAt: job.application.appliedAt.toISOString(),
+            updatedAt: job.application.updatedAt.toISOString(),
+          }
+        : null,
       match: job.matchScore != null
         ? {
             totalScore: job.matchScore,

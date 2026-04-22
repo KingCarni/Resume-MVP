@@ -50,6 +50,15 @@ export async function GET(_request: Request, context: RouteContext) {
       isHidden: job.hiddenBy.length > 0,
       savedRecord: job.savedBy[0] ?? null,
       hiddenRecord: job.hiddenBy[0] ?? null,
+      applicationRecord: job.applications[0]
+        ? {
+            id: job.applications[0].id,
+            status: job.applications[0].status,
+            appliedAt: job.applications[0].appliedAt,
+            createdAt: job.applications[0].createdAt,
+            updatedAt: job.applications[0].updatedAt,
+          }
+        : null,
     },
   });
 }

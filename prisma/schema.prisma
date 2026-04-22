@@ -33,6 +33,7 @@ model User {
   jobMatchWarmups JobMatchWarmup[]
   savedJobs       SavedJob[]
   hiddenJobs      HiddenJob[]
+  jobApplications JobApplication[]
 }
 
 model Account {
@@ -227,6 +228,14 @@ enum JobStatus {
   expired
 }
 
+enum JobApplicationStatus {
+  applied
+  interview
+  offer
+  rejected
+  archived
+}
+
 model ResumeProfile {
   id               String         @id @default(cuid())
   userId           String
@@ -318,10 +327,11 @@ model Job {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
-  source   JobSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  matches  JobMatch[]
-  savedBy  SavedJob[]
-  hiddenBy HiddenJob[]
+  source       JobSource       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  matches      JobMatch[]
+  savedBy      SavedJob[]
+  hiddenBy     HiddenJob[]
+  applications JobApplication[]
 
   @@unique([sourceId, externalId])
   @@index([status, createdAt])
@@ -388,6 +398,23 @@ model HiddenJob {
 
   @@unique([userId, jobId])
   @@index([userId, createdAt])
+  @@index([jobId])
+}
+
+model JobApplication {
+  id        String               @id @default(cuid())
+  userId    String
+  jobId     String
+  status    JobApplicationStatus @default(applied)
+  appliedAt DateTime             @default(now())
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@index([userId, status, updatedAt])
   @@index([jobId])
 }
 

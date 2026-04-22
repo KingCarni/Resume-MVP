@@ -30,6 +30,15 @@ type JobDetailItem = {
   };
   savedRecord: { id: string; createdAt: string } | null;
   hiddenRecord: { id: string; createdAt: string; reason: string | null } | null;
+  applicationRecord:
+    | {
+        id: string;
+        status: JobApplicationStatus;
+        appliedAt: string;
+        createdAt: string;
+        updatedAt: string;
+      }
+    | null;
   isSaved: boolean;
   isHidden: boolean;
 };
@@ -88,6 +97,31 @@ type JobsDetailPageProps = {
 };
 type FeedbackTone = "success" | "error" | "info";
 type FeedbackState = { tone: FeedbackTone; message: string } | null;
+type JobApplicationStatus = "applied" | "interview" | "offer" | "rejected" | "archived";
+
+function applicationStatusLabel(status: JobApplicationStatus) {
+  if (status === "interview") return "Interview";
+  if (status === "offer") return "Offer";
+  if (status === "rejected") return "Rejected";
+  if (status === "archived") return "Archived";
+  return "Applied";
+}
+
+function applicationStatusTone(status: JobApplicationStatus) {
+  if (status === "interview") return "border-violet-400/20 bg-violet-500/10 text-violet-200";
+  if (status === "offer") return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
+  if (status === "rejected") return "border-rose-400/20 bg-rose-500/10 text-rose-200";
+  if (status === "archived") return "border-slate-400/20 bg-slate-500/10 text-slate-200";
+  return "border-cyan-400/20 bg-cyan-500/10 text-cyan-200";
+}
+
+function applicationAnalyticsEvent(status: JobApplicationStatus) {
+  if (status === "interview") return "job_application_moved_to_interview" as const;
+  if (status === "offer") return "job_application_moved_to_offer" as const;
+  if (status === "rejected") return "job_application_marked_rejected" as const;
+  if (status === "archived") return "job_application_archived" as const;
+  return "job_application_marked_applied" as const;
+}
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -279,7 +313,9 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchError, setMatchError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [applicationStatus, setApplicationStatus] = useState<JobApplicationStatus | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [applicationLoading, setApplicationLoading] = useState(false);
   const [hideLoading, setHideLoading] = useState(false);
   const [launchMode, setLaunchMode] = useState<"resume" | "cover_letter" | "apply_pack" | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -506,6 +542,62 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
       setSaveLoading(false);
     }
   }
+  async function updateApplicationStatus(status: JobApplicationStatus) {
+    if (!job) return;
+    setApplicationLoading(true);
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/application`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = (await response
+        .json()
+        .catch(() => ({ ok: response.ok }))) as { ok?: boolean; error?: string };
+      if (!response.ok || json.ok === false) {
+        throw new Error(json.error || "Could not update application status.");
+      }
+      setApplicationStatus(status);
+      setJob((current) =>
+        current
+          ? {
+              ...current,
+              applicationRecord: {
+                id: current.applicationRecord?.id || `temp-${current.id}`,
+                status,
+                appliedAt: current.applicationRecord?.appliedAt || new Date().toISOString(),
+                createdAt: current.applicationRecord?.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            }
+          : current,
+      );
+      setFeedback({
+        tone: "success",
+        message: `${job.title} marked as ${applicationStatusLabel(status).toLowerCase()}.`,
+      });
+      trackJobEvent({
+        event: applicationAnalyticsEvent(status),
+        jobId: job.id,
+        resumeProfileId: resumeProfileId || undefined,
+        company: job.company,
+        jobTitle: job.title,
+        sourceSlug: job.source.slug,
+        route: `/jobs/${job.id}`,
+        matchScore: match?.totalScore ?? null,
+        mode: "browse",
+        meta: { status },
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not update application status.",
+      });
+    } finally {
+      setApplicationLoading(false);
+    }
+  }
+
   async function hideJob() {
     if (!job) return;
     setHideLoading(true);
@@ -1068,6 +1160,25 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
                   ? "Starting Cover Letter..."
                   : "Generate Cover Letter (5 credits)"}
               </button>
+              {applicationStatus ? (
+                <div
+                  className={cn(
+                    "inline-flex w-full items-center justify-center rounded-2xl border px-5 py-3 text-sm font-semibold",
+                    applicationStatusTone(applicationStatus),
+                  )}
+                >
+                  {applicationStatusLabel(applicationStatus)}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => updateApplicationStatus("applied")}
+                  disabled={applicationLoading}
+                  className="inline-flex w-full items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {applicationLoading ? "Updating..." : "Mark Applied"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={toggleSaveJob}
@@ -1076,6 +1187,27 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
               >
                 {saveLoading ? "Saving..." : saved ? "Saved" : "Save Job"}
               </button>
+              {applicationStatus ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {(["applied", "interview", "offer", "rejected", "archived"] as JobApplicationStatus[]).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => updateApplicationStatus(status)}
+                      disabled={applicationLoading}
+                      className={cn(
+                        "rounded-2xl border px-3 py-2 text-xs font-semibold transition",
+                        applicationStatus === status
+                          ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-200"
+                          : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:bg-white/10",
+                        applicationLoading && "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      {applicationStatusLabel(status)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={hideJob}

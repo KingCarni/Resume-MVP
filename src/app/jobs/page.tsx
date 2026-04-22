@@ -46,6 +46,11 @@ type JobListItem = {
     slug: string;
     name: string;
   };
+  application: null | {
+    status: JobApplicationStatus;
+    appliedAt: string;
+    updatedAt: string;
+  };
   match: null | {
     totalScore: number;
     explanationShort: string | null;
@@ -91,6 +96,32 @@ type FeedbackState = {
   tone: FeedbackTone;
   message: string;
 } | null;
+
+type JobApplicationStatus = "applied" | "interview" | "offer" | "rejected" | "archived";
+
+function applicationStatusLabel(status: JobApplicationStatus) {
+  if (status === "interview") return "Interview";
+  if (status === "offer") return "Offer";
+  if (status === "rejected") return "Rejected";
+  if (status === "archived") return "Archived";
+  return "Applied";
+}
+
+function applicationStatusTone(status: JobApplicationStatus) {
+  if (status === "interview") return "border-violet-400/20 bg-violet-500/10 text-violet-200";
+  if (status === "offer") return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
+  if (status === "rejected") return "border-rose-400/20 bg-rose-500/10 text-rose-200";
+  if (status === "archived") return "border-slate-400/20 bg-slate-500/10 text-slate-200";
+  return "border-cyan-400/20 bg-cyan-500/10 text-cyan-200";
+}
+
+function applicationAnalyticsEvent(status: JobApplicationStatus) {
+  if (status === "interview") return "job_application_moved_to_interview" as const;
+  if (status === "offer") return "job_application_moved_to_offer" as const;
+  if (status === "rejected") return "job_application_marked_rejected" as const;
+  if (status === "archived") return "job_application_archived" as const;
+  return "job_application_marked_applied" as const;
+}
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -366,6 +397,7 @@ export default function JobsPage() {
   const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
   const [warmupPollCount, setWarmupPollCount] = useState(0);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
+  const [applyingJobIds, setApplyingJobIds] = useState<Record<string, boolean>>({});
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -772,6 +804,61 @@ export default function JobsPage() {
       });
     } finally {
       setSavingJobIds((current) => ({ ...current, [job.id]: false }));
+    }
+  }
+
+  async function updateApplicationStatus(job: JobListItem, status: JobApplicationStatus) {
+    setApplyingJobIds((current) => ({ ...current, [job.id]: true }));
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/application`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = (await response
+        .json()
+        .catch(() => ({ ok: response.ok }))) as { ok?: boolean; error?: string };
+      if (!response.ok || json.ok === false)
+        throw new Error(json.error || "Could not update application status.");
+      setJobs((current) =>
+        current.map((item) =>
+          item.id === job.id
+            ? {
+                ...item,
+                application: {
+                  status,
+                  appliedAt: item.application?.appliedAt ?? new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+              }
+            : item,
+        ),
+      );
+      setFeedback({
+        tone: "success",
+        message: `${job.title} marked as ${applicationStatusLabel(status).toLowerCase()}.`,
+      });
+      trackJobEvent({
+        event: applicationAnalyticsEvent(status),
+        jobId: job.id,
+        resumeProfileId: selectedProfileId || undefined,
+        company: job.company,
+        jobTitle: job.title,
+        sourceSlug: job.source.slug,
+        route: "/jobs",
+        mode: "browse",
+        matchScore: job.match?.totalScore ?? null,
+        page,
+        sort: appliedSort,
+        meta: { status },
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not update application status.",
+      });
+    } finally {
+      setApplyingJobIds((current) => ({ ...current, [job.id]: false }));
     }
   }
 
@@ -1460,6 +1547,16 @@ export default function JobsPage() {
                           </p>
                         )}
                         <div className="mt-4 flex flex-wrap gap-2">
+                          {job.application ? (
+                            <span
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-xs font-medium",
+                                applicationStatusTone(job.application.status),
+                              )}
+                            >
+                              {applicationStatusLabel(job.application.status)}
+                            </span>
+                          ) : null}
                           {chips.map((chip) => (
                             <span
                               key={chip}
@@ -1510,6 +1607,28 @@ export default function JobsPage() {
                         >
                           View Job
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            job.application
+                              ? undefined
+                              : updateApplicationStatus(job, "applied")
+                          }
+                          disabled={!!applyingJobIds[job.id] || !!job.application}
+                          className={cn(
+                            "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
+                            job.application
+                              ? "cursor-default bg-cyan-500/15 text-cyan-100"
+                              : "bg-emerald-400 text-slate-950 hover:bg-emerald-300",
+                            applyingJobIds[job.id] && "cursor-not-allowed opacity-60",
+                          )}
+                        >
+                          {applyingJobIds[job.id]
+                            ? "Updating..."
+                            : job.application
+                              ? applicationStatusLabel(job.application.status)
+                              : "Mark Applied"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => toggleSaveJob(job)}

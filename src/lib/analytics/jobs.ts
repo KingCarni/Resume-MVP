@@ -26,7 +26,12 @@ export type JobAnalyticsEventName =
   | "job_apply_pack_failed"
   | "job_buy_credits_view"
   | "job_buy_credits_checkout_started"
-  | "job_buy_credits_purchase_completed";
+  | "job_buy_credits_purchase_completed"
+  | "job_application_marked_applied"
+  | "job_application_moved_to_interview"
+  | "job_application_moved_to_offer"
+  | "job_application_marked_rejected"
+  | "job_application_archived";
 
 export type JobAnalyticsPayload = {
   event: JobAnalyticsEventName;
