@@ -5560,38 +5560,17 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   setProfileSyncSaving(true);
 
-  const fallbackProfileId = String(analysis?.autoResumeProfile?.id || "").trim();
   const activeResumeProfileId = (() => {
-    if (typeof window === "undefined") {
-      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || fallbackProfileId).trim();
-    }
+    if (typeof window === "undefined") return "";
     const stored = window.localStorage.getItem("activeResumeProfileId") || "";
-    return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored || fallbackProfileId).trim();
+    return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
   })();
 
   const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
     ? structuredSnapshotToResumeText(structuredResumeSnapshot)
     : "";
-  let draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
-  let normalizedDraft = normalizeResumeTextForParsing(draftSource);
-
-  if (normalizedDraft.length < 120) {
-    const hydrated = await hydrateLatestSavedResume({
-      force: true,
-      preferredProfileId: activeResumeProfileId || fallbackProfileId || null,
-    });
-    const hydratedSource = String(hydrated?.structuredText || hydrated?.text || hydrated?.htmlText || "").trim();
-    if (hydratedSource) {
-      draftSource = hydratedSource;
-      normalizedDraft = normalizeResumeTextForParsing(hydratedSource);
-      setResumeText(hydratedSource);
-    }
-  }
-
-  if (normalizedDraft.length < 120) {
-    setProfileSyncSaving(false);
-    return null;
-  }
+  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+  const normalizedDraft = normalizeResumeTextForParsing(draftSource);
 
   const nextTitle = String(
     profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
@@ -5690,30 +5669,25 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   const finishSetupAndGoToJobs = useCallback(async () => {
     const syncedProfileId = await syncResumeProfileDraft();
-    const fallbackProfileId = String(
-      syncedProfileId ||
-      searchParams.get("resumeProfileId") ||
-      applyPackBundle?.resumeProfileId ||
-      analysis?.autoResumeProfile?.id ||
-      (typeof window !== "undefined" ? window.localStorage.getItem("activeResumeProfileId") || "" : "")
-    ).trim();
+    const fallbackProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+    })();
 
-    if (!syncedProfileId) {
-      setError("Could not finish setup yet. Save or load your resume first, then try again.");
+    const nextProfileId = String(syncedProfileId || fallbackProfileId || "").trim();
+    if (nextProfileId) {
+      router.push(`/jobs?resumeProfileId=${encodeURIComponent(nextProfileId)}`);
       return;
     }
 
-    const nextHref = fallbackProfileId
-      ? `/jobs?resumeProfileId=${encodeURIComponent(fallbackProfileId)}`
-      : "/jobs";
-
-    if (typeof window !== "undefined") {
-      window.location.assign(nextHref);
+    if (!profileSyncDirty && analysis) {
+      router.push("/jobs");
       return;
     }
 
-    router.push(nextHref);
-  }, [syncResumeProfileDraft, router, searchParams, applyPackBundle, analysis]);
+    setError("Could not finish setup yet. Save or load your resume first, then try again.");
+  }, [syncResumeProfileDraft, router, profileSyncDirty, analysis, searchParamsKey, applyPackBundle]);
 
 useEffect(() => {
   if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;

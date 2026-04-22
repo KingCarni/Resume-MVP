@@ -79,11 +79,6 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => null)) as SyncBody | null;
-  const rawText = String(body?.rawText ?? "").trim();
-  if (rawText.length < 120) {
-    return NextResponse.json({ ok: false, error: "Resume text too short to sync" }, { status: 400 });
-  }
-
   const profileId = String(body?.profileId ?? "").trim();
   const structuredData = sanitizeStructuredResumeSnapshot(body?.structuredData);
   const templateMigration = normalizeLegacyResumeTemplateId(body?.template);
@@ -108,7 +103,54 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const nextTitle = String(body?.title ?? existingProfile?.title ?? "").trim() || null;
+  const existingSourceDocument = existingProfile?.sourceDocumentId
+    ? await prisma.document.findFirst({
+        where: { id: existingProfile.sourceDocumentId, userId, type: DocumentType.resume },
+        select: {
+          id: true,
+          title: true,
+          template: true,
+          html: true,
+          text: true,
+          structuredData: true,
+          sourceFileName: true,
+          sourceMimeType: true,
+          sourceFileExtension: true,
+          sourceKind: true,
+        },
+      })
+    : null;
+
+  const latestResumeDocument = await prisma.document.findFirst({
+    where: { userId, type: DocumentType.resume },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      template: true,
+      html: true,
+      text: true,
+      structuredData: true,
+      sourceFileName: true,
+      sourceMimeType: true,
+      sourceFileExtension: true,
+      sourceKind: true,
+    },
+  });
+
+  const recoveredDocument =
+    existingSourceDocument && String(existingSourceDocument.text ?? "").trim().length >= 120
+      ? existingSourceDocument
+      : latestResumeDocument && String(latestResumeDocument.text ?? "").trim().length >= 120
+        ? latestResumeDocument
+        : existingSourceDocument ?? latestResumeDocument;
+
+  const rawText = String(body?.rawText ?? "").trim() || String(recoveredDocument?.text ?? "").trim();
+  if (rawText.length < 120) {
+    return NextResponse.json({ ok: false, error: "Resume text too short to sync" }, { status: 400 });
+  }
+
+  const nextTitle = String(body?.title ?? existingProfile?.title ?? recoveredDocument?.title ?? "").trim() || null;
   const nextSummary = body?.summary !== undefined ? String(body.summary ?? "").trim() || null : existingProfile?.summary ?? null;
   const nextSkills = toStringArray(body?.skills).length ? toStringArray(body?.skills) : toStringArray(existingProfile?.normalizedSkills);
   const nextTitles = toStringArray(body?.titles).length ? toStringArray(body?.titles) : toStringArray(existingProfile?.normalizedTitles);
@@ -116,31 +158,17 @@ export async function POST(request: NextRequest) {
   const nextYearsExperience = body?.yearsExperience ?? existingProfile?.yearsExperience ?? null;
   const nextSeniority = body?.seniority ?? (existingProfile ? String(existingProfile.seniority) : null);
 
-  let sourceDocumentId = existingProfile?.sourceDocumentId ?? null;
-
-  if (!sourceDocumentId) {
-    const latestResumeDocument = await prisma.document.findFirst({
-      where: {
-        userId,
-        type: DocumentType.resume,
-      },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    });
-
-    sourceDocumentId = latestResumeDocument?.id ?? null;
-  }
-
+  let sourceDocumentId = existingProfile?.sourceDocumentId ?? recoveredDocument?.id ?? null;
   const documentData = {
     title: nextTitle,
-    template: normalizedTemplate,
-    html: String(body?.html ?? "").trim() || null,
+    template: normalizedTemplate || recoveredDocument?.template || null,
+    html: String(body?.html ?? "").trim() || String(recoveredDocument?.html ?? "").trim() || null,
     text: rawText,
-    structuredData: structuredDataValue,
-    sourceFileName: sourceMeta?.fileName ?? null,
-    sourceMimeType: sourceMeta?.mimeType ?? null,
-    sourceFileExtension: sourceMeta?.extension ?? null,
-    sourceKind: sourceMeta?.sourceKind ?? null,
+    structuredData: structuredData ? structuredDataValue : ((recoveredDocument?.structuredData as Prisma.InputJsonValue | null) ?? Prisma.JsonNull),
+    sourceFileName: sourceMeta?.fileName ?? recoveredDocument?.sourceFileName ?? null,
+    sourceMimeType: sourceMeta?.mimeType ?? recoveredDocument?.sourceMimeType ?? null,
+    sourceFileExtension: sourceMeta?.extension ?? recoveredDocument?.sourceFileExtension ?? null,
+    sourceKind: sourceMeta?.sourceKind ?? recoveredDocument?.sourceKind ?? null,
   };
 
   if (sourceDocumentId) {
