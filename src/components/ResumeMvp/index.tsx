@@ -6313,6 +6313,20 @@ useEffect(() => {
               </div>
             </div>
 
+            <div id="summary-section" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Summary</div>
+              <textarea
+                value={profile.summary}
+                onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
+                placeholder="Summary (optional)"
+                rows={4}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
+              />
+              <div className="mt-2 text-xs text-black/70 dark:text-slate-300/80">
+                Add a short summary that frames your fit before the experience section.
+              </div>
+            </div>
+
             {/* Header details */}
             <div id="header-details" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
               <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Header details</div>
@@ -6378,17 +6392,6 @@ useEffect(() => {
                 >
                   {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : applyPackPricingEligible ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : applyPackPricingEligible ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
-
-                
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
-                  <input
-                    type="checkbox"
-                    checked={showEducationOnResume}
-                    onChange={(e) => setShowEducationOnResume(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show Education on resume
-                </label>
 
                 <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input

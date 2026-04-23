@@ -17,6 +17,11 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
             Git-a-Job
           </Link>
           <div className="hidden items-center gap-2 md:flex">
+            {isAuthed ? (
+              <Link href="/jobs" className="shell-nav-link">
+                Open Jobs
+              </Link>
+            ) : null}
             <Link href="/resume" className="shell-nav-link">
               Resume
             </Link>
@@ -40,9 +45,6 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
               </Link>
               <Link href="/donate" className="shell-secondary-btn">
                 Donate
-              </Link>
-              <Link href="/jobs" className="shell-secondary-btn">
-                Open Jobs
               </Link>
               <Link href={signOutHref} className="shell-secondary-btn">
                 Sign Out
