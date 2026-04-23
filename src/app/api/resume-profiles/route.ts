@@ -14,8 +14,6 @@ import { markJobMatchWarmupStale } from "@/lib/jobs/warmup";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-
-
 type ResumeDocumentPayload = {
   id: string;
   title: string | null;
@@ -45,6 +43,13 @@ type ResumeProfileCreateBody = {
   seniority?: string | null;
   replaceLatest?: boolean;
   autoMode?: boolean;
+};
+
+type ProfileBackfillCandidate = {
+  id: string;
+  title: string | null;
+  rawText: string | null;
+  sourceDocumentId: string | null;
 };
 
 async function getUserIdFromSession() {
@@ -130,6 +135,50 @@ function formatProfileItem(profile: {
   };
 }
 
+async function ensureResumeAttachmentForProfile(userId: string, profile: ProfileBackfillCandidate) {
+  const rawText = String(profile.rawText ?? "").trim();
+  if (rawText.length < 120) return null;
+  if (profile.sourceDocumentId) return profile.sourceDocumentId;
+
+  const matchingDocument = await prisma.document.findFirst({
+    where: {
+      userId,
+      type: DocumentType.resume,
+      text: rawText,
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+
+  const sourceDocumentId = matchingDocument?.id
+    ? matchingDocument.id
+    : (
+        await prisma.document.create({
+          data: {
+            userId,
+            type: DocumentType.resume,
+            title: profile.title || "Resume Profile",
+            text: rawText,
+            html: null,
+            template: null,
+            sourceKind: "resume_profile_backfill",
+          },
+          select: { id: true },
+        })
+      ).id;
+
+  await prisma.resumeProfile.updateMany({
+    where: {
+      id: profile.id,
+      userId,
+      sourceDocumentId: null,
+    },
+    data: { sourceDocumentId },
+  });
+
+  return sourceDocumentId;
+}
+
 async function backfillMissingResumeAttachments(userId: string) {
   const profiles = await prisma.resumeProfile.findMany({
     where: {
@@ -142,32 +191,79 @@ async function backfillMissingResumeAttachments(userId: string) {
       id: true,
       title: true,
       rawText: true,
+      sourceDocumentId: true,
     },
   });
 
-  const candidates = profiles.filter((profile) => String(profile.rawText ?? "").trim().length >= 120);
-  if (!candidates.length) return;
+  if (!profiles.length) return 0;
 
-  for (const profile of candidates) {
-    const rawText = String(profile.rawText ?? "").trim();
-    const document = await prisma.document.create({
-      data: {
+  let attachedCount = 0;
+  for (const profile of profiles) {
+    const attachedId = await ensureResumeAttachmentForProfile(userId, profile);
+    if (attachedId) attachedCount += 1;
+  }
+
+  return attachedCount;
+}
+
+async function loadProfilesPayload(userId: string) {
+  const [profiles, resumeDocuments] = await Promise.all([
+    prisma.resumeProfile.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        seniority: true,
+        yearsExperience: true,
+        updatedAt: true,
+        normalizedSkills: true,
+        normalizedTitles: true,
+        keywords: true,
+        rawText: true,
+        sourceDocumentId: true,
+        sourceDocument: {
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            text: true,
+            html: true,
+            structuredData: true,
+            sourceFileName: true,
+            sourceMimeType: true,
+            sourceFileExtension: true,
+            sourceKind: true,
+          },
+        },
+      },
+    }),
+    prisma.document.findMany({
+      where: {
         userId,
         type: DocumentType.resume,
-        title: profile.title || "Resume Profile",
-        text: rawText,
-        html: null,
-        template: null,
-        sourceKind: "resume_profile_backfill",
       },
-      select: { id: true },
-    });
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+        text: true,
+        html: true,
+        structuredData: true,
+        sourceFileName: true,
+        sourceMimeType: true,
+        sourceFileExtension: true,
+        sourceKind: true,
+      },
+    }),
+  ]);
 
-    await prisma.resumeProfile.update({
-      where: { id: profile.id },
-      data: { sourceDocumentId: document.id },
-    });
-  }
+  return {
+    items: profiles.map(formatProfileItem),
+    resumeDocuments: resumeDocuments.map(formatResumeDocument),
+  };
 }
 
 export async function GET() {
@@ -177,73 +273,15 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const loadPayload = async () => {
-    const [profiles, resumeDocuments] = await Promise.all([
-      prisma.resumeProfile.findMany({
-        where: { userId },
-        orderBy: { updatedAt: "desc" },
-        select: {
-          id: true,
-          title: true,
-          summary: true,
-          seniority: true,
-          yearsExperience: true,
-          updatedAt: true,
-          normalizedSkills: true,
-          normalizedTitles: true,
-          keywords: true,
-          rawText: true,
-          sourceDocumentId: true,
-          sourceDocument: {
-            select: {
-              id: true,
-              title: true,
-              createdAt: true,
-              text: true,
-              html: true,
-              structuredData: true,
-              sourceFileName: true,
-              sourceMimeType: true,
-              sourceFileExtension: true,
-              sourceKind: true,
-            },
-          },
-        },
-      }),
-      prisma.document.findMany({
-        where: {
-          userId,
-          type: DocumentType.resume,
-        },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          title: true,
-          createdAt: true,
-          text: true,
-          html: true,
-          structuredData: true,
-          sourceFileName: true,
-          sourceMimeType: true,
-          sourceFileExtension: true,
-          sourceKind: true,
-        },
-      }),
-    ]);
-
-    return {
-      items: profiles.map(formatProfileItem),
-      resumeDocuments: resumeDocuments.map(formatResumeDocument),
-    };
-  };
-
-  let payload = await loadPayload();
-  if (!payload.resumeDocuments.length && payload.items.some((item) => item.rawTextLength >= 120 && !item.sourceDocumentId)) {
+  try {
     await backfillMissingResumeAttachments(userId);
-    payload = await loadPayload();
+    const payload = await loadProfilesPayload(userId);
+    return NextResponse.json({ ok: true, items: payload.items, resumeDocuments: payload.resumeDocuments });
+  } catch (error) {
+    console.error("[resume-profiles][GET] failed", error);
+    const message = error instanceof Error ? error.message : "Failed to load resume profiles";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, items: payload.items, resumeDocuments: payload.resumeDocuments });
 }
 
 export async function POST(request: NextRequest) {
@@ -444,7 +482,6 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ ok: true, item: formatProfileItem(item) });
 }
-
 
 export async function DELETE(request: NextRequest) {
   const userId = await getUserIdFromSession();
