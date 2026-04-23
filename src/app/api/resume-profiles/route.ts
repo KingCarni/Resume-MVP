@@ -14,6 +14,20 @@ import { markJobMatchWarmupStale } from "@/lib/jobs/warmup";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+
+
+type ResumeDocumentPayload = {
+  id: string;
+  title: string | null;
+  createdAt: Date;
+  text?: string | null;
+  html?: string | null;
+  structuredData?: unknown;
+  sourceFileName?: string | null;
+  sourceMimeType?: string | null;
+  sourceFileExtension?: string | null;
+  sourceKind?: string | null;
+};
 type ResumeProfileCreateBody = {
   id?: string | null;
   title?: string | null;
@@ -70,6 +84,21 @@ function cleanTagArray(values: string[]): string[] {
   return out;
 }
 
+function formatResumeDocument(document: ResumeDocumentPayload) {
+  return {
+    id: document.id,
+    title: document.title,
+    createdAt: document.createdAt,
+    text: typeof document.text === "string" ? document.text : null,
+    html: typeof document.html === "string" ? document.html : null,
+    structuredData: document.structuredData ?? null,
+    sourceFileName: document.sourceFileName ?? null,
+    sourceMimeType: document.sourceMimeType ?? null,
+    sourceFileExtension: document.sourceFileExtension ?? null,
+    sourceKind: document.sourceKind ?? null,
+  };
+}
+
 function formatProfileItem(profile: {
   id: string;
   title: string | null;
@@ -82,7 +111,7 @@ function formatProfileItem(profile: {
   keywords: unknown;
   rawText?: string | null;
   sourceDocumentId: string | null;
-  sourceDocument?: { id: string; title: string | null; createdAt: Date } | null;
+  sourceDocument?: ResumeDocumentPayload | null;
 }) {
   const normalizedSkills = jsonToStringArray(profile.normalizedSkills);
   const normalizedTitles = jsonToStringArray(profile.normalizedTitles);
@@ -97,14 +126,48 @@ function formatProfileItem(profile: {
     rawTextLength: typeof profile.rawText === "string" ? profile.rawText.length : 0,
     skillsCount: normalizedSkills.length,
     titlesCount: normalizedTitles.length,
-    sourceDocument: profile.sourceDocument
-      ? {
-          id: profile.sourceDocument.id,
-          title: profile.sourceDocument.title,
-          createdAt: profile.sourceDocument.createdAt,
-        }
-      : null,
+    sourceDocument: profile.sourceDocument ? formatResumeDocument(profile.sourceDocument) : null,
   };
+}
+
+async function backfillMissingResumeAttachments(userId: string) {
+  const profiles = await prisma.resumeProfile.findMany({
+    where: {
+      userId,
+      sourceDocumentId: null,
+      rawText: { not: null },
+    },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      rawText: true,
+    },
+  });
+
+  const candidates = profiles.filter((profile) => String(profile.rawText ?? "").trim().length >= 120);
+  if (!candidates.length) return;
+
+  for (const profile of candidates) {
+    const rawText = String(profile.rawText ?? "").trim();
+    const document = await prisma.document.create({
+      data: {
+        userId,
+        type: DocumentType.resume,
+        title: profile.title || "Resume Profile",
+        text: rawText,
+        html: null,
+        template: null,
+        sourceKind: "resume_profile_backfill",
+      },
+      select: { id: true },
+    });
+
+    await prisma.resumeProfile.update({
+      where: { id: profile.id },
+      data: { sourceDocumentId: document.id },
+    });
+  }
 }
 
 export async function GET() {
@@ -114,48 +177,73 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const [profiles, resumeDocuments] = await Promise.all([
-    prisma.resumeProfile.findMany({
-      where: { userId },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        summary: true,
-        seniority: true,
-        yearsExperience: true,
-        updatedAt: true,
-        normalizedSkills: true,
-        normalizedTitles: true,
-        keywords: true,
-        rawText: true,
-        sourceDocumentId: true,
-        sourceDocument: {
-          select: {
-            id: true,
-            title: true,
-            createdAt: true,
+  const loadPayload = async () => {
+    const [profiles, resumeDocuments] = await Promise.all([
+      prisma.resumeProfile.findMany({
+        where: { userId },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          summary: true,
+          seniority: true,
+          yearsExperience: true,
+          updatedAt: true,
+          normalizedSkills: true,
+          normalizedTitles: true,
+          keywords: true,
+          rawText: true,
+          sourceDocumentId: true,
+          sourceDocument: {
+            select: {
+              id: true,
+              title: true,
+              createdAt: true,
+              text: true,
+              html: true,
+              structuredData: true,
+              sourceFileName: true,
+              sourceMimeType: true,
+              sourceFileExtension: true,
+              sourceKind: true,
+            },
           },
         },
-      },
-    }),
-    prisma.document.findMany({
-      where: {
-        userId,
-        type: DocumentType.resume,
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-      },
-    }),
-  ]);
+      }),
+      prisma.document.findMany({
+        where: {
+          userId,
+          type: DocumentType.resume,
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          text: true,
+          html: true,
+          structuredData: true,
+          sourceFileName: true,
+          sourceMimeType: true,
+          sourceFileExtension: true,
+          sourceKind: true,
+        },
+      }),
+    ]);
 
-  const items = profiles.map(formatProfileItem);
+    return {
+      items: profiles.map(formatProfileItem),
+      resumeDocuments: resumeDocuments.map(formatResumeDocument),
+    };
+  };
 
-  return NextResponse.json({ ok: true, items, resumeDocuments });
+  let payload = await loadPayload();
+  if (!payload.resumeDocuments.length && payload.items.some((item) => item.rawTextLength >= 120 && !item.sourceDocumentId)) {
+    await backfillMissingResumeAttachments(userId);
+    payload = await loadPayload();
+  }
+
+  return NextResponse.json({ ok: true, items: payload.items, resumeDocuments: payload.resumeDocuments });
 }
 
 export async function POST(request: NextRequest) {
@@ -366,8 +454,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const body = (await request.json().catch(() => null)) as { id?: string | null } | null;
-  const id = String(searchParams.get("id") ?? body?.id ?? "").trim();
+  const id = String(searchParams.get("id") ?? "").trim();
 
   if (!id) {
     return NextResponse.json({ ok: false, error: "Missing profile id" }, { status: 400 });

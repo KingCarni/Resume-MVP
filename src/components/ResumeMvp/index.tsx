@@ -64,6 +64,31 @@ type LatestResumePayload = {
   error?: string;
 };
 
+
+type ResumeDocumentHydrationItem = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  text?: string | null;
+  html?: string | null;
+  structuredData?: StructuredResumeSnapshot | null;
+  sourceFileName?: string | null;
+  sourceMimeType?: string | null;
+  sourceFileExtension?: string | null;
+  sourceKind?: string | null;
+};
+
+type ResumeProfileHydrationItem = {
+  id: string;
+  title?: string | null;
+  summary?: string | null;
+  updatedAt?: string | null;
+  rawText?: string | null;
+  sourceDocumentId?: string | null;
+  sourceDocument?: ResumeDocumentHydrationItem | null;
+  normalizedTitles?: string[];
+};
+
 type WorkflowChecklistItem = {
   id: string;
   label: string;
@@ -2867,6 +2892,80 @@ function RewriteDiff({
 }
 
 
+
+function looksLikePersonName(value: string) {
+  const cleaned = value.trim();
+  if (!cleaned) return false;
+  if (cleaned.length > 60) return false;
+  if (/[@]|https?:\/\//i.test(cleaned)) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return false;
+  return words.every((word) => /^[A-Za-z][A-Za-z'’.-]*$/.test(word));
+}
+
+function deriveProfileFromResumeText(args: {
+  resumeText: string;
+  fallbackTitle?: string | null;
+  fallbackSummary?: string | null;
+  normalizedTitles?: string[];
+}) {
+  const lines = String(args.resumeText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 18);
+
+  const joined = lines.join(" \n ");
+  const emailMatch = joined.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const phoneMatch = joined.match(/(?:\+?\d[\d\s().-]{7,}\d)/);
+  const linkedinMatch = joined.match(/https?:\/\/(?:www\.)?linkedin\.com\/[^\s]+/i);
+  const websiteMatch = joined.match(/https?:\/\/(?!www\.)[^\s]+/i);
+
+  let fullName = "";
+  let titleLine = "";
+  let locationLine = "";
+
+  const nameIndex = lines.findIndex(looksLikePersonName);
+  if (nameIndex >= 0) {
+    fullName = lines[nameIndex];
+  }
+
+  const fallbackTitle = String(args.fallbackTitle || "").trim();
+  const normalizedTitle = Array.isArray(args.normalizedTitles) && args.normalizedTitles.length
+    ? String(args.normalizedTitles[0] || "").trim()
+    : "";
+
+  const titleCandidate = lines.find((line, index) => {
+    if (index === nameIndex) return false;
+    if (emailMatch && line.includes(emailMatch[0])) return false;
+    if (phoneMatch && line.includes(phoneMatch[0])) return false;
+    if (linkedinMatch && line.includes(linkedinMatch[0])) return false;
+    if (/linkedin|portfolio|website/i.test(line)) return false;
+    return line.length <= 90;
+  });
+  titleLine = fallbackTitle || normalizedTitle || titleCandidate || "";
+
+  const locationCandidate = lines.find((line) => {
+    if (fullName && line === fullName) return false;
+    if (titleLine && line === titleLine) return false;
+    if (emailMatch && line.includes(emailMatch[0])) return false;
+    if (phoneMatch && line.includes(phoneMatch[0])) return false;
+    return /,/.test(line) && line.length <= 80;
+  });
+  locationLine = locationCandidate || "";
+
+  return {
+    fullName,
+    titleLine,
+    locationLine,
+    email: emailMatch?.[0] || "",
+    phone: phoneMatch?.[0] || "",
+    linkedin: linkedinMatch?.[0] || "",
+    portfolio: websiteMatch?.[0] && websiteMatch[0] !== linkedinMatch?.[0] ? websiteMatch[0] : "",
+    summary: String(args.fallbackSummary || "").trim(),
+  };
+}
+
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -3129,29 +3228,63 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           const payload = (await parseApiResponse(response)) as { ok?: boolean; items?: Array<Record<string, unknown>> } | string;
 
           if (response.ok && typeof payload !== "string" && payload?.ok && Array.isArray(payload.items)) {
-            const matchedProfile = payload.items.find((item) => String(item?.id || "").trim() === preferredProfileId) as
-              | { rawText?: string | null; title?: string | null; updatedAt?: string | null }
-              | undefined;
+            const matchedProfile = payload.items.find((item) => String(item?.id || "").trim() === preferredProfileId) as ResumeProfileHydrationItem | undefined;
+            const resumeDocuments = Array.isArray((payload as { resumeDocuments?: ResumeDocumentHydrationItem[] }).resumeDocuments)
+              ? ((payload as { resumeDocuments?: ResumeDocumentHydrationItem[] }).resumeDocuments as ResumeDocumentHydrationItem[])
+              : [];
+
+            const preferredDocument = matchedProfile?.sourceDocument
+              || resumeDocuments.find((document) => String(document.id || "").trim() === String(matchedProfile?.sourceDocumentId || "").trim())
+              || null;
 
             const profileText = String(matchedProfile?.rawText || "").trim();
-            if (profileText) {
+            const documentText = String(preferredDocument?.text || "").trim();
+            const htmlText = String(preferredDocument?.html || "").trim()
+              ? htmlToPlainText(String(preferredDocument?.html || ""))
+              : "";
+            const structuredApplied = applyStructuredSnapshot(preferredDocument?.structuredData || null);
+            const structuredText = structuredApplied && preferredDocument?.structuredData
+              ? structuredSnapshotToResumeText(preferredDocument.structuredData)
+              : "";
+            const structuredAnalyzeText = structuredApplied && preferredDocument?.structuredData
+              ? structuredSnapshotToAnalyzeText(preferredDocument.structuredData)
+              : "";
+            const preferredText = structuredApplied
+              ? structuredAnalyzeText || structuredText || profileText || documentText || htmlText
+              : profileText || documentText || htmlText || structuredText;
+
+            if (preferredText || structuredApplied) {
               latestResumeHydratedRef.current = true;
-              setResumeText(profileText);
+              if (preferredText) {
+                setResumeText(preferredText);
+              }
+
+              if (!structuredApplied && preferredText) {
+                setProfile(deriveProfileFromResumeText({
+                  resumeText: preferredText,
+                  fallbackTitle: matchedProfile?.title,
+                  fallbackSummary: matchedProfile?.summary,
+                  normalizedTitles: matchedProfile?.normalizedTitles,
+                }));
+              } else if (!structuredApplied && matchedProfile?.summary) {
+                setProfile((prev) => ({ ...prev, summary: String(matchedProfile.summary || "") }));
+              }
+
               setResumeSourceMeta({
-                fileName: String(matchedProfile?.title || "").trim() || null,
-                mimeType: null,
-                extension: null,
-                sourceKind: "resume_profile",
+                fileName: preferredDocument?.sourceFileName || String(preferredDocument?.title || matchedProfile?.title || "").trim() || null,
+                mimeType: preferredDocument?.sourceMimeType || null,
+                extension: preferredDocument?.sourceFileExtension || null,
+                sourceKind: preferredDocument?.sourceKind || (preferredDocument ? "saved_resume" : "resume_profile"),
               });
               setLatestResumeMeta({
-                title: String(matchedProfile?.title || "Resume profile").trim() || "Resume profile",
-                createdAt: String(matchedProfile?.updatedAt || "").trim(),
+                title: String(preferredDocument?.title || matchedProfile?.title || "Resume profile").trim() || "Resume profile",
+                createdAt: String(preferredDocument?.createdAt || matchedProfile?.updatedAt || "").trim(),
               });
 
               return {
-                text: profileText,
-                structuredText: "",
-                htmlText: "",
+                text: preferredText,
+                structuredText,
+                htmlText,
               };
             }
           }
@@ -5571,6 +5704,10 @@ const syncResumeProfileDraft = useCallback(async () => {
     : "";
   const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
   const normalizedDraft = normalizeResumeTextForParsing(draftSource);
+  if (normalizedDraft.length < 120) {
+    setProfileSyncSaving(false);
+    return null;
+  }
 
   const nextTitle = String(
     profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
@@ -5669,25 +5806,15 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   const finishSetupAndGoToJobs = useCallback(async () => {
     const syncedProfileId = await syncResumeProfileDraft();
-    const fallbackProfileId = (() => {
-      if (typeof window === "undefined") return "";
-      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
-      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
-    })();
-
-    const nextProfileId = String(syncedProfileId || fallbackProfileId || "").trim();
-    if (nextProfileId) {
-      router.push(`/jobs?resumeProfileId=${encodeURIComponent(nextProfileId)}`);
+    if (syncedProfileId) {
+      router.push("/jobs");
       return;
     }
 
     if (!profileSyncDirty && analysis) {
       router.push("/jobs");
-      return;
     }
-
-    setError("Could not finish setup yet. Save or load your resume first, then try again.");
-  }, [syncResumeProfileDraft, router, profileSyncDirty, analysis, searchParamsKey, applyPackBundle]);
+  }, [syncResumeProfileDraft, router, profileSyncDirty, analysis]);
 
 useEffect(() => {
   if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;
