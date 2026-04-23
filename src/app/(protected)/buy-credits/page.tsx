@@ -17,13 +17,13 @@ export default function Page() {
             Saved Jobs
           </Link>
 
-          <Link href="/account/donate" className="shell-secondary-btn">
+          <Link href="/account/donate" className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black hover:bg-emerald-700">
             Donate
           </Link>
         </div>
       }
     >
-      <div className="text-white">
+      <div className="text-black dark:text-white">
         <BuyCreditsButton />
       </div>
     </DashboardShell>

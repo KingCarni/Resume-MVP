@@ -7,11 +7,11 @@ import { trackJobEvent } from "@/lib/analytics/jobs";
 
 type Pack = "standard" | "plus" | "pro" | "premium";
 
-const PACKS: Record<Pack, { label: string; credits: number; price: string; blurb: string }> = {
-  standard: { label: "Standard", credits: 25, price: "$5", blurb: "Quick top-up for a couple of focused tailoring actions." },
-  plus: { label: "Plus", credits: 75, price: "$10", blurb: "A better value pack if you are working through several jobs." },
-  pro: { label: "Pro", credits: 150, price: "$15", blurb: "Comfortable working room for repeat tailoring and rewrites." },
-  premium: { label: "Premium", credits: 500, price: "$25", blurb: "Best fit for heavy usage, testing, or sustained job-search sprints." },
+const PACKS: Record<Pack, { label: string; credits: number; price: string; description: string }> = {
+  standard: { label: "Standard", credits: 25, price: "$5", description: "Quick top-up for a couple of focused tailoring actions." },
+  plus: { label: "Plus", credits: 75, price: "$10", description: "A stronger bundle for active job-targeted resume and cover letter work." },
+  pro: { label: "Pro", credits: 150, price: "$15", description: "Built for repeated tailoring, rewrites, and multi-job application sprints." },
+  premium: { label: "Premium", credits: 500, price: "$25", description: "Best value for heavy use across jobs, resume passes, and premium workflows." },
 };
 
 type JobsCheckoutContext = {
@@ -79,7 +79,7 @@ export default function BuyCreditsButton({ defaultPack = "standard" }: { default
     });
   }, [jobsContext]);
 
-  async function startCheckout() {
+  async function handleCheckout() {
     setLoading(true);
     try {
       if (jobsContext?.jobId) {
@@ -116,19 +116,25 @@ export default function BuyCreditsButton({ defaultPack = "standard" }: { default
         if (res.status === 401) {
           alert("Please sign in first, then try buying credits again.");
         } else {
-          alert(`Checkout failed (${res.status}).\n\n${raw.slice(0, 700)}`);
+          alert(`Checkout failed (${res.status}).
+
+${raw.slice(0, 700)}`);
         }
         return;
       }
 
       if (!contentType.includes("application/json")) {
-        alert(`Expected JSON but got: ${contentType}\n\n${raw.slice(0, 700)}`);
+        alert(`Expected JSON but got: ${contentType}
+
+${raw.slice(0, 700)}`);
         return;
       }
 
       const data = JSON.parse(raw);
       if (!data?.ok || !data?.url) {
-        alert(`Unexpected JSON:\n\n${raw.slice(0, 700)}`);
+        alert(`Unexpected JSON:
+
+${raw.slice(0, 700)}`);
         return;
       }
 
@@ -141,86 +147,75 @@ export default function BuyCreditsButton({ defaultPack = "standard" }: { default
   }
 
   return (
-    <section className="w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-lg shadow-black/15">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Buy credits</p>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">Keep your tailoring flow moving.</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-            Purchase credits for job-aware resume tailoring, cover letters, rewrites, and premium workflow steps.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-right">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Selected pack</div>
-          <div className="mt-2 text-lg font-bold text-white">{packInfo.label}</div>
-          <div className="text-sm text-cyan-300">{packInfo.credits} credits • {packInfo.price}</div>
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
-        <div className="grid gap-4">
-          <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Pack</span>
-            <select
-              value={pack}
-              onChange={(e) => setPack(e.target.value as Pack)}
-              className="w-full rounded-2xl border border-white/10 bg-slate-950/80 p-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
-            >
-              {Object.entries(PACKS).map(([key, p]) => (
-                <option key={key} value={key}>
-                  {p.label} — {p.credits} credits ({p.price})
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <div className="text-sm font-semibold text-white">{packInfo.label} pack</div>
-            <p className="mt-2 text-sm leading-6 text-slate-300">{packInfo.blurb}</p>
-            <p className="mt-3 text-sm text-slate-300">
-              You’ll get <span className="font-bold text-white">{packInfo.credits}</span> credits.
-            </p>
-          </div>
-
-          {jobsContext?.jobId ? (
-            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm leading-6 text-cyan-100">
-              Jobs attribution is active for this purchase path. If you reached this page because a jobs workflow ran out of credits, the analytics trail will keep that context.
+    <div className="mb-6 w-full">
+      <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-xl shadow-black/20">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.95fr)]">
+          <div className="space-y-5">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Buy credits</div>
+              <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Keep your tailoring flow moving.</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
+                Purchase credits for job-aware resume tailoring, cover letters, rewrites, and premium workflow steps.
+              </p>
             </div>
-          ) : null}
 
-          <button
-            disabled={loading}
-            onClick={startCheckout}
-            className="mt-1 inline-flex items-center justify-center rounded-2xl bg-cyan-400 px-6 py-3 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Redirecting to Stripe…" : `Buy ${packInfo.label} (${packInfo.price})`}
-          </button>
+            <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.6fr)]">
+              <div className="rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-5">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Selected pack</div>
+                <div className="mt-4 text-3xl font-black text-white">{packInfo.label}</div>
+                <div className="mt-2 text-lg font-semibold text-cyan-300">{packInfo.credits} credits • {packInfo.price}</div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+                <label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Pack</label>
+                <select
+                  value={pack}
+                  onChange={(e) => setPack(e.target.value as Pack)}
+                  className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-cyan-400/40"
+                >
+                  {Object.entries(PACKS).map(([key, p]) => (
+                    <option key={key} value={key}>
+                      {p.label} — {p.credits} credits ({p.price})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+                  <div className="text-sm font-bold text-white">{packInfo.label} pack</div>
+                  <p className="mt-2 text-sm leading-7 text-slate-300">{packInfo.description}</p>
+                  <div className="mt-4 text-sm text-slate-200">You’ll get <span className="font-bold text-white">{packInfo.credits} credits</span>.</div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              disabled={loading}
+              onClick={handleCheckout}
+              className="w-full rounded-2xl bg-cyan-500 px-6 py-4 text-lg font-black text-black shadow-md transition-all duration-200 hover:scale-[1.01] hover:bg-cyan-400 hover:shadow-lg disabled:opacity-60"
+            >
+              {loading ? "Redirecting to Stripe..." : `Buy ${packInfo.label} (${packInfo.price})`}
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+              <div className="text-sm font-bold text-white">What credits unlock</div>
+              <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-300">
+                <li>• Job-aware resume tailoring</li>
+                <li>• Cover letter generation</li>
+                <li>• Tailor Both / apply-pack flow</li>
+                <li>• Rewrite and premium workflow actions</li>
+              </ul>
+            </div>
+
+            {jobsContext?.jobId ? (
+              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-5 text-sm leading-7 text-cyan-100">
+                This purchase stays connected to your current job flow so you can jump back into tailoring after checkout.
+              </div>
+            ) : null}
+          </div>
         </div>
-
-        <aside className="grid gap-3">
-          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <div className="text-sm font-semibold text-white">What credits unlock</div>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-              <li>• Job-aware resume tailoring</li>
-              <li>• Cover letter generation</li>
-              <li>• Tailor Both / apply-pack flow</li>
-              <li>• Rewrite and premium workflow actions</li>
-            </ul>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-            <div className="text-sm font-semibold text-white">Stripe checkout</div>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Checkout is handled securely by Stripe. After purchase, credits are added to your account and the product flow picks up from there.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-xs leading-6 text-slate-400">
-            Tip: If you ever get redirected to the wrong domain in production, verify <span className="font-mono text-slate-300">NEXT_PUBLIC_APP_URL</span> is set correctly and redeploy.
-          </div>
-        </aside>
       </div>
-    </section>
+    </div>
   );
 }

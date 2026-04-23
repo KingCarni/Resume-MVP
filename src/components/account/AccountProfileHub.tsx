@@ -82,6 +82,64 @@ function formatDate(dateValue: string | null | undefined) {
   }).format(date);
 }
 
+function stripGenericIndustrySuffix(value: string | null | undefined) {
+  return String(value || "")
+    .replace(/\s*\(game industry\)\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatCompanyName(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (/^[A-Z0-9&.-]{2,}$/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+function inferCompanyFromTitles(titles: string[]) {
+  for (const title of titles) {
+    const match = String(title || "").match(/\bat\s+(.+)$/i);
+    const company = match?.[1]?.trim();
+    if (!company) continue;
+    const cleaned = company.replace(/[()]/g, "").trim();
+    if (!cleaned) continue;
+    return formatCompanyName(cleaned);
+  }
+  return null;
+}
+
+function buildProfileDisplayTitle(profile: ResumeProfileItem) {
+  const profileTitle = stripGenericIndustrySuffix(profile.title);
+  const resumeTitle = stripGenericIndustrySuffix(profile.sourceDocument?.title);
+  const company = inferCompanyFromTitles(profile.normalizedTitles);
+
+  if (company && profileTitle) {
+    const lowerCompany = company.toLowerCase();
+    const lowerProfile = profileTitle.toLowerCase();
+    if (!lowerProfile.includes(lowerCompany)) {
+      return `${company} — ${profileTitle}`;
+    }
+  }
+
+  if (resumeTitle && profileTitle && resumeTitle.toLowerCase() !== profileTitle.toLowerCase()) {
+    return `${resumeTitle} — ${profileTitle}`;
+  }
+
+  return profileTitle || resumeTitle || "Resume Profile";
+}
+
+function cleanSummaryForCard(value: string | null | undefined) {
+  const cleaned = String(value || "").replace(/\s+/g, " ").trim();
+  if (!cleaned || cleaned.length < 8) return "No summary stored yet.";
+  if (cleaned.length <= 150) return cleaned;
+  return `${cleaned.slice(0, 147).trim()}…`;
+}
+
+
 function normalizeTag(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -174,7 +232,7 @@ function ProfileCard(props: {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-white">
-              {props.profile.title || "Resume Profile"}
+              {buildProfileDisplayTitle(props.profile)}
             </h3>
             {props.isActive ? (
               <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-200">
@@ -188,7 +246,7 @@ function ProfileCard(props: {
             ) : null}
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-300">
-            {props.profile.summary || "No summary stored yet."}
+            {cleanSummaryForCard(props.profile.summary)}
           </p>
         </div>
 
@@ -229,9 +287,16 @@ function ProfileCard(props: {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {props.profile.normalizedTitles.length > 0 ? (
-          props.profile.normalizedTitles.slice(0, 4).map((title) => (
-            <TagChip key={title} value={title} />
-          ))
+          <>
+            {props.profile.normalizedTitles.slice(0, 3).map((title) => (
+              <TagChip key={title} value={title} />
+            ))}
+            {props.profile.normalizedTitles.length > 3 ? (
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                +{props.profile.normalizedTitles.length - 3} more
+              </span>
+            ) : null}
+          </>
         ) : (
           <span className="text-xs text-slate-500">No normalized titles yet.</span>
         )}
