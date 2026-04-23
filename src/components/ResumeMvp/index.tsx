@@ -65,6 +65,8 @@ type LatestResumePayload = {
 };
 
 
+const MAX_EDITOR_EXPERTISE_ITEMS = 75;
+
 type ResumeDocumentHydrationItem = {
   id: string;
   title: string | null;
@@ -1412,7 +1414,7 @@ function buildResumeHtml(args: {
       <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Areas of Expertise</div>
       <div class="box">
         <div class="small">${expertiseItems
-          .slice(0, 24)
+          .slice(0, MAX_EDITOR_EXPERTISE_ITEMS)
           .map((x) => `• ${safe(String(x))}`)
           .join(" ")}</div>
       </div>
@@ -1715,7 +1717,7 @@ function sanitizeMetaLines(lines: string[]) {
     }
   }
 
-  return Array.from(new Set(cleaned)).slice(0, 24);
+  return Array.from(new Set(cleaned)).slice(0, MAX_EDITOR_EXPERTISE_ITEMS);
 }
 
 function parseEducationLines(input: string) {
@@ -4259,7 +4261,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const resumeSkills = editorExpertiseItems
         .map((x) => String(x ?? "").trim())
         .filter(Boolean)
-        .slice(0, 24);
+        .slice(0, MAX_EDITOR_EXPERTISE_ITEMS);
 
       const currentSection = sections.find((s) => s.id === row.sectionId);
 
@@ -4280,7 +4282,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             .map((x) => String(x ?? "").trim())
             .filter(Boolean)
         )
-      ).slice(0, 24);
+      ).slice(0, MAX_EDITOR_EXPERTISE_ITEMS);
 
       const allowedTerms = Array.from(
         new Set(
@@ -4292,7 +4294,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             .map((x) => String(x ?? "").trim())
             .filter(Boolean)
         )
-      ).slice(0, 24);
+      ).slice(0, MAX_EDITOR_EXPERTISE_ITEMS);
 
       const baseRequestBody = {
         originalBullet,
@@ -4987,7 +4989,7 @@ if (typeof planIndex === "number") {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       const cleanedAuto = autoParsedExpertise.map((x) => String(x ?? "").trim()).filter(Boolean);
 
-      if (!cleanedPrev.length) return cleanedAuto;
+      if (!cleanedPrev.length) return cleanedAuto.slice(0, MAX_EDITOR_EXPERTISE_ITEMS);
       return prev;
     });
   }, [autoParsedExpertise]);
@@ -5252,7 +5254,7 @@ if (typeof planIndex === "number") {
   }
 
   function addExpertiseItem() {
-    setEditorExpertiseItems((prev) => [...prev, ""]);
+    setEditorExpertiseItems((prev) => (prev.length >= MAX_EDITOR_EXPERTISE_ITEMS ? prev : [...prev, ""]));
   }
 
   function deleteExpertiseItem(index: number) {
@@ -5278,6 +5280,7 @@ if (typeof planIndex === "number") {
     setEditorExpertiseItems((prev) => {
       const exists = prev.some((item) => cleanupAtsKeyword(item) === cleanupAtsKeyword(cleaned));
       if (exists) return prev;
+      if (prev.length >= MAX_EDITOR_EXPERTISE_ITEMS) return prev;
       return [...prev, cleaned];
     });
     setIgnoredMissingKeywords((prev) =>
@@ -6574,7 +6577,7 @@ useEffect(() => {
                   <div>
                     <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Areas of Expertise (Editable)</div>
                     <div className="text-xs text-black/90 dark:text-slate-100/90">
-                      {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
+                      {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} / {MAX_EDITOR_EXPERTISE_ITEMS} items
                     </div>
                   </div>
 
