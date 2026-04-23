@@ -1073,8 +1073,8 @@ export default function AccountProfileHub(props: Props) {
         </div>
 
         <div className="px-5 py-5 sm:px-6">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-            <div className="space-y-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
+            <div className="grid gap-6 xl:grid-cols-2">
               <DonateCreditsPanel />
               <DonationRequestPanel />
             </div>
