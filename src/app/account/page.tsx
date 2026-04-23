@@ -24,7 +24,6 @@ export default async function AccountPage() {
             <Link href="/jobs/saved" className="shell-nav-link">Saved Jobs</Link>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link href="/jobs/saved" className="shell-secondary-btn">Saved Jobs</Link>
             <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
             <Link href="/account/donate" className="shell-secondary-btn">Donate</Link>
           </div>

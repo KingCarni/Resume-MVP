@@ -38,8 +38,8 @@ const trustPoints = [
     body: "When you decide a role is worth pursuing, that same job context flows into resume and cover-letter tailoring so you are not starting over from scratch.",
   },
   {
-    title: "The score stays tied to real next steps.",
-    body: "The fit panel is meant to help you decide whether to open, save, or tailor a role instead of flooding you with fake precision or filler AI noise.",
+    title: "Templates and color schemes are part of the workflow.",
+    body: "Pick from distinct resume templates and color schemes so the final document feels intentional, readable, and closer to your style instead of looking like the same generic AI export every time.",
   },
 ];
 
