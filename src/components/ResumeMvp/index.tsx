@@ -3082,6 +3082,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const [ignoredMissingKeywords, setIgnoredMissingKeywords] = useState<string[]>([]);
   const [showAtsKeywords, setShowAtsKeywords] = useState(false);
   const [showExpertiseEditor, setShowExpertiseEditor] = useState(false);
+  const educationEditorTouchedRef = useRef(false);
+  const expertiseEditorTouchedRef = useRef(false);
   const [rewriteSessions, setRewriteSessions] = useState<
     Record<string, { sessionId: string; attemptNumber: number; maxAttempts: number }>
   >({});
@@ -3199,6 +3201,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         return acc;
       }, {})
     );
+    educationEditorTouchedRef.current = false;
+    expertiseEditorTouchedRef.current = false;
     setEditorEducationItems(next.educationItems);
     setEditorExpertiseItems(next.expertiseItems);
     setEditorMetaGames(next.metaGames);
@@ -3580,6 +3584,8 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
     setAtsScoreInitialized(false);
+    educationEditorTouchedRef.current = false;
+    expertiseEditorTouchedRef.current = false;
   }, []);
 
   const ensureResumeUploadedToBlob = useCallback(
@@ -4839,6 +4845,7 @@ if (typeof planIndex === "number") {
 
   useEffect(() => {
     if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (educationEditorTouchedRef.current) return;
 
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -4852,6 +4859,7 @@ if (typeof planIndex === "number") {
   useEffect(() => {
     if (!analysis) return;
     if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (educationEditorTouchedRef.current) return;
 
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -4985,6 +4993,8 @@ if (typeof planIndex === "number") {
   }, [sections]);
 
   useEffect(() => {
+    if (expertiseEditorTouchedRef.current) return;
+
     setEditorExpertiseItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       const cleanedAuto = autoParsedExpertise.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -5250,33 +5260,40 @@ if (typeof planIndex === "number") {
   }
 
   function updateExpertiseItem(index: number, value: string) {
+    expertiseEditorTouchedRef.current = true;
     setEditorExpertiseItems((prev) => prev.map((item, idx) => (idx === index ? value : item)));
   }
 
   function addExpertiseItem() {
+    expertiseEditorTouchedRef.current = true;
     setEditorExpertiseItems((prev) => (prev.length >= MAX_EDITOR_EXPERTISE_ITEMS ? prev : [...prev, ""]));
   }
 
   function deleteExpertiseItem(index: number) {
+    expertiseEditorTouchedRef.current = true;
     setEditorExpertiseItems((prev) => prev.filter((_, idx) => idx !== index));
   }
 
 
   function updateEducationItem(index: number, value: string) {
+    educationEditorTouchedRef.current = true;
     setEditorEducationItems((prev) => prev.map((item, idx) => (idx === index ? value : item)));
   }
 
   function addEducationItem() {
+    educationEditorTouchedRef.current = true;
     setEditorEducationItems((prev) => [...prev, ""]);
   }
 
   function deleteEducationItem(index: number) {
+    educationEditorTouchedRef.current = true;
     setEditorEducationItems((prev) => prev.filter((_, idx) => idx !== index));
   }
 
   function addKeywordToExpertise(term: string) {
     const cleaned = String(term ?? "").trim();
     if (!cleaned) return;
+    expertiseEditorTouchedRef.current = true;
     setEditorExpertiseItems((prev) => {
       const exists = prev.some((item) => cleanupAtsKeyword(item) === cleanupAtsKeyword(cleaned));
       if (exists) return prev;
@@ -6503,15 +6520,6 @@ useEffect(() => {
                   Show Education on resume
                 </label>
 
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
-                  <input
-                    type="checkbox"
-                    checked={showExpertiseOnResume}
-                    onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show Areas of Expertise on resume
-                </label>
 
                 <label className="mt-3 flex items-center gap-2">
                 <input
@@ -6542,6 +6550,10 @@ useEffect(() => {
                   >
                     + Add
                   </button>
+                </div>
+
+                <div className="mt-2 text-[11px] text-black/80 dark:text-slate-200/80">
+                  Education stays editable before and after analysis, so removed entries do not pop back in unless you reload a saved resume.
                 </div>
 
                 {editorEducationItems.length ? (
@@ -6575,9 +6587,9 @@ useEffect(() => {
               <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Areas of Expertise (Editable)</div>
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">ATS + Areas of Expertise</div>
                     <div className="text-xs text-black/90 dark:text-slate-100/90">
-                      {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} / {MAX_EDITOR_EXPERTISE_ITEMS} items
+                      Keep your expertise list and ATS keyword coverage together in one place.
                     </div>
                   </div>
 
@@ -6599,320 +6611,180 @@ useEffect(() => {
                         + Add
                       </button>
                     ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAtsKeywords((prev) => {
+                          const next = !prev;
+                          if (next) setShowExpertiseEditor(true);
+                          return next;
+                        });
+                      }}
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                    >
+                      {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
+                    </button>
                   </div>
                 </div>
 
-                {!showExpertiseEditor ? (
-                  <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
-                    Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
-                  </div>
-                ) : editorExpertiseItems.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {editorExpertiseItems.map((item, i) => (
-                      <div
-                        key={`expertise-${i}`}
-                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20"
-                      >
-                        <input
-                          value={item}
-                          onChange={(e) => updateExpertiseItem(i, e.target.value)}
-                          className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-slate-100"
-                          placeholder="Expertise"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => deleteExpertiseItem(i)}
-                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
-                          aria-label={`Delete expertise ${i + 1}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
-                    No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
-                  </div>
-                )}
-              </div>
-
-              {debugInjected.length ? (
-                <div className="mt-2">
-                  <Callout title="Guardrail terms detected in rewrites" tone="warn">
-                    <div className="flex flex-wrap gap-2">
-                      {debugInjected.map((t) => (
-                        <Chip key={t} text={t} />
-                      ))}
-                    </div>
-                  </Callout>
-                </div>
-              ) : null}
-
-              {showDebugJson && analysis ? (
-                <pre className="mt-3 overflow-x-auto rounded-2xl border border-white/10 bg-black p-3 text-xs text-black/90">
-                  {JSON.stringify(analysis, null, 2)}
-                </pre>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        {/* Preview */}
-        <section className="min-w-0">
-          <HtmlDocPreview
-            html={liveResumeHtml}
-            footer={
-              isSetupMode ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={finishSetupAndGoToJobs}
-                    disabled={!analysis || profileSyncSaving || !liveResumeHtml}
-                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                  >
-                    {profileSyncSaving ? "Finishing setup…" : "Update Profile & Go to Job Board"}
-                  </button>
-
-                  <div className="text-xs text-black/70 dark:text-slate-200/80">
-                    PDF export unlocks after you tailor this resume for a real role.
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDownloadPdf}
-                    disabled={!liveResumeHtml}
-                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                  >
-                    Download PDF (5 credits if exporting)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
-                      } catch (e: unknown) {
-                        setError(getErrorMessage(e, "Preview failed"));
-                      }
-                    }}
-                    disabled={!liveResumeHtml}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
-                  >
-                    Preview
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePrintPdf}
-                    disabled={!liveResumeHtml}
-                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
-                  >
-                    Print
-                  </button>
-                </div>
-              )
-            }
-          />
-
-
-          {analysis && !isSetupMode ? (
-            <div id="ats-panel" className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">
-                    ATS Score
-                  </div>
-                  <div className="mt-1 flex items-end gap-3">
-                    <div className="text-3xl font-black text-black dark:text-slate-100">
-                      {confirmedAtsScore?.overall ?? liveAtsScore.overall}
-                    </div>
-                    <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-slate-100/90">
-                      {confirmedAtsScore?.label ?? liveAtsScore.label}
-                    </div>
-                    {atsScoreDirty ? (
-                      <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
-                        Changes pending review
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">
-                        Up to date
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
-                    Live estimate: {liveAtsScore.overall} · Last updated: {formatAtsUpdatedAt(atsScoreUpdatedAt) || "Not saved yet"}
-                  </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
-                    Role focus: {liveAtsScore.roleFocus[0] || "General"}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRefreshAtsScore}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                >
-                  Refresh ATS + Profile Sync
-                </button>
-              </div>
-
-              {liveAtsScore.notes.length ? (
-                <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">
-                    ATS Notes
-                  </div>
-                  <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-slate-100/90">
-                    {liveAtsScore.notes.slice(0, 4).map((note) => (
-                      <li key={note}>{note}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Keyword Coverage</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
-                    {Math.round(liveAtsScore.keywordCoverage * 100)}%
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Metrics</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
-                    {liveAtsScore.metricsCount}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Bullet Quality</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
-                    {liveAtsScore.bulletQualityAverage}/100
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Complete-ness</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
-                    {Math.round(liveAtsScore.sectionCompleteness * 100)}%
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">ATS Keywords</div>
-                  <div className="text-[11px] text-black/90 dark:text-slate-100/90">Matched keywords and job-post-relevant missing terms are minimized by default.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAtsKeywords((prev) => {
-                      const next = !prev;
-                      if (next) setShowExpertiseEditor(true);
-                      return next;
-                    });
-                  }}
-                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                >
-                  {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
-                </button>
-              </div>
-
-              {showAtsKeywords ? (
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
                   <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                    <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
-                      Matched Keywords ({liveAtsScore.matchedKeywords.length})
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {liveAtsScore.matchedKeywords.length ? (
-                        liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
-                      ) : (
-                        <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
-                        Missing Keywords ({liveAtsScore.missingKeywords.length})
-                      </div>
-                      {ignoredMissingKeywords.length ? (
-                        <button
-                          type="button"
-                          onClick={clearIgnoredMissingKeywords}
-                          className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
-                        >
-                          Reset removed
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="mb-2 text-[11px] text-black/90 dark:text-slate-100/90">
-                      Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {liveAtsScore.missingKeywords.length ? (
-                        liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
-                          <div
-                            key={`missing-${term}`}
-                            className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => addKeywordToExpertise(term)}
-                              className="flex items-center justify-center bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-700 dark:hover:bg-emerald-500/20"
-                              title="Add this keyword to Areas of Expertise"
-                            >
-                              +
-                            </button>
-                            <span className="px-2.5 py-1">{term}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleIgnoreMissingKeyword(term)}
-                              className="flex items-center justify-center bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-600 dark:hover:bg-red-500/20"
-                              title="Remove this keyword from ATS scoring"
-                            >
-                              −
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-xs text-black/90 dark:text-slate-100/90">Coverage looks solid.</span>
-                      )}
-                    </div>
-                    {ignoredMissingKeywords.length ? (
-                      <div className="mt-3">
-                        <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-700">Removed From Scoring ({ignoredMissingKeywords.length})</div>
-                        <div className="flex flex-wrap gap-2">
-                          {ignoredMissingKeywords.map((term) => (
-                            <button
-                              key={`ignored-${term}`}
-                              type="button"
-                              onClick={() => toggleIgnoreMissingKeyword(term)}
-                              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-800 hover:bg-sky-100"
-                              title="Add this keyword back into ATS scoring"
-                            >
-                              <span>{term}</span>
-                              <span aria-hidden>+</span>
-                            </button>
-                          ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Areas of Expertise (Editable)</div>
+                        <div className="text-xs text-black/90 dark:text-slate-100/90">
+                          {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} / {MAX_EDITOR_EXPERTISE_ITEMS} items
                         </div>
                       </div>
-                    ) : null}
+                      <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        <input
+                          type="checkbox"
+                          checked={showExpertiseOnResume}
+                          onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        Show on resume
+                      </label>
+                    </div>
+
+                    {!showExpertiseEditor ? (
+                      <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
+                        Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
+                      </div>
+                    ) : editorExpertiseItems.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {editorExpertiseItems.map((item, i) => (
+                          <div
+                            key={`expertise-${i}`}
+                            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20"
+                          >
+                            <input
+                              value={item}
+                              onChange={(e) => updateExpertiseItem(i, e.target.value)}
+                              className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-slate-100"
+                              placeholder="Expertise"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => deleteExpertiseItem(i)}
+                              className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                              aria-label={`Delete expertise ${i + 1}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
+                        No expertise detected yet. Add the strongest skills, tools, domains, and workflows you want ATS to recognize.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                    <div>
+                      <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">ATS Keywords</div>
+                      <div className="text-[11px] text-black/90 dark:text-slate-100/90">Matched keywords and job-post-relevant missing terms stay tied to Areas of Expertise here.</div>
+                    </div>
+
+                    {showAtsKeywords ? (
+                      <div className="mt-3 grid gap-3">
+                        <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
+                          <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
+                            Matched Keywords ({liveAtsScore.matchedKeywords.length})
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {liveAtsScore.matchedKeywords.length ? (
+                              liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
+                            ) : (
+                              <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
+                              Missing Keywords ({liveAtsScore.missingKeywords.length})
+                            </div>
+                            {ignoredMissingKeywords.length ? (
+                              <button
+                                type="button"
+                                onClick={clearIgnoredMissingKeywords}
+                                className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                              >
+                                Reset removed
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="mb-2 text-[11px] text-black/90 dark:text-slate-100/90">
+                            Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {liveAtsScore.missingKeywords.length ? (
+                              liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
+                                <div
+                                  key={`missing-${term}`}
+                                  className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => addKeywordToExpertise(term)}
+                                    className="bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100"
+                                    title="Add to Areas of Expertise"
+                                  >
+                                    +
+                                  </button>
+                                  <span className="px-2 py-1">{term}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleIgnoreMissingKeyword(term)}
+                                    className="bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100"
+                                    title="Remove from ATS scoring for this application"
+                                  >
+                                    −
+                                  </button>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-xs text-black/90 dark:text-slate-100/90">No missing keyword gaps right now.</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {ignoredMissingKeywords.length ? (
+                          <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 dark:border-sky-900/40 dark:bg-sky-950/30">
+                            <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                              Removed from ATS scoring ({ignoredMissingKeywords.length})
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {ignoredMissingKeywords.map((term) => (
+                                <button
+                                  key={`ignored-${term}`}
+                                  type="button"
+                                  onClick={() => toggleIgnoreMissingKeyword(term)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-800 hover:bg-sky-100"
+                                  title="Add this keyword back into ATS scoring"
+                                >
+                                  <span>{term}</span>
+                                  <span aria-hidden>+</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
+                        ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
+                      </div>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
-                  ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
-                </div>
-              )}
               </div>
-          ) : null}
+           ) : null}
 
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
             <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
