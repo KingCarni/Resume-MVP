@@ -45,6 +45,13 @@ function normalizeText(s: unknown, max = 2000) {
     .slice(0, max);
 }
 
+function panelButtonClasses(kind: "primary" | "secondary" = "secondary") {
+  if (kind === "primary") {
+    return "inline-flex items-center justify-center rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50";
+  }
+  return "inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50";
+}
+
 export default function DonationRequestPanel() {
   const router = useRouter();
 
@@ -56,12 +63,15 @@ export default function DonationRequestPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
+  const reasonLength = useMemo(() => normalizeText(reason, 2000).length, [reason]);
+  const pendingCount = useMemo(() => rows.filter((row) => row.status === "pending").length, [rows]);
+
   const canSubmit = useMemo(() => {
     const creditsOk =
       Number.isFinite(requestedCredits) && requestedCredits >= 5 && requestedCredits <= 200;
-    const reasonOk = normalizeText(reason, 2000).length >= 10;
+    const reasonOk = reasonLength >= 10;
     return creditsOk && reasonOk && !submitting;
-  }, [requestedCredits, reason, submitting]);
+  }, [requestedCredits, reasonLength, submitting]);
 
   async function load() {
     setLoadingList(true);
@@ -144,7 +154,7 @@ export default function DonationRequestPanel() {
           type="button"
           onClick={load}
           disabled={loadingList}
-          className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          className={panelButtonClasses()}
           title="Reload"
         >
           {loadingList ? "Reloading..." : "Reload"}
@@ -159,43 +169,61 @@ export default function DonationRequestPanel() {
         <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{okMsg}</div>
       ) : null}
 
-      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <label className="grid gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Requested credits</span>
-          <input
-            type="number"
-            min={5}
-            max={200}
-            value={Number.isFinite(requestedCredits) ? requestedCredits : 0}
-            onChange={(e) => setRequestedCredits(Math.trunc(Number(e.target.value)))}
-            className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
-          />
-          <span className="text-xs text-slate-500">Min 5, max 200.</span>
-        </label>
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Requested credits</p>
+          <div className="mt-3">
+            <input
+              type="number"
+              min={5}
+              max={200}
+              value={Number.isFinite(requestedCredits) ? requestedCredits : 0}
+              onChange={(e) => setRequestedCredits(Math.trunc(Number(e.target.value)))}
+              className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
+            />
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-400">Min 5, max 200.</p>
+        </div>
 
-        <label className="grid gap-1.5 lg:col-span-2">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Request status</p>
+              <div className="mt-2 text-3xl font-bold tracking-tight text-white">{pendingCount}</div>
+              <p className="mt-2 text-xs leading-5 text-slate-400">Pending requests currently waiting for review.</p>
+            </div>
+            <div className="text-right text-xs leading-5 text-slate-400">
+              <div>Showing up to 10</div>
+              <div>Reason length: {reasonLength}/2000</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4">
+        <label className="grid gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Reason</span>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            rows={3}
+            rows={4}
             placeholder="Tell us what you're applying for and why you need help (10+ characters)."
             className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
           />
           <span className="text-xs text-slate-500">Keep it short and clear. Include target role/company if useful.</span>
         </label>
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!canSubmit}
-          className="inline-flex items-center justify-center rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {submitting ? "Submitting..." : "Submit request"}
-        </button>
-        <span className="text-xs text-slate-400">You can have a limited number of pending requests. Cooldown may apply.</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canSubmit}
+            className={panelButtonClasses("primary")}
+          >
+            {submitting ? "Submitting..." : "Submit request"}
+          </button>
+          <span className="text-xs text-slate-400">You can have a limited number of pending requests. Cooldown may apply.</span>
+        </div>
       </div>
 
       <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
