@@ -261,12 +261,30 @@ const CREDIT_COSTS = {
   rewriteBullet: 1, // set to whatever /api/rewrite-bullet charges
 } as const;
 
+const REWRITE_REQUEST_TIMEOUT_MS = 25_000;
+const REWRITE_REQUEST_RETRY_TIMEOUT_MS = 15_000;
+
 /** ---------------- Helpers ---------------- */
 
 async function parseApiResponse(res: Response) {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return await res.json();
   return await res.text();
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function isHtmlDoc(x: unknown) {
@@ -3971,11 +3989,34 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       );
     }
 
-    const res = await fetch("/api/rewrite-bullet", {
+    const requestInit: RequestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: json,
-    });
+    };
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout("/api/rewrite-bullet", requestInit, REWRITE_REQUEST_TIMEOUT_MS);
+    } catch (firstError) {
+      if (!isAbortError(firstError)) throw firstError;
+
+      if (logNetworkDebug) {
+        console.warn("[rewrite] request timed out; retrying once", {
+          firstTimeoutMs: REWRITE_REQUEST_TIMEOUT_MS,
+          retryTimeoutMs: REWRITE_REQUEST_RETRY_TIMEOUT_MS,
+        });
+      }
+
+      try {
+        res = await fetchWithTimeout("/api/rewrite-bullet", requestInit, REWRITE_REQUEST_RETRY_TIMEOUT_MS);
+      } catch (retryError) {
+        if (isAbortError(retryError)) {
+          throw new Error("Rewrite timed out after one retry. This bullet was skipped so the batch can continue.");
+        }
+        throw retryError;
+      }
+    }
 
     const payload = await parseApiResponse(res);
 
@@ -3987,12 +4028,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     return { res, payload };
   }
 
-  async function handleRewriteBullet(index: number, options?: { safer?: boolean }) {
-    if (!analysis) return;
+  async function handleRewriteBullet(index: number, options?: { safer?: boolean }): Promise<boolean> {
+    if (!analysis) return false;
 
     const rowsSnapshot = liveBulletRowsRef.current.length ? liveBulletRowsRef.current : liveBulletRows;
     const row = rowsSnapshot[index];
-    if (!row) return;
+    if (!row) return false;
 
     const sessionKey = getRewriteSessionKey(row);
     const existingSession = rewriteSessions[sessionKey];
@@ -4004,7 +4045,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
     if (activeSession.attemptNumber >= activeSession.maxAttempts) {
       setError(`Rewrite attempt limit reached for this bullet (${activeSession.maxAttempts}). Edit the bullet to start a new rewrite session.`);
-      return;
+      return false;
     }
 
     const originalBullet = String(row.originalText ?? row.text ?? "").trim();
@@ -4013,14 +4054,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
     if (!originalBullet) {
       setError("Missing original bullet for rewrite. Re-run Analyze or confirm bullets extracted.");
-      return;
+      return false;
     }
 
     if (isTrainingLikeBullet(originalBullet)) {
       const rewrittenTraining = defaultTrainingRewrite(originalBullet);
       if (!rewrittenTraining) {
         setError("Training bullet detected, but could not generate a safe rewrite.");
-        return;
+        return false;
       }
 
       setAnalysis((prev) => {
@@ -4087,7 +4128,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       });
 
       refreshCredits();
-      return;
+      return true;
     }
 
     setLoadingRewriteIndex(index);
@@ -4542,9 +4583,11 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       refreshCredits();
+      return true;
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Rewrite failed"));
       refreshCredits();
+      return false;
     } finally {
       setLoadingRewriteIndex(null);
     }
@@ -4697,10 +4740,19 @@ if (typeof planIndex === "number") {
     setLoadingBatchRewrite(true);
     setError(null);
 
+    let rewrittenCount = 0;
+    let failedCount = 0;
+
     try {
       for (const i of selected) {
         // eslint-disable-next-line no-await-in-loop
-        await handleRewriteBullet(i);
+        const didRewrite = await handleRewriteBullet(i);
+        if (didRewrite) rewrittenCount += 1;
+        else failedCount += 1;
+      }
+
+      if (failedCount > 0) {
+        setError(`Rewrote ${rewrittenCount} of ${selected.length} selected bullets. ${failedCount} failed or timed out and were skipped.`);
       }
     } finally {
       setLoadingBatchRewrite(false);
