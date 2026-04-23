@@ -786,13 +786,7 @@ export default function AccountProfileHub(props: Props) {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">
                   Resume profiles
                 </p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">
-                  Keep multiple profiles clear, not messy.
-                </h3>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Pick which profile jobs should score against, keep resume attachments explicit,
-                  and make targeted metadata edits without drifting into raw profile chaos.
-                </p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">Resume Profiles</h3>
               </div>
 
               <button
@@ -825,10 +819,6 @@ export default function AccountProfileHub(props: Props) {
             <h3 className="mt-2 text-2xl font-semibold text-white">
               Edit the part that actually affects matching.
             </h3>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Keep this controlled. These edits affect jobs match trust and tailoring context,
-              so this is for clean metadata adjustments, not freestyle profile rewriting.
-            </p>
 
             {selectedProfile ? (
               <div className="mt-6 space-y-5">
@@ -887,15 +877,6 @@ export default function AccountProfileHub(props: Props) {
                   <p className="mt-2 text-xs leading-5 text-slate-400">
                     Choose which stored resume this profile currently represents. This stays explicit
                     so jobs/tailoring context does not drift.
-                  </p>
-                </div>
-
-                <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-                    Summary
-                  </p>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {selectedProfile.summary || "No summary stored yet."}
                   </p>
                 </div>
 
@@ -1084,8 +1065,8 @@ export default function AccountProfileHub(props: Props) {
                 <p className="mt-2 text-sm leading-6 text-slate-200">Requests are reviewed first, then fulfilled separately once approved.</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Admin lane</p>
-                <p className="mt-2 text-sm leading-6 text-slate-200">Pool status and request actions stay available without cluttering the profile controls above.</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Request help</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">Need help? Submit a credit request and it can be reviewed when the pool has room.</p>
               </div>
             </div>
           </div>
@@ -1100,14 +1081,6 @@ export default function AccountProfileHub(props: Props) {
 
             <div className="space-y-6">
               {props.isAdmin ? <AdminDonationRequestsPanel /> : null}
-              {!props.isAdmin ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/70 p-6 text-sm leading-7 text-slate-300">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Admin lane hidden</p>
-                  <p className="mt-3">
-                    Pool balance and approval controls are only shown to admin accounts. The donate/request flows above still work normally for standard users.
-                  </p>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>

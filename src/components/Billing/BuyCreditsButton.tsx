@@ -149,55 +149,43 @@ ${raw.slice(0, 700)}`);
   return (
     <div className="mb-6 w-full">
       <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-xl shadow-black/20">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.95fr)]">
-          <div className="space-y-5">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Buy credits</div>
-              <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Keep your tailoring flow moving.</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300">
-                Purchase credits for job-aware resume tailoring, cover letters, rewrites, and premium workflow steps.
-              </p>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.6fr)]">
-              <div className="rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Selected pack</div>
-                <div className="mt-4 text-3xl font-black text-white">{packInfo.label}</div>
-                <div className="mt-2 text-lg font-semibold text-cyan-300">{packInfo.credits} credits • {packInfo.price}</div>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
-                <label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Pack</label>
-                <select
-                  value={pack}
-                  onChange={(e) => setPack(e.target.value as Pack)}
-                  className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-cyan-400/40"
-                >
-                  {Object.entries(PACKS).map(([key, p]) => (
-                    <option key={key} value={key}>
-                      {p.label} — {p.credits} credits ({p.price})
-                    </option>
-                  ))}
-                </select>
-
-                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                  <div className="text-sm font-bold text-white">{packInfo.label} pack</div>
-                  <p className="mt-2 text-sm leading-7 text-slate-300">{packInfo.description}</p>
-                  <div className="mt-4 text-sm text-slate-200">You’ll get <span className="font-bold text-white">{packInfo.credits} credits</span>.</div>
-                </div>
-              </div>
-            </div>
-
-            <button
-              disabled={loading}
-              onClick={handleCheckout}
-              className="w-full rounded-2xl bg-cyan-500 px-6 py-4 text-lg font-black text-black shadow-md transition-all duration-200 hover:scale-[1.01] hover:bg-cyan-400 hover:shadow-lg disabled:opacity-60"
-            >
-              {loading ? "Redirecting to Stripe..." : `Buy ${packInfo.label} (${packInfo.price})`}
-            </button>
+        <div className="space-y-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Buy credits</div>
+            <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Keep your tailoring flow moving.</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
+              Purchase credits for job-aware resume tailoring, cover letters, rewrites, and premium workflow steps.
+            </p>
           </div>
 
-          <div className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.45fr)_minmax(280px,1fr)]">
+            <div className="rounded-2xl border border-cyan-400/20 bg-slate-950/80 p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Selected pack</div>
+              <div className="mt-4 text-4xl font-black text-white">{packInfo.label}</div>
+              <div className="mt-3 text-xl font-semibold text-cyan-300">{packInfo.credits} credits • {packInfo.price}</div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Pack</label>
+              <select
+                value={pack}
+                onChange={(e) => setPack(e.target.value as Pack)}
+                className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-cyan-400/40"
+              >
+                {Object.entries(PACKS).map(([key, p]) => (
+                  <option key={key} value={key}>
+                    {p.label} — {p.credits} credits ({p.price})
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+                <div className="text-sm font-bold text-white">{packInfo.label} pack</div>
+                <p className="mt-2 text-sm leading-7 text-slate-300">{packInfo.description}</p>
+                <div className="mt-4 text-sm text-slate-200">You’ll get <span className="font-bold text-white">{packInfo.credits} credits</span>.</div>
+              </div>
+            </div>
+
             <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5">
               <div className="text-sm font-bold text-white">What credits unlock</div>
               <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-300">
@@ -206,14 +194,21 @@ ${raw.slice(0, 700)}`);
                 <li>• Tailor Both / apply-pack flow</li>
                 <li>• Rewrite and premium workflow actions</li>
               </ul>
+              {jobsContext?.jobId ? (
+                <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm leading-6 text-cyan-100">
+                  This purchase stays connected to your current job flow so you can jump back into tailoring after checkout.
+                </div>
+              ) : null}
             </div>
-
-            {jobsContext?.jobId ? (
-              <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-5 text-sm leading-7 text-cyan-100">
-                This purchase stays connected to your current job flow so you can jump back into tailoring after checkout.
-              </div>
-            ) : null}
           </div>
+
+          <button
+            disabled={loading}
+            onClick={handleCheckout}
+            className="w-full rounded-2xl bg-cyan-500 px-6 py-4 text-lg font-black text-black shadow-md transition-all duration-200 hover:scale-[1.01] hover:bg-cyan-400 hover:shadow-lg disabled:opacity-60"
+          >
+            {loading ? "Redirecting to Stripe..." : `Buy ${packInfo.label} (${packInfo.price})`}
+          </button>
         </div>
       </div>
     </div>
