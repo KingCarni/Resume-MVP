@@ -3436,7 +3436,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
             setApplyPackBundle(queryBundle === "apply-pack" ? nextBundle : null);
             setJobText((current) => (current.trim() ? current : String(fetchedJob.jobContextText || "").trim()));
-            setTargetPosition((current) => (current.trim() ? current : String(fetchedJob.title || "").trim()));
+            if (String(fetchedJob.title || "").trim()) setTargetPosition(String(fetchedJob.title || "").trim());
             setJobTextOverrideMode(false);
             return;
           }
@@ -3463,7 +3463,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       if (sameRequestedJob && storedTargetPosition) {
-        setTargetPosition((current) => (current.trim() ? current : storedTargetPosition));
+        setTargetPosition(storedTargetPosition);
       }
     }
 
@@ -6368,118 +6368,8 @@ useEffect(() => {
                 />
               </div>
 
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Profile photo (Optional)</div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label
-                        htmlFor="profile-photo-upload"
-                        className="inline-flex cursor-pointer items-center rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                      >
-                        Choose File
-                      </label>
-
-                      <input
-                        id="profile-photo-upload"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={(e) => {
-                          const img = e.currentTarget.files?.[0] ?? null;
-                          void handleProfilePhotoUpload(img);
-                          e.currentTarget.value = "";
-                        }}
-                        className="hidden"
-                      />
-
-                      {profilePhotoDataUrl ? (
-                        <button
-                          type="button"
-                          onClick={clearProfilePhoto}
-                          className="text-xs font-extrabold underline opacity-80 hover:opacity-100"
-                        >
-                          Remove photo
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
-                      <input
-                        type="checkbox"
-                        checked={showProfilePhoto}
-                        onChange={(e) => setShowProfilePhoto(e.target.checked)}
-                        className="h-4 w-4"
-                      />
-                      Show profile photo on resume
-                    </label>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {profilePhotoDataUrl ? (
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={profilePhotoDataUrl}
-                          alt="Profile preview"
-                          className={[
-                            "h-14 w-14 border border-black/10 object-cover",
-                            profilePhotoShape === "circle"
-                              ? "rounded-full"
-                              : profilePhotoShape === "rounded"
-                              ? "rounded-2xl"
-                              : "rounded-none",
-                          ].join(" ")}
-                        />
-                        <div className="text-xs text-black/90 dark:text-slate-100/90">
-                          Preview only. Final size/shape comes from the controls below.
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Shape</span>
-                        <select
-                          value={profilePhotoShape}
-                          onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
-                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
-                          style={{ color: "#111827", backgroundColor: "#ffffff" }}
-                        >
-                          <option value="circle" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Circle</option>
-                          <option value="rounded" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Rounded</option>
-                          <option value="square" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Square</option>
-                        </select>
-                      </label>
-
-                      <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Size</span>
-                        <select
-                          value={String(profilePhotoSize)}
-                          onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
-                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
-                          style={{ color: "#111827", backgroundColor: "#ffffff" }}
-                        >
-                          <option value="88" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Small</option>
-                          <option value="112" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Medium</option>
-                          <option value="136" style={{ color: "#111827", backgroundColor: "#ffffff" }}>Large</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div id="summary-section" className="mt-3">
-                <textarea
-                  value={profile.summary}
-                  onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
-                  rows={3}
-                  placeholder="Summary (optional)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
-                />
-              </div>
-
-              <div id="analyze-resume" className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={handleAnalyze}
@@ -6520,53 +6410,6 @@ useEffect(() => {
                 <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Only experience bullets</span>
               </label>
                                 
-              </div>
-
-
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Education (Editable)</div>
-                    <div className="text-xs text-black/90 dark:text-slate-100/90">
-                      {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={addEducationItem}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
-                  >
-                    + Add
-                  </button>
-                </div>
-
-                {editorEducationItems.length ? (
-                  <div className="mt-3 grid gap-2">
-                    {editorEducationItems.map((item, i) => (
-                      <div key={`education-${i}`} className="flex items-center gap-2">
-                        <input
-                          value={item}
-                          onChange={(e) => updateEducationItem(i, e.target.value)}
-                          className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-slate-100"
-                          placeholder="Education or certification"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => deleteEducationItem(i)}
-                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
-                          aria-label={`Delete education ${i + 1}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
-                    No education detected yet. Add it manually here if the parser misses anything.
-                  </div>
-                )}
               </div>
 
 
@@ -6787,6 +6630,169 @@ useEffect(() => {
                   )}
                 </div>
               </div>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Profile photo (Optional)</div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                    <div className="grid gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor="profile-photo-upload"
+                          className="inline-flex cursor-pointer items-center rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                        >
+                          Choose File
+                        </label>
+
+                        <input
+                          id="profile-photo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => {
+                            const img = e.currentTarget.files?.[0] ?? null;
+                            void handleProfilePhotoUpload(img);
+                            e.currentTarget.value = "";
+                          }}
+                          className="hidden"
+                        />
+
+                        {profilePhotoDataUrl ? (
+                          <button
+                            type="button"
+                            onClick={clearProfilePhoto}
+                            className="text-xs font-extrabold underline opacity-80 hover:opacity-100"
+                          >
+                            Remove photo
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        <input
+                          type="checkbox"
+                          checked={showProfilePhoto}
+                          onChange={(e) => setShowProfilePhoto(e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        Show profile photo on resume
+                      </label>
+                    </div>
+
+                    <div className="grid gap-3">
+                      {profilePhotoDataUrl ? (
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={profilePhotoDataUrl}
+                            alt="Profile preview"
+                            className={[
+                              "h-14 w-14 border border-black/10 object-cover",
+                              profilePhotoShape === "circle"
+                                ? "rounded-full"
+                                : profilePhotoShape === "rounded"
+                                ? "rounded-2xl"
+                                : "rounded-none",
+                            ].join(" ")}
+                          />
+                          <div className="text-xs text-black/90 dark:text-slate-100/90">
+                            Preview only. Final size/shape comes from the controls below.
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1">
+                          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">Shape</div>
+                          <select
+                            value={profilePhotoShape}
+                            onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
+                            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                            style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                          >
+                            <option value="circle">Circle</option>
+                            <option value="rounded">Rounded</option>
+                            <option value="square">Square</option>
+                          </select>
+                        </label>
+
+                        <label className="grid gap-1">
+                          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">Size</div>
+                          <select
+                            value={String(profilePhotoSize)}
+                            onChange={(e) => setProfilePhotoSize(Number(e.target.value) as 48 | 64 | 80 | 96 | 112)}
+                            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                            style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                          >
+                            <option value="48">Small</option>
+                            <option value="64">Medium</option>
+                            <option value="80">Large</option>
+                            <option value="96">XL</option>
+                            <option value="112">2XL</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Education (Editable)</div>
+                      <div className="text-xs text-black/90 dark:text-slate-100/90">
+                        {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        <input
+                          type="checkbox"
+                          checked={showEducationOnResume}
+                          onChange={(e) => setShowEducationOnResume(e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        Show on resume
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={addEducationItem}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {editorEducationItems.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {editorEducationItems.map((item, i) => (
+                        <div key={`education-${i}`} className="flex items-center gap-2">
+                          <input
+                            value={item}
+                            onChange={(e) => updateEducationItem(i, e.target.value)}
+                            className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-slate-100"
+                            placeholder="Education or certification"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => deleteEducationItem(i)}
+                            className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                            aria-label={`Delete education ${i + 1}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
+                      No education detected yet. Add it manually here if the parser misses anything.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -6828,7 +6834,7 @@ useEffect(() => {
                   return next;
                 });
               }}
-              className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
             >
               {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
             </button>
