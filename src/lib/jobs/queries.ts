@@ -1,5 +1,7 @@
 import { Prisma, SeniorityLevel } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { scoreResumeToJob } from "@/lib/jobs/scoring";
+import type { ResumeProfileInput } from "@/lib/jobs/types";
 import {
   getJobMatchWarmupState,
   getJobMatchWarmupUiState,
@@ -216,6 +218,53 @@ export async function listWarmupCandidateJobIds(params: {
   return fallback.slice(0, take).map((job) => job.id);
 }
 
+
+function jsonToStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+async function getResumeProfileForScoring(args: {
+  userId: string;
+  resumeProfileId: string;
+}): Promise<ResumeProfileInput | null> {
+  const profile = await prisma.resumeProfile.findFirst({
+    where: {
+      id: args.resumeProfileId,
+      userId: args.userId,
+    },
+    select: {
+      id: true,
+      userId: true,
+      normalizedSkills: true,
+      normalizedTitles: true,
+      seniority: true,
+      yearsExperience: true,
+      keywords: true,
+      summary: true,
+    },
+  });
+
+  if (!profile) return null;
+
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    normalizedSkills: jsonToStringArray(profile.normalizedSkills),
+    normalizedTitles: jsonToStringArray(profile.normalizedTitles),
+    seniority: profile.seniority ? String(profile.seniority) : null,
+    yearsExperience: profile.yearsExperience,
+    keywords: jsonToStringArray(profile.keywords),
+    summary: profile.summary,
+  };
+}
+
+function getDynamicMatchScanLimit(page: number, pageSize: number): number {
+  const requestedWindow = page * pageSize;
+  return Math.max(200, Math.min(800, requestedWindow * 6));
+}
+
+
 export async function listJobs(params: ListJobsParams) {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE);
@@ -233,6 +282,11 @@ export async function listJobs(params: ListJobsParams) {
     sort === "match" &&
     Boolean(params.resumeProfileId) &&
     shouldUseJobMatchCache(warmupState);
+
+  const visibleWhere: Prisma.JobWhereInput = {
+    ...baseWhere,
+    hiddenBy: { none: { userId: params.userId } },
+  };
 
   const cacheWhere: Prisma.JobMatchWhereInput =
     sort === "match" && params.resumeProfileId
@@ -252,7 +306,10 @@ export async function listJobs(params: ListJobsParams) {
       : 0;
 
   const canUsePartialCache =
-    sort === "match" && Boolean(params.resumeProfileId) && partialCacheCount > 0;
+    sort === "match" &&
+    Boolean(params.resumeProfileId) &&
+    shouldUseCache &&
+    partialCacheCount >= page * pageSize;
 
   const warmupUiState = getJobMatchWarmupUiState({
     state: warmupState,
@@ -308,10 +365,76 @@ export async function listJobs(params: ListJobsParams) {
     };
   }
 
-  const visibleWhere: Prisma.JobWhereInput = {
-    ...baseWhere,
-    hiddenBy: { none: { userId: params.userId } },
-  };
+  if (sort === "match" && params.resumeProfileId) {
+    const profile = await getResumeProfileForScoring({
+      userId: params.userId,
+      resumeProfileId: params.resumeProfileId,
+    });
+
+    if (profile) {
+      const scanLimit = getDynamicMatchScanLimit(page, pageSize);
+      const [candidateJobs, total] = await Promise.all([
+        prisma.job.findMany({
+          where: visibleWhere,
+          include: {
+            source: true,
+            applications: {
+              where: { userId: params.userId },
+              take: 1,
+              orderBy: { updatedAt: "desc" },
+            },
+          },
+          orderBy: [{ postedAt: "desc" }, { createdAt: "desc" }],
+          take: scanLimit,
+        }),
+        prisma.job.count({ where: visibleWhere }),
+      ]);
+
+      const scoredJobs = candidateJobs
+        .map((job) => {
+          const match = scoreResumeToJob(profile, job);
+          const rolePriority = getRoleFamilyPriority(params.targetPosition, job.title);
+          return {
+            job,
+            match,
+            rolePriority,
+          };
+        })
+        .sort((a, b) => {
+          if (b.match.totalScore !== a.match.totalScore) {
+            return b.match.totalScore - a.match.totalScore;
+          }
+          if (b.rolePriority !== a.rolePriority) {
+            return b.rolePriority - a.rolePriority;
+          }
+          const postedA = safeDateMs(a.job.postedAt) || safeDateMs(a.job.createdAt);
+          const postedB = safeDateMs(b.job.postedAt) || safeDateMs(b.job.createdAt);
+          return postedB - postedA;
+        });
+
+      const pageItems = scoredJobs.slice((page - 1) * pageSize, page * pageSize);
+
+      return {
+        jobs: pageItems.map(({ job, match }) => ({
+          ...job,
+          matchScore: match.totalScore,
+          explanationShort: match.explanationShort,
+          matchingSkills: match.matchingSkills,
+          missingSkills: match.missingSkills,
+          application: mapApplication(job.applications[0] ?? null),
+        })),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        usedFallback: true,
+        warmup: {
+          ...warmupUiState,
+          usedFallback: true,
+        },
+      };
+    }
+  }
 
   const [jobs, total] = await Promise.all([
     prisma.job.findMany({
