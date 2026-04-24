@@ -5711,11 +5711,6 @@ if (typeof planIndex === "number") {
     resumeTemplate,
   ]);
 
-  const profileSyncDirty = useMemo(() => {
-    if (!analysis || !resumeProfileSyncSignature) return false;
-    return lastProfileSyncSignatureRef.current !== resumeProfileSyncSignature;
-  }, [analysis, resumeProfileSyncSignature]);
-
   useEffect(() => {
     setSelectedBulletIdx((prev) => {
       const filtered = [...prev].filter((i) => i < liveBulletRows.length);
@@ -5923,24 +5918,45 @@ const syncResumeProfileDraft = useCallback(async () => {
 ]);
 
 
+  const loadNewestResumeProfileId = useCallback(async () => {
+    try {
+      const response = await fetch("/api/resume-profiles", { method: "GET", cache: "no-store" });
+      const payload = await parseApiResponse(response) as { ok?: boolean; items?: Array<{ id?: string | null }> } | string;
+
+      if (!response.ok || typeof payload === "string" || !payload?.ok || !Array.isArray(payload.items)) {
+        return "";
+      }
+
+      return String(payload.items[0]?.id || "").trim();
+    } catch {
+      return "";
+    }
+  }, []);
+
   const finishSetupAndGoToJobs = useCallback(async () => {
+    setError(null);
+
     const syncedProfileId = await syncResumeProfileDraft();
     const fallbackProfileId = (() => {
       if (typeof window === "undefined") return "";
       const stored = window.localStorage.getItem("activeResumeProfileId") || "";
       return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
     })();
-    const resumeProfileId = String(syncedProfileId || fallbackProfileId || "").trim();
+    const recoveredProfileId = String(syncedProfileId || fallbackProfileId || "").trim() || await loadNewestResumeProfileId();
+    const resumeProfileId = String(recoveredProfileId || "").trim();
 
     if (resumeProfileId) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("activeResumeProfileId", resumeProfileId);
+      }
       router.push(`/jobs?resumeProfileId=${encodeURIComponent(resumeProfileId)}`);
       return;
     }
 
-    if (!profileSyncDirty && analysis) {
-      router.push("/jobs");
+    if (analysis) {
+      setError("Setup finished analyzing the resume, but no resume profile was saved. Please click Refresh ATS + Profile Sync once, then try Finish Setup again.");
     }
-  }, [syncResumeProfileDraft, router, profileSyncDirty, analysis, searchParamsKey, applyPackBundle]);
+  }, [syncResumeProfileDraft, router, analysis, searchParamsKey, applyPackBundle, loadNewestResumeProfileId]);
 
 useEffect(() => {
   if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;

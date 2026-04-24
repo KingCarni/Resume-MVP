@@ -311,12 +311,28 @@ function buildProfilePayload(input: BuildResumeProfileInput) {
   };
 }
 
+async function safelyMarkWarmupPending(args: { userId: string; resumeProfileId: string }) {
+  try {
+    await markJobMatchWarmupPending(args);
+  } catch (error) {
+    console.error("resume profile warmup enqueue failed:", error);
+  }
+}
+
+async function safelyMarkWarmupStale(args: { userId: string; resumeProfileId: string }) {
+  try {
+    await markJobMatchWarmupStale(args);
+  } catch (error) {
+    console.error("resume profile warmup stale mark failed:", error);
+  }
+}
+
 export async function buildResumeProfile(input: BuildResumeProfileInput) {
   const item = await prisma.resumeProfile.create({
     data: buildProfilePayload(input),
   });
 
-  await markJobMatchWarmupPending({
+  await safelyMarkWarmupPending({
     userId: input.userId,
     resumeProfileId: item.id,
   });
@@ -330,7 +346,7 @@ export async function rebuildResumeProfile(resumeProfileId: string, input: Build
     data: buildProfilePayload(input),
   });
 
-  await markJobMatchWarmupStale({
+  await safelyMarkWarmupStale({
     userId: input.userId,
     resumeProfileId,
   });
