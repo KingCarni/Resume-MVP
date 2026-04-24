@@ -1,4 +1,4 @@
-import { prisma } from "src/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 async function main() {
   const poolId = process.env.DONATION_POOL_USER_ID || "donation_pool";
