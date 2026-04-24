@@ -97,7 +97,12 @@ type FeedbackState = {
   message: string;
 } | null;
 
-type JobApplicationStatus = "applied" | "interview" | "offer" | "rejected" | "archived";
+type JobApplicationStatus =
+  | "applied"
+  | "interview"
+  | "offer"
+  | "rejected"
+  | "archived";
 
 function applicationStatusLabel(status: JobApplicationStatus) {
   if (status === "interview") return "Interview";
@@ -108,15 +113,20 @@ function applicationStatusLabel(status: JobApplicationStatus) {
 }
 
 function applicationStatusTone(status: JobApplicationStatus) {
-  if (status === "interview") return "border-violet-400/20 bg-violet-500/10 text-violet-200";
-  if (status === "offer") return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
-  if (status === "rejected") return "border-rose-400/20 bg-rose-500/10 text-rose-200";
-  if (status === "archived") return "border-slate-400/20 bg-slate-500/10 text-slate-200";
+  if (status === "interview")
+    return "border-violet-400/20 bg-violet-500/10 text-violet-200";
+  if (status === "offer")
+    return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
+  if (status === "rejected")
+    return "border-rose-400/20 bg-rose-500/10 text-rose-200";
+  if (status === "archived")
+    return "border-slate-400/20 bg-slate-500/10 text-slate-200";
   return "border-cyan-400/20 bg-cyan-500/10 text-cyan-200";
 }
 
 function applicationAnalyticsEvent(status: JobApplicationStatus) {
-  if (status === "interview") return "job_application_moved_to_interview" as const;
+  if (status === "interview")
+    return "job_application_moved_to_interview" as const;
   if (status === "offer") return "job_application_moved_to_offer" as const;
   if (status === "rejected") return "job_application_marked_rejected" as const;
   if (status === "archived") return "job_application_archived" as const;
@@ -301,7 +311,10 @@ function isSortMode(value: unknown): value is SortMode {
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
+  );
 }
 
 function buildCardSummary(job: JobListItem, hasProfile: boolean) {
@@ -324,7 +337,11 @@ function buildCardSummary(job: JobListItem, hasProfile: boolean) {
     extras.push(`Matching skills: ${matchingSkills.join(", ")}.`);
   }
 
-  if (missingSkills.length > 0 && !lowerBase.includes("gap to close:") && !lowerBase.includes("address ")) {
+  if (
+    missingSkills.length > 0 &&
+    !lowerBase.includes("gap to close:") &&
+    !lowerBase.includes("address ")
+  ) {
     extras.push(`Gap to close: ${missingSkills.join(", ")}.`);
   }
 
@@ -397,13 +414,20 @@ export default function JobsPage() {
   const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
   const [warmupPollCount, setWarmupPollCount] = useState(0);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
-  const [applyingJobIds, setApplyingJobIds] = useState<Record<string, boolean>>({});
+  const [applyingJobIds, setApplyingJobIds] = useState<Record<string, boolean>>(
+    {},
+  );
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const trackedFeedViewKeyRef = useRef("");
   const trackedProfileSelectionRef = useRef("");
+  const jobsRef = useRef<JobListItem[]>([]);
   const [pageStateReady, setPageStateReady] = useState(false);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   const defaultSort: SortMode = "match";
 
@@ -416,11 +440,11 @@ export default function JobsPage() {
     sortInput !== appliedSort ||
     normalizeInputValue(targetPositionInput) !== appliedTargetPosition;
 
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storedProfileId = window.localStorage.getItem("activeResumeProfileId") || "";
+    const storedProfileId =
+      window.localStorage.getItem("activeResumeProfileId") || "";
     const rawState = window.localStorage.getItem(JOBS_PAGE_STATE_KEY);
 
     if (rawState) {
@@ -428,14 +452,26 @@ export default function JobsPage() {
         const parsed = JSON.parse(rawState) as PersistedJobsPageState;
         const nextSearch = normalizeInputValue(parsed.search ?? "");
         const nextLocation = normalizeInputValue(parsed.location ?? "");
-        const nextRemote = isRemoteFilter(parsed.remote) ? parsed.remote : "all";
-        const nextSeniority = typeof parsed.seniority === "string" && parsed.seniority.trim() ? parsed.seniority : "all";
-        const nextMinSalary = normalizeInputValue((parsed.minSalary ?? "").replace(/[^\d]/g, ""));
+        const nextRemote = isRemoteFilter(parsed.remote)
+          ? parsed.remote
+          : "all";
+        const nextSeniority =
+          typeof parsed.seniority === "string" && parsed.seniority.trim()
+            ? parsed.seniority
+            : "all";
+        const nextMinSalary = normalizeInputValue(
+          (parsed.minSalary ?? "").replace(/[^\d]/g, ""),
+        );
         const nextSort = isSortMode(parsed.sort) ? parsed.sort : "match";
-        const nextTargetPosition = normalizeInputValue(parsed.targetPosition ?? "");
-        const nextPage = typeof parsed.page === "number" && Number.isFinite(parsed.page) && parsed.page > 0
-          ? Math.floor(parsed.page)
-          : 1;
+        const nextTargetPosition = normalizeInputValue(
+          parsed.targetPosition ?? "",
+        );
+        const nextPage =
+          typeof parsed.page === "number" &&
+          Number.isFinite(parsed.page) &&
+          parsed.page > 0
+            ? Math.floor(parsed.page)
+            : 1;
 
         setSearchInput(nextSearch);
         setAppliedSearch(nextSearch);
@@ -509,7 +545,6 @@ export default function JobsPage() {
     const timeout = window.setTimeout(() => setFeedback(null), 2800);
     return () => window.clearTimeout(timeout);
   }, [feedback]);
-
 
   useEffect(() => {
     setPage(1);
@@ -598,7 +633,8 @@ export default function JobsPage() {
     if (appliedRemote !== "all") params.set("remote", appliedRemote);
     if (appliedSeniority !== "all") params.set("seniority", appliedSeniority);
     if (appliedMinSalary) params.set("minSalary", appliedMinSalary);
-    if (appliedTargetPosition) params.set("targetPosition", appliedTargetPosition);
+    if (appliedTargetPosition)
+      params.set("targetPosition", appliedTargetPosition);
     params.set("sort", appliedSort);
     params.set("page", String(page));
     params.set("pageSize", "20");
@@ -615,13 +651,84 @@ export default function JobsPage() {
     selectedProfileId,
   ]);
 
+  const newestFallbackQueryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (selectedProfileId) params.set("resumeProfileId", selectedProfileId);
+    if (appliedSearch) params.set("q", appliedSearch);
+    if (appliedLocation) params.set("location", appliedLocation);
+    if (appliedRemote !== "all") params.set("remote", appliedRemote);
+    if (appliedSeniority !== "all") params.set("seniority", appliedSeniority);
+    if (appliedMinSalary) params.set("minSalary", appliedMinSalary);
+    if (appliedTargetPosition)
+      params.set("targetPosition", appliedTargetPosition);
+    params.set("sort", "newest");
+    params.set("page", String(page));
+    params.set("pageSize", "20");
+    return params.toString();
+  }, [
+    appliedLocation,
+    appliedMinSalary,
+    appliedRemote,
+    appliedSearch,
+    appliedSeniority,
+    appliedTargetPosition,
+    page,
+    selectedProfileId,
+  ]);
+
   useEffect(() => {
     if (!pageStateReady) return;
 
     let active = true;
+
+    async function loadNewestFallbackWhileMatching() {
+      const shouldSeedNewest =
+        selectedProfileId &&
+        appliedSort === "match" &&
+        jobsRef.current.length === 0;
+
+      if (!shouldSeedNewest) return;
+
+      try {
+        const response = await fetch(`/api/jobs?${newestFallbackQueryString}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const json = (await response.json()) as JobsResponse;
+        if (!response.ok || !json.ok || !active) return;
+
+        const items = Array.isArray(json.items) ? json.items : [];
+        if (!items.length) return;
+
+        setJobs(items);
+        setTotalPages(Math.max(1, json.totalPages ?? 1));
+        setTotalJobs(json.total ?? 0);
+        setMatchWarmup({
+          status: "running",
+          ready: false,
+          active: true,
+          usedFallback: true,
+          processedCount: 0,
+          totalCandidateCount: 0,
+          progressPercent: 0,
+          shouldPoll: true,
+          shouldTriggerWarmup: true,
+          lastError: null,
+          shortLabel: "Preparing best matches",
+          message:
+            "Newest roles are showing while best matches are prepared for this resume profile.",
+        });
+      } catch {
+        // The real best-match request below still owns the visible error state.
+      }
+    }
+
     async function loadJobs() {
       setJobsLoading(true);
       setJobsError(null);
+
+      const fallbackPromise = loadNewestFallbackWhileMatching();
+
       try {
         const response = await fetch(`/api/jobs?${queryString}`, {
           method: "GET",
@@ -637,7 +744,7 @@ export default function JobsPage() {
         setTotalJobs(json.total ?? 0);
         setMatchWarmup(
           selectedProfileId && appliedSort === "match"
-            ? json.warmup ?? {
+            ? (json.warmup ?? {
                 status: json.usedFallback ? "idle" : "ready",
                 ready: !json.usedFallback,
                 active: false,
@@ -648,11 +755,13 @@ export default function JobsPage() {
                 shouldPoll: !!json.usedFallback,
                 shouldTriggerWarmup: !!json.usedFallback,
                 lastError: null,
-                shortLabel: json.usedFallback ? "Preparing best matches" : "Best match ready",
+                shortLabel: json.usedFallback
+                  ? "Preparing best matches"
+                  : "Best match ready",
                 message: json.usedFallback
                   ? "Best matches are still preparing, so the feed is showing recent jobs for now."
                   : "Best-match cache is ready.",
-              }
+              })
             : null,
         );
         setSavedJobIds((current) => {
@@ -670,6 +779,34 @@ export default function JobsPage() {
         });
       } catch (error) {
         if (!active) return;
+        await fallbackPromise;
+
+        if (jobsRef.current.length > 0) {
+          setMatchWarmup((current) =>
+            current
+              ? {
+                  ...current,
+                  status: "failed",
+                  active: false,
+                  ready: false,
+                  usedFallback: true,
+                  shouldTriggerWarmup: false,
+                  shouldPoll: false,
+                  shortLabel: "Best match delayed",
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Best match is delayed, so newest jobs are still showing.",
+                  lastError:
+                    error instanceof Error
+                      ? error.message
+                      : "Best match is delayed, so newest jobs are still showing.",
+                }
+              : current,
+          );
+          return;
+        }
+
         setMatchWarmup(null);
         setJobsError(
           error instanceof Error ? error.message : "Could not load jobs.",
@@ -682,8 +819,14 @@ export default function JobsPage() {
     return () => {
       active = false;
     };
-  }, [jobsRefreshNonce, pageStateReady, queryString]);
-
+  }, [
+    jobsRefreshNonce,
+    newestFallbackQueryString,
+    pageStateReady,
+    queryString,
+    selectedProfileId,
+    appliedSort,
+  ]);
 
   function clearProfile() {
     setSelectedProfileId("");
@@ -733,7 +876,16 @@ export default function JobsPage() {
     applyFilters();
   }
 
-  function removeAppliedFilter(kind: "search" | "location" | "remote" | "seniority" | "minSalary" | "sort" | "targetPosition") {
+  function removeAppliedFilter(
+    kind:
+      | "search"
+      | "location"
+      | "remote"
+      | "seniority"
+      | "minSalary"
+      | "sort"
+      | "targetPosition",
+  ) {
     if (kind === "search") {
       setSearchInput("");
       setAppliedSearch("");
@@ -807,7 +959,10 @@ export default function JobsPage() {
     }
   }
 
-  async function updateApplicationStatus(job: JobListItem, status: JobApplicationStatus) {
+  async function updateApplicationStatus(
+    job: JobListItem,
+    status: JobApplicationStatus,
+  ) {
     setApplyingJobIds((current) => ({ ...current, [job.id]: true }));
     try {
       const response = await fetch(`/api/jobs/${job.id}/application`, {
@@ -817,7 +972,10 @@ export default function JobsPage() {
       });
       const json = (await response
         .json()
-        .catch(() => ({ ok: response.ok }))) as { ok?: boolean; error?: string };
+        .catch(() => ({ ok: response.ok }))) as {
+        ok?: boolean;
+        error?: string;
+      };
       if (!response.ok || json.ok === false)
         throw new Error(json.error || "Could not update application status.");
       setJobs((current) =>
@@ -827,7 +985,8 @@ export default function JobsPage() {
                 ...item,
                 application: {
                   status,
-                  appliedAt: item.application?.appliedAt ?? new Date().toISOString(),
+                  appliedAt:
+                    item.application?.appliedAt ?? new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 },
               }
@@ -855,7 +1014,10 @@ export default function JobsPage() {
     } catch (error) {
       setFeedback({
         tone: "error",
-        message: error instanceof Error ? error.message : "Could not update application status.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not update application status.",
       });
     } finally {
       setApplyingJobIds((current) => ({ ...current, [job.id]: false }));
@@ -891,7 +1053,10 @@ export default function JobsPage() {
       location: appliedLocation || undefined,
       minSalary: appliedMinSalary || undefined,
       totalJobs,
-      meta: { jobsCount: jobs.length, targetPosition: appliedTargetPosition || undefined },
+      meta: {
+        jobsCount: jobs.length,
+        targetPosition: appliedTargetPosition || undefined,
+      },
     });
   }, [
     appliedLocation,
@@ -923,7 +1088,8 @@ export default function JobsPage() {
   }, [profiles.length, profilesLoading, selectedProfileId]);
 
   async function triggerWarmup(manualRetry = false) {
-    if (!warmupRequestPayload.resumeProfileId || appliedSort !== "match") return;
+    if (!warmupRequestPayload.resumeProfileId || appliedSort !== "match")
+      return;
     if (manualRetry) setWarmupPollCount(0);
     setWarmupRequestInFlight(true);
 
@@ -934,7 +1100,9 @@ export default function JobsPage() {
         body: JSON.stringify(warmupRequestPayload),
       });
 
-      const json = (await response.json().catch(() => ({ ok: response.ok }))) as {
+      const json = (await response
+        .json()
+        .catch(() => ({ ok: response.ok }))) as {
         ok?: boolean;
         error?: string;
         status?: MatchWarmupState["status"];
@@ -953,10 +1121,22 @@ export default function JobsPage() {
       setMatchWarmup((current) => {
         if (!current) return current;
         const nextStatus = json.status ?? "running";
-        const nextProcessed = typeof json.processed === "number" ? json.processed : current.processedCount;
-        const nextTotal = typeof json.totalCandidates === "number" ? json.totalCandidates : current.totalCandidateCount;
+        const nextProcessed =
+          typeof json.processed === "number"
+            ? json.processed
+            : current.processedCount;
+        const nextTotal =
+          typeof json.totalCandidates === "number"
+            ? json.totalCandidates
+            : current.totalCandidateCount;
         const shouldContinue = Boolean(json.continueRecommended) && !nextReady;
-        const progressPercent = nextTotal > 0 ? Math.max(0, Math.min(100, Math.round((nextProcessed / nextTotal) * 100))) : 0;
+        const progressPercent =
+          nextTotal > 0
+            ? Math.max(
+                0,
+                Math.min(100, Math.round((nextProcessed / nextTotal) * 100)),
+              )
+            : 0;
         const nextLabel =
           nextStatus === "pending"
             ? manualRetry
@@ -982,7 +1162,9 @@ export default function JobsPage() {
           shouldTriggerWarmup: shouldContinue,
           shouldPoll: shouldContinue,
           shortLabel: nextReady ? "Best matches ready" : nextLabel,
-          message: nextReady ? "Cached best-match results are ready for this resume profile." : nextMessage,
+          message: nextReady
+            ? "Cached best-match results are ready for this resume profile."
+            : nextMessage,
           lastError: null,
         };
       });
@@ -1109,25 +1291,59 @@ export default function JobsPage() {
   }
 
   const activeFilterPills = useMemo(() => {
-    const pills: Array<{ key: "search" | "location" | "remote" | "seniority" | "minSalary" | "sort"; label: string }> = [];
-    if (appliedSearch) pills.push({ key: "search", label: `Search: ${appliedSearch}` });
-    if (appliedLocation) pills.push({ key: "location", label: `Location: ${appliedLocation}` });
-    if (appliedRemote !== "all") pills.push({ key: "remote", label: `Remote: ${titleCase(appliedRemote)}` });
-    if (appliedSeniority !== "all") pills.push({ key: "seniority", label: `Seniority: ${titleCase(appliedSeniority)}` });
-    if (appliedMinSalary) pills.push({ key: "minSalary", label: `Min salary: ${appliedMinSalary}` });
+    const pills: Array<{
+      key:
+        | "search"
+        | "location"
+        | "remote"
+        | "seniority"
+        | "minSalary"
+        | "sort";
+      label: string;
+    }> = [];
+    if (appliedSearch)
+      pills.push({ key: "search", label: `Search: ${appliedSearch}` });
+    if (appliedLocation)
+      pills.push({ key: "location", label: `Location: ${appliedLocation}` });
+    if (appliedRemote !== "all")
+      pills.push({
+        key: "remote",
+        label: `Remote: ${titleCase(appliedRemote)}`,
+      });
+    if (appliedSeniority !== "all")
+      pills.push({
+        key: "seniority",
+        label: `Seniority: ${titleCase(appliedSeniority)}`,
+      });
+    if (appliedMinSalary)
+      pills.push({
+        key: "minSalary",
+        label: `Min salary: ${appliedMinSalary}`,
+      });
     if (appliedSort !== defaultSort) {
       const sortLabel = appliedSort === "newest" ? "Newest" : "Salary";
       pills.push({ key: "sort", label: `Sort: ${sortLabel}` });
     }
     return pills;
-  }, [appliedLocation, appliedMinSalary, appliedRemote, appliedSearch, appliedSeniority, appliedSort, defaultSort]);
+  }, [
+    appliedLocation,
+    appliedMinSalary,
+    appliedRemote,
+    appliedSearch,
+    appliedSeniority,
+    appliedSort,
+    defaultSort,
+  ]);
 
   return (
     <main className="min-h-screen text-white">
       <header className="shell-wrap pt-5">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-4">
-            <Link href="/" className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl">
+            <Link
+              href="/"
+              className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl"
+            >
               Git-a-Job
             </Link>
             <div className="hidden items-center gap-2 md:flex">
@@ -1179,7 +1395,9 @@ export default function JobsPage() {
             <div className="flex flex-wrap gap-3">
               <div className="rounded-2xl border border-cyan-400/20 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
                 <div className="font-semibold text-white">
-                  {jobsLoading ? "Loading roles..." : `${totalJobs} role${totalJobs === 1 ? "" : "s"} found`}
+                  {jobsLoading && jobs.length === 0
+                    ? "Loading roles..."
+                    : `${totalJobs} role${totalJobs === 1 ? "" : "s"} found`}
                 </div>
               </div>
             </div>
@@ -1199,7 +1417,8 @@ export default function JobsPage() {
           <div className="grid gap-4 lg:grid-cols-6">
             <div className="lg:col-span-2">
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Resume profile{profiles.length > 0 ? ` • ${profiles.length}` : ""}
+                Resume profile
+                {profiles.length > 0 ? ` • ${profiles.length}` : ""}
               </label>
               <div className="flex gap-2">
                 <select
@@ -1229,7 +1448,8 @@ export default function JobsPage() {
               ) : null}
               {!profilesLoading && profiles.length === 0 ? (
                 <div className="mt-3 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-xs leading-6 text-slate-300">
-                  No resume profiles yet. Upload or build one in the Resume tool to unlock best-match ranking.
+                  No resume profiles yet. Upload or build one in the Resume tool
+                  to unlock best-match ranking.
                 </div>
               ) : null}
             </div>
@@ -1252,7 +1472,8 @@ export default function JobsPage() {
                 ))}
               </datalist>
               <p className="mt-2 text-xs text-slate-400">
-                Use this to prioritize closely related roles first during best-match warmup.
+                Use this to prioritize closely related roles first during
+                best-match warmup.
               </p>
             </div>
 
@@ -1304,7 +1525,9 @@ export default function JobsPage() {
               </label>
               <select
                 value={sortInput}
-                onChange={(event) => setSortInput(event.target.value as SortMode)}
+                onChange={(event) =>
+                  setSortInput(event.target.value as SortMode)
+                }
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
               >
                 <option value="match">Best match</option>
@@ -1406,12 +1629,16 @@ export default function JobsPage() {
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
           <div>
-            {jobsLoading ? (
-              <span>Refreshing jobs…</span>
+            {jobsLoading && jobs.length === 0 ? (
+              <span>Loading jobs…</span>
+            ) : jobsLoading ? (
+              <span>Updating best matches… showing current jobs below.</span>
             ) : (
               <span>
-                Showing <span className="font-semibold text-white">{jobs.length}</span> of{" "}
-                <span className="font-semibold text-white">{totalJobs}</span> roles •{" "}
+                Showing{" "}
+                <span className="font-semibold text-white">{jobs.length}</span>{" "}
+                of <span className="font-semibold text-white">{totalJobs}</span>{" "}
+                roles •{" "}
                 <span className="font-semibold text-white">
                   {selectedProfileId && appliedSort === "match"
                     ? getWarmupHeadline({
@@ -1444,7 +1671,9 @@ export default function JobsPage() {
                 <p className="mt-1 text-sm opacity-95">{matchWarmup.message}</p>
                 {matchWarmup.totalCandidateCount > 0 ? (
                   <p className="mt-2 text-xs opacity-80">
-                    Progress: {matchWarmup.processedCount}/{matchWarmup.totalCandidateCount} ({matchWarmup.progressPercent}%)
+                    Progress: {matchWarmup.processedCount}/
+                    {matchWarmup.totalCandidateCount} (
+                    {matchWarmup.progressPercent}%)
                   </p>
                 ) : null}
               </div>
@@ -1460,7 +1689,7 @@ export default function JobsPage() {
           </div>
         ) : null}
 
-        {jobsLoading ? (
+        {jobsLoading && jobs.length === 0 ? (
           <div className="grid gap-4">
             {Array.from({ length: 6 }).map((_, index) => (
               <div
@@ -1610,13 +1839,16 @@ export default function JobsPage() {
                               ? undefined
                               : updateApplicationStatus(job, "applied")
                           }
-                          disabled={!!applyingJobIds[job.id] || !!job.application}
+                          disabled={
+                            !!applyingJobIds[job.id] || !!job.application
+                          }
                           className={cn(
                             "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition",
                             job.application
                               ? "cursor-default bg-cyan-500/15 text-cyan-100"
                               : "bg-emerald-400 text-slate-950 hover:bg-emerald-300",
-                            applyingJobIds[job.id] && "cursor-not-allowed opacity-60",
+                            applyingJobIds[job.id] &&
+                              "cursor-not-allowed opacity-60",
                           )}
                         >
                           {applyingJobIds[job.id]
