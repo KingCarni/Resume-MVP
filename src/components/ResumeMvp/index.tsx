@@ -261,8 +261,8 @@ const CREDIT_COSTS = {
   rewriteBullet: 1, // set to whatever /api/rewrite-bullet charges
 } as const;
 
-const REWRITE_REQUEST_TIMEOUT_MS = 25_000;
-const REWRITE_REQUEST_RETRY_TIMEOUT_MS = 15_000;
+const REWRITE_FIRST_ATTEMPT_TIMEOUT_MS = 25_000;
+const REWRITE_RETRY_TIMEOUT_MS = 15_000;
 
 /** ---------------- Helpers ---------------- */
 
@@ -270,21 +270,6 @@ async function parseApiResponse(res: Response) {
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return await res.json();
   return await res.text();
-}
-
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError";
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
 }
 
 function isHtmlDoc(x: unknown) {
@@ -3059,6 +3044,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const [showDebugJson, setShowDebugJson] = useState(false);
   const [logNetworkDebug, setLogNetworkDebug] = useState(true);
   const [showRewriteScorecard, setShowRewriteScorecard] = useState(true);
+  const [rewriteProofByRow, setRewriteProofByRow] = useState<Record<string, Partial<RewritePlanItem>>>({});
 
   // ✅ Selecting bullets = apply rewrite (if rewritten exists)
   const [selectedBulletIdx, setSelectedBulletIdx] = useState<Set<number>>(() => new Set());
@@ -3563,6 +3549,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setSelectedBulletIdx(new Set());
     setAssignments({});
     setRewriteSessions({});
+    setRewriteProofByRow({});
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
     setAtsScoreInitialized(false);
@@ -3962,7 +3949,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     }
   }
 
-  async function postRewriteWithFallback(body: Record<string, unknown>) {
+  async function postRewriteWithFallback(body: Record<string, unknown>, options?: { timeoutMs?: number }) {
     const safeBody = {
       ...buildRewriteBulletPayload(body),
       rewriteSessionId: body?.rewriteSessionId,
@@ -3989,33 +3976,26 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       );
     }
 
-    const requestInit: RequestInit = {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-    };
+    const timeoutMs = Math.max(1_000, Number(options?.timeoutMs ?? REWRITE_FIRST_ATTEMPT_TIMEOUT_MS));
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
     let res: Response;
     try {
-      res = await fetchWithTimeout("/api/rewrite-bullet", requestInit, REWRITE_REQUEST_TIMEOUT_MS);
-    } catch (firstError) {
-      if (!isAbortError(firstError)) throw firstError;
-
-      if (logNetworkDebug) {
-        console.warn("[rewrite] request timed out; retrying once", {
-          firstTimeoutMs: REWRITE_REQUEST_TIMEOUT_MS,
-          retryTimeoutMs: REWRITE_REQUEST_RETRY_TIMEOUT_MS,
-        });
+      res = await fetch("/api/rewrite-bullet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+        signal: controller.signal,
+      });
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      if (err.name === "AbortError") {
+        throw new Error(`Rewrite request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
       }
-
-      try {
-        res = await fetchWithTimeout("/api/rewrite-bullet", requestInit, REWRITE_REQUEST_RETRY_TIMEOUT_MS);
-      } catch (retryError) {
-        if (isAbortError(retryError)) {
-          throw new Error("Rewrite timed out after one retry. This bullet was skipped so the batch can continue.");
-        }
-        throw retryError;
-      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeoutId);
     }
 
     const payload = await parseApiResponse(res);
@@ -4126,6 +4106,28 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         next[row.bulletIndex] = rewrittenTraining;
         return { ...prev, [row.sectionId]: next };
       });
+
+      setRewriteProofByRow((prev) => ({
+        ...prev,
+        [row.key]: {
+          originalBullet,
+          suggestedKeywords,
+          rewrittenBullet: rewrittenTraining,
+          needsMoreInfo: false,
+          notes: ["Training/education bullet detected; rewrite kept faithful (no invented duties)."],
+          keywordHits: [],
+          blockedKeywords: [],
+          truthRisk: {
+            score: 0,
+            level: "safe",
+            reasons: ["Training bullet rewrite kept close to the original claim."],
+            addedTerms: [],
+            riskyPhrases: [],
+            unsupportedClaims: [],
+          },
+          jobId: row.sectionId,
+        },
+      }));
 
       refreshCredits();
       return true;
@@ -4386,7 +4388,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         maxAttempts: activeSession.maxAttempts,
       };
 
-      async function runRewriteAttempt(extraConstraints: string[] = [], requestAttemptNumber?: number) {
+      async function runRewriteAttempt(extraConstraints: string[] = [], requestAttemptNumber?: number, timeoutMs = REWRITE_FIRST_ATTEMPT_TIMEOUT_MS) {
         const nextAttemptNumber =
           typeof requestAttemptNumber === "number"
             ? requestAttemptNumber
@@ -4409,7 +4411,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           ],
         };
 
-        const { res, payload } = await postRewriteWithFallback(requestBody);
+        const { res, payload } = await postRewriteWithFallback(requestBody, { timeoutMs });
 
         if (isHtmlDoc(payload)) {
           throw new Error(`Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
@@ -4456,7 +4458,30 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         return payload;
       }
 
-      let payload = await runRewriteAttempt();
+      async function runRewriteAttemptWithTimeoutRetry(extraConstraints: string[] = [], requestAttemptNumber?: number) {
+        const firstAttemptNumber =
+          typeof requestAttemptNumber === "number"
+            ? requestAttemptNumber
+            : activeSession.attemptNumber + 1;
+
+        try {
+          return await runRewriteAttempt(extraConstraints, firstAttemptNumber, REWRITE_FIRST_ATTEMPT_TIMEOUT_MS);
+        } catch (e: unknown) {
+          const message = getErrorMessage(e, "Rewrite failed");
+          if (!/timed out|abort/i.test(message)) throw e;
+
+          return await runRewriteAttempt(
+            [
+              ...extraConstraints,
+              "The previous rewrite request timed out. Return one concise, faithful rewrite without extra explanation.",
+            ],
+            firstAttemptNumber + 1,
+            REWRITE_RETRY_TIMEOUT_MS
+          );
+        }
+      }
+
+      let payload = await runRewriteAttemptWithTimeoutRetry();
 
       let rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
       let needsMoreInfo = !!payload?.needsMoreInfo;
@@ -4483,7 +4508,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
           needsMoreInfo,
         })
       ) {
-        payload = await runRewriteAttempt(
+        payload = await runRewriteAttemptWithTimeoutRetry(
           [
             "This bullet still needs a more noticeable rewrite. Keep it truthful, but strengthen the opener, tighten the structure, and make the improvement obvious.",
             "Do not return a near-copy of the original. Make a clear wording upgrade while preserving the original facts.",
@@ -4575,6 +4600,22 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         return { ...prev, [row.sectionId]: next };
       });
 
+      setRewriteProofByRow((prev) => ({
+        ...prev,
+        [row.key]: {
+          originalBullet,
+          suggestedKeywords,
+          rewrittenBullet,
+          needsMoreInfo,
+          notes,
+          keywordHits,
+          blockedKeywords,
+          truthRisk: truthRisk ?? undefined,
+          verbStrength: payload?.verbStrengthAfter,
+          jobId: row.sectionId,
+        },
+      }));
+
       if (appendedPlanIndex !== null) {
         setAssignments((prev) => ({
           ...prev,
@@ -4630,6 +4671,13 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const next = [...(prev[row.sectionId] || [])];
       next[row.bulletIndex] = row.originalText || next[row.bulletIndex] || "";
       return { ...prev, [row.sectionId]: next };
+    });
+
+    setRewriteProofByRow((prev) => {
+      if (!(row.key in prev)) return prev;
+      const next = { ...prev };
+      delete next[row.key];
+      return next;
     });
 
     setSelectedBulletIdx((prev) => {
@@ -4707,6 +4755,13 @@ if (typeof planIndex === "number") {
     setResumeText(rebuiltResumeText);
 
     const rewriteSessionKey = `${sectionId}:${index}`;
+    setRewriteProofByRow((prev) => {
+      if (!(rewriteSessionKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[rewriteSessionKey];
+      return next;
+    });
+
     setRewriteSessions((prev) => {
       if (!(rewriteSessionKey in prev)) return prev;
       const next = { ...prev };
@@ -4740,19 +4795,19 @@ if (typeof planIndex === "number") {
     setLoadingBatchRewrite(true);
     setError(null);
 
-    let rewrittenCount = 0;
+    let successCount = 0;
     let failedCount = 0;
 
     try {
       for (const i of selected) {
         // eslint-disable-next-line no-await-in-loop
-        const didRewrite = await handleRewriteBullet(i);
-        if (didRewrite) rewrittenCount += 1;
+        const ok = await handleRewriteBullet(i);
+        if (ok) successCount += 1;
         else failedCount += 1;
       }
 
       if (failedCount > 0) {
-        setError(`Rewrote ${rewrittenCount} of ${selected.length} selected bullets. ${failedCount} failed or timed out and were skipped.`);
+        setError(`Rewrote ${successCount} of ${selected.length} selected bullets. ${failedCount} failed or timed out and were skipped.`);
       }
     } finally {
       setLoadingBatchRewrite(false);
@@ -5395,23 +5450,26 @@ if (typeof planIndex === "number") {
       const sectionLabel = `${section.company || "Untitled Company"} — ${section.title || "Untitled Role"}`;
 
       editedBullets.forEach((text, bulletIndex) => {
+        const rowKey = `${section.id}:${bulletIndex}`;
         const matched = bucket[bulletIndex];
         const matchedItem = matched?.item;
+        const proofItem = rewriteProofByRow[rowKey];
+        const proofTruthRisk = proofItem?.truthRisk as TruthRisk | undefined;
 
         rows.push({
-          key: `${section.id}:${bulletIndex}`,
+          key: rowKey,
           sectionId: section.id,
           sectionLabel,
           bulletIndex,
           text,
-          originalText: String(matchedItem?.originalBullet ?? text ?? "").trim(),
+          originalText: String(matchedItem?.originalBullet ?? proofItem?.originalBullet ?? text ?? "").trim(),
           planIndex: typeof matched?.planIndex === "number" ? matched.planIndex : null,
-          rewrittenBullet: String(matchedItem?.rewrittenBullet ?? "").trim(),
-          suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords),
-          needsMoreInfo: !!matchedItem?.needsMoreInfo,
-          notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : [],
-          keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : [],
-          blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : [],
+          rewrittenBullet: String(matchedItem?.rewrittenBullet ?? proofItem?.rewrittenBullet ?? "").trim(),
+          suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords ?? proofItem?.suggestedKeywords),
+          needsMoreInfo: !!(matchedItem?.needsMoreInfo ?? proofItem?.needsMoreInfo),
+          notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : Array.isArray(proofItem?.notes) ? proofItem.notes : [],
+          keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : Array.isArray(proofItem?.keywordHits) ? proofItem.keywordHits : [],
+          blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : Array.isArray(proofItem?.blockedKeywords) ? proofItem.blockedKeywords : [],
           truthRisk: matchedItem?.truthRisk
             ? {
                 score: Number(matchedItem.truthRisk.score ?? 0),
@@ -5421,13 +5479,22 @@ if (typeof planIndex === "number") {
                 riskyPhrases: Array.isArray(matchedItem.truthRisk.riskyPhrases) ? matchedItem.truthRisk.riskyPhrases : [],
                 unsupportedClaims: Array.isArray(matchedItem.truthRisk.unsupportedClaims) ? matchedItem.truthRisk.unsupportedClaims : [],
               }
-            : null,
+            : proofTruthRisk
+              ? {
+                  score: Number(proofTruthRisk.score ?? 0),
+                  level: proofTruthRisk.level === "risky" ? "risky" : proofTruthRisk.level === "review" ? "review" : "safe",
+                  reasons: Array.isArray(proofTruthRisk.reasons) ? proofTruthRisk.reasons : [],
+                  addedTerms: Array.isArray(proofTruthRisk.addedTerms) ? proofTruthRisk.addedTerms : [],
+                  riskyPhrases: Array.isArray(proofTruthRisk.riskyPhrases) ? proofTruthRisk.riskyPhrases : [],
+                  unsupportedClaims: Array.isArray(proofTruthRisk.unsupportedClaims) ? proofTruthRisk.unsupportedClaims : [],
+                }
+              : null,
         });
       });
     });
 
     return rows;
-  }, [sections, editorBulletsBySection, planBucketsBySection]);
+  }, [sections, editorBulletsBySection, planBucketsBySection, rewriteProofByRow]);
 
   const liveBulletRowsRef = useRef<LiveBulletRow[]>([]);
   const liveAtsScoreRef = useRef<AtsScoreResult | null>(null);
