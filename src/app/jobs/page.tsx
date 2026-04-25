@@ -88,6 +88,15 @@ type JobsResponse = {
   error?: string;
 };
 
+type VisibleMatchesResponse = {
+  ok: boolean;
+  items?: Array<{
+    jobId: string;
+    match: NonNullable<JobListItem["match"]>;
+  }>;
+  error?: string;
+};
+
 type RemoteFilter = "all" | "remote" | "hybrid" | "onsite" | "unknown";
 type SortMode = "match" | "newest" | "salary";
 type FeedbackTone = "success" | "error" | "info";
@@ -474,11 +483,68 @@ export default function JobsPage() {
   const trackedFeedViewKeyRef = useRef("");
   const trackedProfileSelectionRef = useRef("");
   const jobsRef = useRef<JobListItem[]>([]);
+  const visibleMatchRequestKeyRef = useRef("");
   const [pageStateReady, setPageStateReady] = useState(false);
 
   useEffect(() => {
     jobsRef.current = jobs;
   }, [jobs]);
+
+  useEffect(() => {
+    if (!pageStateReady) return;
+    if (!selectedProfileId) return;
+
+    const visibleJobIds = jobs
+      .filter((job) => !job.match)
+      .map((job) => job.id)
+      .slice(0, 20);
+
+    if (!visibleJobIds.length) return;
+
+    const requestKey = `${selectedProfileId}:${visibleJobIds.join(",")}`;
+    if (visibleMatchRequestKeyRef.current === requestKey) return;
+    visibleMatchRequestKeyRef.current = requestKey;
+
+    let cancelled = false;
+
+    async function scoreVisibleJobs() {
+      try {
+        const response = await fetch("/api/jobs/matches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resumeProfileId: selectedProfileId,
+            jobIds: visibleJobIds,
+          }),
+        });
+
+        const json = (await response.json()) as VisibleMatchesResponse;
+        if (!response.ok || !json.ok || cancelled) return;
+
+        const matches = Array.isArray(json.items) ? json.items : [];
+        if (!matches.length) return;
+
+        const matchByJobId = new Map(
+          matches.map((item) => [item.jobId, item.match]),
+        );
+
+        setJobs((current) =>
+          current.map((job) => {
+            const match = matchByJobId.get(job.id);
+            return match ? { ...job, match } : job;
+          }),
+        );
+      } catch {
+        // Visible-card scoring is a trust polish path. Never break browsing if it fails.
+      }
+    }
+
+    void scoreVisibleJobs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobs, pageStateReady, selectedProfileId]);
 
   const defaultSort: SortMode = "match";
 
