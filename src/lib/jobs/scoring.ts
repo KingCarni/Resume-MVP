@@ -4,9 +4,11 @@ import {
   collectCanonicalSkills,
   extractCanonicalSkillsFromText,
   extractConceptSignalsFromText,
+  getSignalCategoryRank,
   getSignalSpecificity,
   normalizeRegistryText,
   pruneGenericSignals,
+  sortSignalsByTaxonomy,
   sortCanonicalSkills,
   sortConceptSignals,
 } from "@/lib/jobs/skillRegistry";
@@ -36,6 +38,8 @@ const LOCATION_WEIGHT = 10;
 const SIGNAL_LIMIT = 8;
 const GAP_LIMIT = 8;
 const LOW_FIT_SIGNAL_THRESHOLD = 35;
+const MEDIUM_FIT_GAP_THRESHOLD = 75;
+const HIGH_TRUST_NO_GAP_THRESHOLD = 82;
 
 const HIGH_TRANSFERABLE_SIGNALS = new Set([
   "project delivery",
@@ -747,6 +751,10 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
   matchingBuckets: Array<{ values: string[]; confidence: number }>;
   matching: string[];
   missing: string[];
+  rawMissingCore: string[];
+  rawMissingSupport: string[];
+  rawConceptMissing: string[];
+  extractedSignalCount: number;
   conceptMatches: string[];
   conceptMissing: string[];
 } {
@@ -786,18 +794,24 @@ function computeSkillScore(profile: ResumeProfileInput, job: JobForScoring): {
     return getSignalSpecificity(normalized) >= 2;
   });
 
+  const surfacedMissing = selectSurfacedSignals([
+    { values: sortCanonicalSkills(missingCore), confidence: 3 },
+    { values: sortCanonicalSkills(missingSupport), confidence: familyRelevance.directOverlap ? 2 : 1 },
+    { values: sortConceptSignals(actionableConceptMissing), confidence: familyRelevance.directOverlap ? 1 : 0 },
+  ], GAP_LIMIT);
+
   return {
     score: Math.round(SKILL_WEIGHT * Math.min(1, combinedRatio)),
     matchingBuckets: [
-      { values: explicitProfileCoreMatches, confidence: 3 },
-      { values: explicitProfileSupportMatches, confidence: familyRelevance.directOverlap ? 2 : 1 },
+      { values: sortSignalsByTaxonomy(explicitProfileCoreMatches), confidence: 3 },
+      { values: sortSignalsByTaxonomy(explicitProfileSupportMatches), confidence: familyRelevance.directOverlap ? 2 : 1 },
     ],
     matching: [],
-    missing: selectSurfacedSignals([
-      { values: sortCanonicalSkills(missingCore), confidence: 3 },
-      { values: sortCanonicalSkills(missingSupport), confidence: familyRelevance.directOverlap ? 2 : 1 },
-      { values: sortConceptSignals(actionableConceptMissing), confidence: familyRelevance.directOverlap ? 1 : 0 },
-    ], GAP_LIMIT),
+    missing: surfacedMissing,
+    rawMissingCore: sortSignalsByTaxonomy(missingCore),
+    rawMissingSupport: sortSignalsByTaxonomy(missingSupport),
+    rawConceptMissing: sortSignalsByTaxonomy(actionableConceptMissing),
+    extractedSignalCount: jobSignals.coreSkills.length + jobSignals.supportSkills.length + jobSignals.conceptSignals.length,
     conceptMatches: sortConceptSignals(conceptMatches),
     conceptMissing: sortConceptSignals(actionableConceptMissing),
   };
@@ -849,6 +863,74 @@ function computeLocationScore(profile: ResumeProfileInput, job: JobForScoring): 
   if (summary.includes("remote")) return 6;
   if (summary.includes(jobLocation)) return LOCATION_WEIGHT;
   return 3;
+}
+
+function sortGapCandidates(values: string[]): string[] {
+  const pruned = pruneGenericSignals(values);
+  return sortSignalsByTaxonomy(pruned).sort((left, right) => {
+    const categoryDelta = getSignalCategoryRank(left) - getSignalCategoryRank(right);
+    if (categoryDelta !== 0) return categoryDelta;
+
+    const specificityDelta = getSignalSpecificity(right) - getSignalSpecificity(left);
+    if (specificityDelta !== 0) return specificityDelta;
+
+    return left.localeCompare(right);
+  });
+}
+
+function buildLikelyGaps(args: {
+  skillResult: ReturnType<typeof computeSkillScore>;
+  totalScore: number;
+  titleScore: number;
+  seniorityScore: number;
+  locationScore: number;
+  directOverlap: boolean;
+  bridgedOverlap: boolean;
+  job: JobForScoring;
+}): string[] {
+  const existing = sortGapCandidates(args.skillResult.missing);
+  if (existing.length >= 2 || args.totalScore >= HIGH_TRUST_NO_GAP_THRESHOLD) {
+    return existing.slice(0, GAP_LIMIT);
+  }
+
+  const gapCandidates = sortGapCandidates([
+    ...existing,
+    ...args.skillResult.rawMissingCore,
+    ...args.skillResult.rawMissingSupport,
+    ...args.skillResult.rawConceptMissing,
+  ]);
+
+  const shouldForceExplainGap =
+    args.totalScore < MEDIUM_FIT_GAP_THRESHOLD &&
+    args.skillResult.extractedSignalCount >= 3;
+
+  if (gapCandidates.length > 0) {
+    return gapCandidates.slice(0, shouldForceExplainGap ? Math.max(3, Math.min(GAP_LIMIT, gapCandidates.length)) : GAP_LIMIT);
+  }
+
+  const fallback: string[] = [];
+  if (args.titleScore < 12) fallback.push("closer title alignment");
+  if (args.seniorityScore < 10) fallback.push("seniority alignment");
+  if (args.locationScore < 6 && (args.job.remoteType ?? "").toLowerCase() !== "remote") fallback.push("location fit");
+  if (args.totalScore < MEDIUM_FIT_GAP_THRESHOLD && !args.directOverlap && !args.bridgedOverlap) {
+    fallback.push("role-family alignment");
+  }
+  if (args.totalScore < MEDIUM_FIT_GAP_THRESHOLD) {
+    fallback.push("deeper job-specific stack");
+  }
+
+  return sortGapCandidates(fallback).slice(0, GAP_LIMIT);
+}
+
+function buildStrongSignals(args: {
+  skillResult: ReturnType<typeof computeSkillScore>;
+  totalScore: number;
+}): string[] {
+  const base = args.totalScore < LOW_FIT_SIGNAL_THRESHOLD
+    ? selectLowFitStrongSignals(args.skillResult.matchingBuckets, SIGNAL_LIMIT)
+    : selectSurfacedSignals(args.skillResult.matchingBuckets, SIGNAL_LIMIT);
+
+  return sortSignalsByTaxonomy(base).slice(0, SIGNAL_LIMIT);
 }
 
 function buildShortReasons(args: {
@@ -932,9 +1014,20 @@ export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring
     Math.min(100, titleScore + skillResult.score + seniorityScore + keywordScore + locationScore),
   );
 
-  const matchingSkills = totalScore < LOW_FIT_SIGNAL_THRESHOLD
-    ? selectLowFitStrongSignals(skillResult.matchingBuckets, SIGNAL_LIMIT)
-    : selectSurfacedSignals(skillResult.matchingBuckets, SIGNAL_LIMIT);
+  const matchingSkills = buildStrongSignals({
+    skillResult,
+    totalScore,
+  });
+  const likelyGaps = buildLikelyGaps({
+    skillResult,
+    totalScore,
+    titleScore,
+    seniorityScore,
+    locationScore,
+    directOverlap: familyRelevance.directOverlap,
+    bridgedOverlap: familyRelevance.bridgedOverlap,
+    job,
+  });
 
   const shortReasons = buildShortReasons({
     titleScore,
@@ -943,7 +1036,7 @@ export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring
     conceptScore: keywordScore,
     matchingSkills,
     matchingConcepts: skillResult.conceptMatches,
-    missingSkills: skillResult.missing,
+    missingSkills: likelyGaps,
     directOverlap: familyRelevance.directOverlap,
     bridgedOverlap: familyRelevance.bridgedOverlap,
     remoteType: job.remoteType,
@@ -957,12 +1050,12 @@ export function scoreResumeToJob(profile: ResumeProfileInput, job: JobForScoring
     keywordScore,
     locationScore,
     matchingSkills,
-    missingSkills: skillResult.missing,
+    missingSkills: likelyGaps,
     shortReasons,
     explanationShort: buildExplanationShort({
       totalScore,
       matchingSkills,
-      missingSkills: skillResult.missing,
+      missingSkills: likelyGaps,
       shortReasons,
       titleScore,
       directOverlap: familyRelevance.directOverlap,

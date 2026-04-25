@@ -1112,7 +1112,9 @@ export default function JobDetailPage(props: JobsDetailPageProps) {
                   <span className="text-xs text-slate-400">
                     {noProfileSelected
                       ? "Choose a profile first."
-                      : "No obvious gaps detected."}
+                      : overallFitScore >= 82
+                        ? "No obvious gaps detected."
+                        : "Gaps appear limited or are inferred from workflow/domain requirements."}
                   </span>
                 )}
               </div>

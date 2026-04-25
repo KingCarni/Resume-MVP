@@ -1,11 +1,26 @@
+export type SignalCategory =
+  | "language"
+  | "framework"
+  | "tool"
+  | "platform"
+  | "database"
+  | "cloud"
+  | "testing"
+  | "workflow"
+  | "domain"
+  | "soft_skill"
+  | "leadership";
+
 export type CanonicalSkill = {
   canonical: string;
   aliases: string[];
+  category?: SignalCategory;
 };
 
 export type ConceptSignal = {
   canonical: string;
   aliases: string[];
+  category?: SignalCategory;
 };
 
 const NORMALIZATION_REPLACEMENTS: Array<[RegExp, string]> = [
@@ -104,6 +119,38 @@ export const CANONICAL_SKILLS: CanonicalSkill[] = [
   { canonical: "troubleshooting", aliases: ["troubleshooting", "investigative mindset", "problem solving"] },
   { canonical: "documentation", aliases: ["documentation", "record-keeping practices"] },
   { canonical: "data hygiene", aliases: ["data hygiene", "record-keeping", "data validation"] },
+
+  { canonical: "lua", aliases: ["lua"], category: "language" },
+  { canonical: "ruby", aliases: ["ruby"], category: "language" },
+  { canonical: "php", aliases: ["php"], category: "language" },
+  { canonical: "scala", aliases: ["scala"], category: "language" },
+  { canonical: "bash", aliases: ["bash", "shell", "shell scripting"], category: "language" },
+  { canonical: "html", aliases: ["html"], category: "language" },
+  { canonical: "css", aliases: ["css"], category: "language" },
+  { canonical: "vue", aliases: ["vue", "vue.js", "vuejs"], category: "framework" },
+  { canonical: "angular", aliases: ["angular", "angularjs"], category: "framework" },
+  { canonical: "svelte", aliases: ["svelte"], category: "framework" },
+  { canonical: "express", aliases: ["express", "express.js"], category: "framework" },
+  { canonical: "django", aliases: ["django"], category: "framework" },
+  { canonical: "rails", aliases: ["rails", "ruby on rails"], category: "framework" },
+  { canonical: "spring", aliases: ["spring", "spring boot"], category: "framework" },
+  { canonical: "mongodb", aliases: ["mongodb", "mongo"], category: "database" },
+  { canonical: "sql server", aliases: ["sql server", "microsoft sql server", "mssql"], category: "database" },
+  { canonical: "dynamodb", aliases: ["dynamodb", "dynamo db"], category: "database" },
+  { canonical: "elasticsearch", aliases: ["elasticsearch", "elastic search"], category: "database" },
+  { canonical: "openai", aliases: ["openai"], category: "platform" },
+  { canonical: "anthropic", aliases: ["anthropic", "claude"], category: "platform" },
+  { canonical: "ai sdk", aliases: ["ai sdk", "vercel ai sdk"], category: "framework" },
+  { canonical: "ai models", aliases: ["ai models", "llms", "large language models", "language models"], category: "domain" },
+  { canonical: "api gateway", aliases: ["api gateway", "ai gateway"], category: "platform" },
+  { canonical: "cdn", aliases: ["cdn", "content delivery network"], category: "platform" },
+  { canonical: "edge computing", aliases: ["edge computing", "edge network", "edge runtime"], category: "platform" },
+  { canonical: "http", aliases: ["http", "https", "http servers", "web servers"], category: "platform" },
+  { canonical: "tls", aliases: ["tls", "ssl"], category: "platform" },
+  { canonical: "networking", aliases: ["networking", "network protocols"], category: "platform" },
+  { canonical: "routing", aliases: ["routing", "global routing"], category: "platform" },
+  { canonical: "caching", aliases: ["caching", "cache"], category: "platform" },
+  { canonical: "rate limiting", aliases: ["rate limiting", "rate limits"], category: "tool" },
 ];
 
 export const CONCEPT_SIGNALS: ConceptSignal[] = [
@@ -175,6 +222,19 @@ export const CONCEPT_SIGNALS: ConceptSignal[] = [
   { canonical: "profiling and optimization", aliases: ["cpu profiling", "gpu profiling", "optimise code", "optimize code"] },
   { canonical: "shipped games", aliases: ["shipped games", "track record of contributions to shipped games"] },
   { canonical: "ad tech", aliases: ["advertising campaigns", "programmatic advertising", "performance marketing", "playable ads"] },
+
+  { canonical: "ai infrastructure", aliases: ["ai infrastructure", "ai platform", "ai workloads"], category: "domain" },
+  { canonical: "provider integrations", aliases: ["provider integrations", "model providers", "new providers", "ai providers"], category: "workflow" },
+  { canonical: "failover handling", aliases: ["failover", "failovers", "automatic fallbacks", "fallbacks during outages"], category: "workflow" },
+  { canonical: "low latency systems", aliases: ["low latency", "low-latency", "latency"], category: "workflow" },
+  { canonical: "high volume systems", aliases: ["high volume", "high-volume", "millions of requests", "billions of requests"], category: "workflow" },
+  { canonical: "api platform", aliases: ["api platform", "unified api endpoints", "api endpoints"], category: "platform" },
+  { canonical: "developer tools", aliases: ["developer tools", "developer platform", "developer experience"], category: "domain" },
+  { canonical: "cdn infrastructure", aliases: ["cdn infrastructure", "cdn services", "content delivery"], category: "platform" },
+  { canonical: "database operations", aliases: ["database operations", "database engineering", "database administration"], category: "database" },
+  { canonical: "on-call operations", aliases: ["on-call", "on call", "critical incidents"], category: "workflow" },
+  { canonical: "incident response", aliases: ["incident response", "incidents", "production incidents"], category: "workflow" },
+  { canonical: "game services", aliases: ["online services", "game services", "live services"], category: "domain" },
 ];
 
 export const SKILL_DISPLAY_PRIORITY = [
@@ -536,6 +596,67 @@ export function getSignalSpecificity(value: string): number {
   }
 
   return 1;
+}
+
+
+const SIGNAL_CATEGORY_PRIORITY: Record<SignalCategory, number> = {
+  language: 0,
+  framework: 1,
+  tool: 2,
+  platform: 3,
+  database: 4,
+  cloud: 5,
+  testing: 6,
+  workflow: 7,
+  domain: 8,
+  leadership: 9,
+  soft_skill: 10,
+};
+
+const LANGUAGE_SIGNALS = new Set(["c#", "c++", "java", "javascript", "typescript", "python", "go", "rust", "swift", "kotlin", "lua", "ruby", "php", "scala", "bash", "html", "css"]);
+const FRAMEWORK_SIGNALS = new Set([".net", "react", "next.js", "node.js", "vue", "angular", "svelte", "express", "django", "rails", "spring", "ai sdk"]);
+const DATABASE_SIGNALS = new Set(["sql", "postgresql", "mysql", "mongodb", "sql server", "dynamodb", "elasticsearch", "redis"]);
+const CLOUD_SIGNALS = new Set(["aws", "azure", "gcp"]);
+const PLATFORM_SIGNALS = new Set(["unity", "unreal engine", "openai", "anthropic", "api gateway", "cdn", "edge computing", "http", "tls", "networking", "routing", "caching", "kafka", "graphql", "rest api"]);
+const TESTING_SIGNALS = new Set(["playwright", "selenium", "cypress", "postman", "manual testing", "test automation", "api testing", "test planning", "bug triage", "quality assurance"]);
+const TOOL_SIGNALS = new Set(["docker", "kubernetes", "terraform", "ansible", "jenkins", "git", "ci/cd", "build/release systems", "prometheus", "grafana", "elk", "new relic", "jira", "confluence", "notion", "figma", "photoshop", "freshdesk", "excel", "rate limiting"]);
+const WORKFLOW_SIGNALS = new Set(["agile", "auditing", "reporting", "compliance", "troubleshooting", "documentation", "data hygiene", "performance optimization", "code review", "code quality", "build/release", "infrastructure as code", "workflow optimization", "project delivery", "resource allocation", "capacity planning", "delivery operations", "stakeholder reporting", "dependency management", "operational cadence", "provider integrations", "failover handling", "low latency systems", "high volume systems", "on-call operations", "incident response"]);
+const LEADERSHIP_SIGNALS = new Set(["people management", "stakeholder management", "mentoring"]);
+const SOFT_SKILL_SIGNALS = new Set(["teamwork", "detail orientation"]);
+
+export function getSignalCategory(value: string): SignalCategory {
+  const normalized = normalizeRegistryText(value);
+  const canonical = canonicalizeSkill(normalized) || normalized;
+  const skillEntry = CANONICAL_SKILLS.find((entry) => entry.canonical === canonical);
+  if (skillEntry?.category) return skillEntry.category;
+  const conceptEntry = CONCEPT_SIGNALS.find((entry) => entry.canonical === normalized);
+  if (conceptEntry?.category) return conceptEntry.category;
+  if (LANGUAGE_SIGNALS.has(canonical)) return "language";
+  if (FRAMEWORK_SIGNALS.has(canonical)) return "framework";
+  if (TOOL_SIGNALS.has(canonical)) return "tool";
+  if (PLATFORM_SIGNALS.has(canonical)) return "platform";
+  if (DATABASE_SIGNALS.has(canonical)) return "database";
+  if (CLOUD_SIGNALS.has(canonical)) return "cloud";
+  if (TESTING_SIGNALS.has(canonical)) return "testing";
+  if (WORKFLOW_SIGNALS.has(normalized) || WORKFLOW_SIGNALS.has(canonical)) return "workflow";
+  if (LEADERSHIP_SIGNALS.has(normalized) || LEADERSHIP_SIGNALS.has(canonical)) return "leadership";
+  if (SOFT_SKILL_SIGNALS.has(normalized) || SOFT_SKILL_SIGNALS.has(canonical)) return "soft_skill";
+  return "domain";
+}
+
+export function getSignalCategoryRank(value: string): number {
+  return SIGNAL_CATEGORY_PRIORITY[getSignalCategory(value)] ?? 99;
+}
+
+export function sortSignalsByTaxonomy(values: string[]): string[] {
+  const unique = Array.from(new Set(values.map((value) => normalizeRegistryText(value)).filter(Boolean)));
+  return unique.sort((left, right) => {
+    const categoryDelta = getSignalCategoryRank(left) - getSignalCategoryRank(right);
+    if (categoryDelta !== 0) return categoryDelta;
+    const specificityDelta = getSignalSpecificity(right) - getSignalSpecificity(left);
+    if (specificityDelta !== 0) return specificityDelta;
+    return left.localeCompare(right);
+  });
 }
 
 export function pruneGenericSignals(values: string[]): string[] {
