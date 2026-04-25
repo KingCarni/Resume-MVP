@@ -2803,9 +2803,13 @@ function buildDisplayedAtsKeywords(args: {
     .filter((term) => !expertiseSet.has(cleanupAtsKeyword(term)) || true)
     .slice(0, 16);
 
-  const backendMissingFallback = primaryMissingAll.filter((term) => {
-    const key = cleanupAtsKeyword(term);
-    return !ignoredSet.has(key) && !expertiseSet.has(key);
+  const backendMissingFallback = curateDisplayedMissingKeywords({
+    terms: primaryMissingAll.filter((term) => {
+      const key = cleanupAtsKeyword(term);
+      return !ignoredSet.has(key) && !expertiseSet.has(key);
+    }),
+    jobText,
+    dominantFamily,
   }).slice(0, 16);
 
   return {
@@ -2850,25 +2854,33 @@ function curateDisplayedMissingKeywords(args: {
 }) {
   const jobText = String(args.jobText ?? "").trim();
   const dominantFamily = args.dominantFamily;
-  const maxTestingVariants = dominantFamily === "qa" ? 4 : 1;
-  let testingVariantCount = 0;
+  const maxTestingVariants = dominantFamily === "qa" ? 2 : 1;
+  const nonTestingTerms: string[] = [];
+  const explicitTestingTerms: string[] = [];
 
-  return uniqueTerms(args.terms).filter((term) => {
-    if (!isAtsTestingVariantNoise(term)) return true;
-
-    if (!jobText) {
-      testingVariantCount += 1;
-      return testingVariantCount <= maxTestingVariants;
+  for (const term of uniqueTerms(args.terms)) {
+    if (!isAtsTestingVariantNoise(term)) {
+      nonTestingTerms.push(term);
+      continue;
     }
 
+    if (!jobText) continue;
+
     const evidence = evaluateJobTermEvidence(jobText, term, "methods", dominantFamily);
-    const explicitlyInJob = evidence.exactVariant || evidence.strong;
 
-    if (!explicitlyInJob && dominantFamily !== "qa") return false;
+    // Avoid blasting users with generated role-bank variants like Game Testing, Mission Testing,
+    // Smoke Testing, etc. Only show specific testing gaps when that exact phrase appears in
+    // the job posting, then cap them hard. General words like "testing" should not unlock a
+    // dozen inferred testing variants.
+    if (!evidence.exactVariant) continue;
 
-    testingVariantCount += 1;
-    return testingVariantCount <= maxTestingVariants;
-  });
+    explicitTestingTerms.push(term);
+  }
+
+  return uniqueTerms([
+    ...nonTestingTerms,
+    ...explicitTestingTerms.slice(0, maxTestingVariants),
+  ]);
 }
 
 function atsRoleDisplayLabel(ats?: AnalyzeAtsPayload, fallbackTargetPosition = "") {
