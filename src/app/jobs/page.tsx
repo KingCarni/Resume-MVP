@@ -242,11 +242,17 @@ function normalizeInputValue(value: string) {
   return value.trim();
 }
 
+const BEST_MATCH_AUTO_REFRESH_DELAYS_MS = [10_000, 30_000, 60_000] as const;
+const BEST_MATCH_VISIBLE_CAP = 50;
+
 function getWarmupRefreshCadenceText(pollCount: number) {
-  if (pollCount < 3) {
-    return "Refreshes every 10 seconds now, then every 30 seconds.";
+  if (pollCount < BEST_MATCH_AUTO_REFRESH_DELAYS_MS.length) {
+    const nextDelaySeconds = Math.round(
+      BEST_MATCH_AUTO_REFRESH_DELAYS_MS[pollCount] / 1000,
+    );
+    return `Next refresh in about ${nextDelaySeconds} seconds.`;
   }
-  return "Refreshes every 30 seconds.";
+  return "Auto-refresh paused. Use Refresh best matches when you want an update.";
 }
 
 function getWarmupHeadline(args: {
@@ -273,7 +279,7 @@ function getWarmupHeadline(args: {
       : null;
   const resultsText = hasRankedMatches
     ? "Best matches so far while search completes"
-    : "Recent roles while best matches prepare";
+    : "Newest roles while best matches prepare";
   const cadenceText = getWarmupRefreshCadenceText(warmupPollCount);
 
   return [resultsText, completionText, remainingText, cadenceText]
@@ -307,10 +313,14 @@ function buildBestMatchCacheKey(queryString: string) {
   return BEST_MATCH_RESULTS_CACHE_PREFIX + queryString;
 }
 
-function readBestMatchCache(queryString: string): PersistedBestMatchResults | null {
+function readBestMatchCache(
+  queryString: string,
+): PersistedBestMatchResults | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(buildBestMatchCacheKey(queryString));
+    const raw = window.localStorage.getItem(
+      buildBestMatchCacheKey(queryString),
+    );
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedBestMatchResults;
     if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
@@ -320,10 +330,16 @@ function readBestMatchCache(queryString: string): PersistedBestMatchResults | nu
   }
 }
 
-function writeBestMatchCache(queryString: string, payload: PersistedBestMatchResults) {
+function writeBestMatchCache(
+  queryString: string,
+  payload: PersistedBestMatchResults,
+) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(buildBestMatchCacheKey(queryString), JSON.stringify(payload));
+    window.localStorage.setItem(
+      buildBestMatchCacheKey(queryString),
+      JSON.stringify(payload),
+    );
   } catch {
     // Best-match cache is a convenience only. Ignore storage failures.
   }
@@ -446,6 +462,7 @@ export default function JobsPage() {
   const [matchWarmup, setMatchWarmup] = useState<MatchWarmupState | null>(null);
   const [warmupRequestInFlight, setWarmupRequestInFlight] = useState(false);
   const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
+  const [showAllRolesMode, setShowAllRolesMode] = useState(false);
   const [warmupPollCount, setWarmupPollCount] = useState(0);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
   const [applyingJobIds, setApplyingJobIds] = useState<Record<string, boolean>>(
@@ -586,6 +603,7 @@ export default function JobsPage() {
 
   useEffect(() => {
     setWarmupPollCount(0);
+    setShowAllRolesMode(false);
   }, [
     selectedProfileId,
     appliedSearch,
@@ -669,7 +687,10 @@ export default function JobsPage() {
     if (appliedMinSalary) params.set("minSalary", appliedMinSalary);
     if (appliedTargetPosition)
       params.set("targetPosition", appliedTargetPosition);
-    params.set("sort", appliedSort);
+    params.set(
+      "sort",
+      showAllRolesMode && appliedSort === "match" ? "newest" : appliedSort,
+    );
     params.set("page", String(page));
     params.set("pageSize", "20");
     return params.toString();
@@ -683,6 +704,7 @@ export default function JobsPage() {
     appliedTargetPosition,
     page,
     selectedProfileId,
+    showAllRolesMode,
   ]);
 
   const newestFallbackQueryString = useMemo(() => {
@@ -733,7 +755,6 @@ export default function JobsPage() {
 
         const items = Array.isArray(json.items) ? json.items : [];
         if (!items.length) return;
-        if (jobsRef.current.some((item) => item.match?.totalScore != null)) return;
 
         setJobs(items);
         setTotalPages(Math.max(1, json.totalPages ?? 1));
@@ -751,7 +772,7 @@ export default function JobsPage() {
           lastError: null,
           shortLabel: "Preparing best matches",
           message:
-            "Recent roles are showing while best matches are prepared for this resume profile.",
+            "Newest roles are showing while best matches are prepared for this resume profile.",
         });
       } catch {
         // The real best-match request below still owns the visible error state.
@@ -760,27 +781,31 @@ export default function JobsPage() {
 
     async function loadJobs() {
       const cachedBestMatch =
-        selectedProfileId && appliedSort === "match" ? readBestMatchCache(queryString) : null;
+        selectedProfileId && appliedSort === "match"
+          ? readBestMatchCache(queryString)
+          : null;
 
       if (cachedBestMatch && active) {
         setJobs(cachedBestMatch.items);
         setTotalPages(Math.max(1, cachedBestMatch.totalPages));
         setTotalJobs(cachedBestMatch.total);
-        setMatchWarmup((current) =>
-          current ?? {
-            status: "running",
-            ready: false,
-            active: true,
-            usedFallback: false,
-            processedCount: 0,
-            totalCandidateCount: 0,
-            progressPercent: 0,
-            shouldPoll: true,
-            shouldTriggerWarmup: true,
-            lastError: null,
-            shortLabel: "Refreshing best matches",
-            message: "Showing your last best-match results while we refresh this profile in the background.",
-          },
+        setMatchWarmup(
+          (current) =>
+            current ?? {
+              status: "running",
+              ready: false,
+              active: true,
+              usedFallback: false,
+              processedCount: 0,
+              totalCandidateCount: 0,
+              progressPercent: 0,
+              shouldPoll: true,
+              shouldTriggerWarmup: true,
+              lastError: null,
+              shortLabel: "Refreshing best matches",
+              message:
+                "Showing your last best-match results while we refresh this profile in the background.",
+            },
         );
       }
 
@@ -799,7 +824,10 @@ export default function JobsPage() {
           throw new Error(json.error || "Could not load jobs.");
         if (!active) return;
         const items = Array.isArray(json.items) ? json.items : [];
-        const hasBestMatchRows = selectedProfileId && appliedSort === "match" && items.some((item) => item.match);
+        const hasBestMatchRows =
+          selectedProfileId &&
+          appliedSort === "match" &&
+          items.some((item) => item.match);
 
         if (items.length > 0 || jobsRef.current.length === 0) {
           setJobs(items);
@@ -833,7 +861,7 @@ export default function JobsPage() {
                   ? "Preparing best matches"
                   : "Best match ready",
                 message: json.usedFallback
-                  ? "Best matches are still preparing, so the feed is showing recent roles until enough ranked matches are ready."
+                  ? "Best matches are still preparing, so the feed is showing recent jobs for now."
                   : "Best-match cache is ready.",
               })
             : null,
@@ -1162,8 +1190,13 @@ export default function JobsPage() {
   }, [profiles.length, profilesLoading, selectedProfileId]);
 
   async function triggerWarmup(manualRetry = false) {
-    if (!warmupRequestPayload.resumeProfileId || appliedSort !== "match")
+    if (
+      !warmupRequestPayload.resumeProfileId ||
+      appliedSort !== "match" ||
+      showAllRolesMode
+    ) {
       return;
+    }
     if (manualRetry) setWarmupPollCount(0);
     setWarmupRequestInFlight(true);
 
@@ -1285,6 +1318,7 @@ export default function JobsPage() {
     if (!pageStateReady) return;
     if (!selectedProfileId) return;
     if (appliedSort !== "match") return;
+    if (showAllRolesMode) return;
     if (!matchWarmup?.shouldTriggerWarmup) return;
     if (warmupRequestInFlight) return;
 
@@ -1294,6 +1328,7 @@ export default function JobsPage() {
     matchWarmup?.shouldTriggerWarmup,
     pageStateReady,
     selectedProfileId,
+    showAllRolesMode,
     warmupRequestInFlight,
   ]);
 
@@ -1301,9 +1336,11 @@ export default function JobsPage() {
     if (!pageStateReady) return;
     if (!selectedProfileId) return;
     if (appliedSort !== "match") return;
+    if (showAllRolesMode) return;
     if (!matchWarmup?.shouldPoll) return;
+    if (warmupPollCount >= BEST_MATCH_AUTO_REFRESH_DELAYS_MS.length) return;
 
-    const delayMs = warmupPollCount < 3 ? 10_000 : 30_000;
+    const delayMs = BEST_MATCH_AUTO_REFRESH_DELAYS_MS[warmupPollCount];
     const timeout = window.setTimeout(() => {
       setJobsRefreshNonce((value) => value + 1);
       setWarmupPollCount((value) => value + 1);
@@ -1317,6 +1354,7 @@ export default function JobsPage() {
     matchWarmup?.status,
     pageStateReady,
     selectedProfileId,
+    showAllRolesMode,
     warmupPollCount,
   ]);
 
@@ -1710,7 +1748,9 @@ export default function JobsPage() {
             {jobsLoading && jobs.length === 0 ? (
               <span>Loading jobs…</span>
             ) : jobsLoading ? (
-              <span>Updating best matches… keeping current jobs visible below.</span>
+              <span>
+                Updating best matches… keeping current jobs visible below.
+              </span>
             ) : (
               <span>
                 Showing{" "}
@@ -1718,23 +1758,78 @@ export default function JobsPage() {
                 of <span className="font-semibold text-white">{totalJobs}</span>{" "}
                 roles •{" "}
                 <span className="font-semibold text-white">
-                  {selectedProfileId && appliedSort === "match"
-                    ? getWarmupHeadline({
-                        hasRankedMatches: jobs.some((job) => job.match),
-                        warmup: matchWarmup,
-                        warmupPollCount,
-                      })
-                    : appliedSort === "newest"
-                      ? "Newest"
-                      : appliedSort === "salary"
-                        ? "Salary"
-                        : "Best match"}
+                  {showAllRolesMode && appliedSort === "match"
+                    ? "All newest roles"
+                    : selectedProfileId && appliedSort === "match"
+                      ? getWarmupHeadline({
+                          hasRankedMatches: jobs.some((job) => job.match),
+                          warmup: matchWarmup,
+                          warmupPollCount,
+                        })
+                      : appliedSort === "newest"
+                        ? "Newest"
+                        : appliedSort === "salary"
+                          ? "Salary"
+                          : "Best match"}
                 </span>
+                {selectedProfileId &&
+                appliedSort === "match" &&
+                !showAllRolesMode ? (
+                  <span className="text-slate-400">
+                    {" "}
+                    • Showing up to top {BEST_MATCH_VISIBLE_CAP} best matches
+                    automatically
+                  </span>
+                ) : null}
               </span>
             )}
           </div>
-          <div className="text-xs text-slate-400">
-            Press Enter in a text field or use Apply filters.
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            {selectedProfileId && appliedSort === "match" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWarmupPollCount(0);
+                    setJobsRefreshNonce((value) => value + 1);
+                    if (matchWarmup?.shouldTriggerWarmup)
+                      void triggerWarmup(true);
+                  }}
+                  disabled={warmupRequestInFlight}
+                  className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1.5 font-semibold text-slate-200 transition hover:border-cyan-400/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {warmupRequestInFlight
+                    ? "Refreshing…"
+                    : "Refresh best matches"}
+                </button>
+                {!showAllRolesMode ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAllRolesMode(true);
+                      setPage(1);
+                      setJobsRefreshNonce((value) => value + 1);
+                    }}
+                    className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1.5 font-semibold text-slate-200 transition hover:border-cyan-400/40 hover:text-white"
+                  >
+                    Show all roles
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAllRolesMode(false);
+                      setPage(1);
+                      setJobsRefreshNonce((value) => value + 1);
+                    }}
+                    className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                  >
+                    Return to best match
+                  </button>
+                )}
+              </>
+            ) : null}
+            <span>Press Enter in a text field or use Apply filters.</span>
           </div>
         </div>
 

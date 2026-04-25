@@ -23,14 +23,16 @@ type ResumeProfileRow = {
   updatedAt: Date;
 };
 
-const MAX_CANDIDATES = 1500;
-// Keep batches small so /jobs can refresh visible best matches quickly instead of waiting ~30s.
-const WARMUP_BATCH_SIZE = 20;
+// Weekend-safe cap: score a focused role-family candidate set first instead of warming hundreds/thousands.
+const MAX_CANDIDATES = 500;
+// Small batches keep each warmup request cheap and let /jobs refresh visible matches quickly.
+const WARMUP_BATCH_SIZE = 15;
 
 function ensureStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
-    (item): item is string => typeof item === "string" && item.trim().length > 0,
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
   );
 }
 
@@ -41,7 +43,10 @@ function buildWarmupTargetPosition(
   const normalizedExplicit = explicitTargetPosition?.trim();
   if (normalizedExplicit) return normalizedExplicit;
 
-  const seeds = [profile.title ?? "", ...ensureStringArray(profile.normalizedTitles).slice(0, 3)]
+  const seeds = [
+    profile.title ?? "",
+    ...ensureStringArray(profile.normalizedTitles).slice(0, 3),
+  ]
     .map((value) => value.trim())
     .filter(Boolean);
 
@@ -102,7 +107,10 @@ export async function runJobMatchWarmupPass(params: {
     throw new Error("Resume profile not found for warmup.");
   }
 
-  const warmupTargetPosition = buildWarmupTargetPosition(profile, params.targetPosition);
+  const warmupTargetPosition = buildWarmupTargetPosition(
+    profile,
+    params.targetPosition,
+  );
   const candidateIds = await listWarmupCandidateJobIds({
     targetPosition: warmupTargetPosition,
     limit: MAX_CANDIDATES,
@@ -127,7 +135,9 @@ export async function runJobMatchWarmupPass(params: {
       .map((match) => match.jobId),
   );
 
-  const jobsNeedingScoreIds = candidateIds.filter((jobId) => !freshMatchJobIds.has(jobId));
+  const jobsNeedingScoreIds = candidateIds.filter(
+    (jobId) => !freshMatchJobIds.has(jobId),
+  );
   const totalCandidates = candidateIds.length;
   const alreadyProcessedCount = freshMatchJobIds.size;
 
@@ -177,7 +187,8 @@ export async function runJobMatchWarmupPass(params: {
 
   if (!claim.acquired) {
     return {
-      status: claim.reason === "ready" ? ("ready" as const) : ("running" as const),
+      status:
+        claim.reason === "ready" ? ("ready" as const) : ("running" as const),
       processed: claim.state?.processedCount ?? 0,
       totalCandidates: claim.state?.totalCandidateCount ?? totalCandidates,
       ready: claim.reason === "ready",
@@ -222,7 +233,8 @@ export async function runJobMatchWarmupPass(params: {
     const resumeProfileInput = toResumeProfileInput(profile);
 
     let lastHeartbeat = Date.now();
-    let lastProcessedJobId: string | null = claim.state?.lastProcessedJobId ?? null;
+    let lastProcessedJobId: string | null =
+      claim.state?.lastProcessedJobId ?? null;
 
     for (const job of orderedJobs) {
       const match = scoreResumeToJob(resumeProfileInput, job);
@@ -270,7 +282,10 @@ export async function runJobMatchWarmupPass(params: {
         await markJobMatchWarmupProgress({
           userId: params.userId,
           resumeProfileId: params.resumeProfileId,
-          processedCount: Math.min(totalCandidates, alreadyProcessedCount + batchProcessed),
+          processedCount: Math.min(
+            totalCandidates,
+            alreadyProcessedCount + batchProcessed,
+          ),
           totalCandidateCount: totalCandidates,
           lastProcessedJobId,
         });
@@ -278,7 +293,10 @@ export async function runJobMatchWarmupPass(params: {
       }
     }
 
-    const processed = Math.min(totalCandidates, alreadyProcessedCount + batchProcessed);
+    const processed = Math.min(
+      totalCandidates,
+      alreadyProcessedCount + batchProcessed,
+    );
     const ready = processed >= totalCandidates || batchTotal <= 0;
 
     await markJobMatchWarmupProgress({

@@ -30,9 +30,12 @@ export type ListJobsParams = {
 };
 
 const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+const BEST_MATCH_RETURN_CAP = 50;
 const MIN_SCORE_TO_SURFACE = 21;
-const CANDIDATE_SCAN_MULTIPLIER = 3;
-const WARMUP_SCAN_LIMIT = 2500;
+const CANDIDATE_SCAN_MULTIPLIER = 2;
+const WARMUP_SCAN_LIMIT = 500;
+const DYNAMIC_MATCH_SCAN_LIMIT = 250;
 
 function normalizedValue(value: string | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
@@ -52,7 +55,9 @@ function normalizeRemote(value: string | null | undefined) {
   return null;
 }
 
-function normalizeSeniority(value: string | null | undefined): SeniorityLevel | null {
+function normalizeSeniority(
+  value: string | null | undefined,
+): SeniorityLevel | null {
   const normalized = normalizedValue(value).toLowerCase();
   if (!normalized || normalized === "all") return null;
 
@@ -97,7 +102,9 @@ function buildBaseJobWhere(
           OR: [
             { title: { contains: q, mode: Prisma.QueryMode.insensitive } },
             { company: { contains: q, mode: Prisma.QueryMode.insensitive } },
-            { description: { contains: q, mode: Prisma.QueryMode.insensitive } },
+            {
+              description: { contains: q, mode: Prisma.QueryMode.insensitive },
+            },
           ],
         }
       : {}),
@@ -105,7 +112,12 @@ function buildBaseJobWhere(
     ...(location
       ? {
           OR: [
-            { location: { contains: location, mode: Prisma.QueryMode.insensitive } },
+            {
+              location: {
+                contains: location,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
             { locationNormalized: { contains: location.toLowerCase() } },
           ],
         }
@@ -113,13 +125,18 @@ function buildBaseJobWhere(
     ...(seniority ? { seniority } : {}),
     ...(minSalary != null
       ? {
-          OR: [{ salaryMin: { gte: minSalary } }, { salaryMax: { gte: minSalary } }],
+          OR: [
+            { salaryMin: { gte: minSalary } },
+            { salaryMax: { gte: minSalary } },
+          ],
         }
       : {}),
   };
 }
 
-function mapApplication(application: { status: string; appliedAt: Date; updatedAt: Date } | null) {
+function mapApplication(
+  application: { status: string; appliedAt: Date; updatedAt: Date } | null,
+) {
   return application
     ? {
         status: application.status,
@@ -138,7 +155,10 @@ export async function listMatchCandidateJobIds(params: {
   targetPosition?: string | null;
   limit: number;
 }) {
-  const take = Math.max(params.limit * CANDIDATE_SCAN_MULTIPLIER, params.limit);
+  const take = Math.min(
+    WARMUP_SCAN_LIMIT,
+    Math.max(params.limit * CANDIDATE_SCAN_MULTIPLIER, params.limit),
+  );
   const jobs = await prisma.job.findMany({
     where: buildBaseJobWhere(params),
     select: {
@@ -153,9 +173,18 @@ export async function listMatchCandidateJobIds(params: {
 
   const ranked = jobs
     .map((job) => {
-      const rolePriority = getRoleFamilyPriority(params.targetPosition, job.title);
-      const matchStrength = getRoleFamilyMatchStrength(params.targetPosition, job.title);
-      const hardExcluded = shouldHardExcludeRoleCandidate(params.targetPosition, job.title);
+      const rolePriority = getRoleFamilyPriority(
+        params.targetPosition,
+        job.title,
+      );
+      const matchStrength = getRoleFamilyMatchStrength(
+        params.targetPosition,
+        job.title,
+      );
+      const hardExcluded = shouldHardExcludeRoleCandidate(
+        params.targetPosition,
+        job.title,
+      );
       return {
         ...job,
         rolePriority,
@@ -165,7 +194,8 @@ export async function listMatchCandidateJobIds(params: {
     })
     .filter((job) => !job.hardExcluded)
     .sort((a, b) => {
-      if (b.rolePriority !== a.rolePriority) return b.rolePriority - a.rolePriority;
+      if (b.rolePriority !== a.rolePriority)
+        return b.rolePriority - a.rolePriority;
       const postedA = safeDateMs(a.postedAt) || safeDateMs(a.createdAt);
       const postedB = safeDateMs(b.postedAt) || safeDateMs(b.createdAt);
       return postedB - postedA;
@@ -180,7 +210,10 @@ export async function listWarmupCandidateJobIds(params: {
   targetPosition?: string | null;
   limit?: number | null;
 }) {
-  const take = Math.max(200, Math.min(params.limit ?? WARMUP_SCAN_LIMIT, WARMUP_SCAN_LIMIT));
+  const take = Math.max(
+    200,
+    Math.min(params.limit ?? WARMUP_SCAN_LIMIT, WARMUP_SCAN_LIMIT),
+  );
   const jobs = await prisma.job.findMany({
     where: { status: "active" },
     select: {
@@ -195,9 +228,18 @@ export async function listWarmupCandidateJobIds(params: {
 
   const ranked = jobs
     .map((job) => {
-      const rolePriority = getRoleFamilyPriority(params.targetPosition, job.title);
-      const matchStrength = getRoleFamilyMatchStrength(params.targetPosition, job.title);
-      const hardExcluded = shouldHardExcludeRoleCandidate(params.targetPosition, job.title);
+      const rolePriority = getRoleFamilyPriority(
+        params.targetPosition,
+        job.title,
+      );
+      const matchStrength = getRoleFamilyMatchStrength(
+        params.targetPosition,
+        job.title,
+      );
+      const hardExcluded = shouldHardExcludeRoleCandidate(
+        params.targetPosition,
+        job.title,
+      );
       return {
         ...job,
         rolePriority,
@@ -207,7 +249,8 @@ export async function listWarmupCandidateJobIds(params: {
     })
     .filter((job) => !job.hardExcluded)
     .sort((a, b) => {
-      if (b.rolePriority !== a.rolePriority) return b.rolePriority - a.rolePriority;
+      if (b.rolePriority !== a.rolePriority)
+        return b.rolePriority - a.rolePriority;
       const postedA = safeDateMs(a.postedAt) || safeDateMs(a.createdAt);
       const postedB = safeDateMs(b.postedAt) || safeDateMs(b.createdAt);
       return postedB - postedA;
@@ -217,7 +260,6 @@ export async function listWarmupCandidateJobIds(params: {
   const fallback = filtered.length > 0 ? filtered : ranked;
   return fallback.slice(0, take).map((job) => job.id);
 }
-
 
 function jsonToStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -261,13 +303,15 @@ async function getResumeProfileForScoring(args: {
 
 function getDynamicMatchScanLimit(page: number, pageSize: number): number {
   const requestedWindow = page * pageSize;
-  return Math.max(200, Math.min(800, requestedWindow * 6));
+  return Math.max(100, Math.min(DYNAMIC_MATCH_SCAN_LIMIT, requestedWindow * 3));
 }
-
 
 export async function listJobs(params: ListJobsParams) {
   const page = Math.max(1, params.page ?? 1);
-  const pageSize = Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE);
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, params.pageSize ?? DEFAULT_PAGE_SIZE),
+  );
   const sort = params.sort ?? "match";
   const baseWhere = buildBaseJobWhere(params);
 
@@ -305,27 +349,38 @@ export async function listJobs(params: ListJobsParams) {
       ? await prisma.jobMatch.count({ where: cacheWhere })
       : 0;
 
+  const cappedBestMatchTotal = Math.min(
+    partialCacheCount,
+    BEST_MATCH_RETURN_CAP,
+  );
+  const bestMatchOffset = (page - 1) * pageSize;
   const canUsePartialCache =
     sort === "match" &&
     Boolean(params.resumeProfileId) &&
-    partialCacheCount >= page * pageSize;
+    partialCacheCount > 0 &&
+    bestMatchOffset < cappedBestMatchTotal;
 
   const warmupUiState = getJobMatchWarmupUiState({
     state: warmupState,
-    usedFallback: sort === "match" && Boolean(params.resumeProfileId) && !shouldUseCache,
+    usedFallback:
+      sort === "match" && Boolean(params.resumeProfileId) && !shouldUseCache,
   });
 
-  // Use cached best-match results as soon as enough surfaced rows exist for this page.
-  // Do not wait for the entire warmup to be ready; otherwise users keep seeing recent jobs
-  // even after strong matches have already been scored. If there are not enough cached rows
-  // for the requested page, fall back to dynamic/recent behaviour while warmup continues.
+  // Only use cached best-match results when the cache has at least one surfaced match.
+  // A warmup can be marked ready/stale while newly imported production jobs have not been scored yet,
+  // or while all cached matches sit below the surfacing threshold. In that case, returning the cache
+  // path would produce a false empty state even though active jobs exist. Fall back to the normal
+  // active jobs query until score cache rows are available.
   if (canUsePartialCache && params.resumeProfileId) {
     const [matches, total] = await Promise.all([
       prisma.jobMatch.findMany({
         where: cacheWhere,
         orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: bestMatchOffset,
+        take: Math.min(
+          pageSize,
+          Math.max(0, BEST_MATCH_RETURN_CAP - bestMatchOffset),
+        ),
         include: {
           job: {
             include: {
@@ -339,7 +394,7 @@ export async function listJobs(params: ListJobsParams) {
           },
         },
       }),
-      prisma.jobMatch.count({ where: cacheWhere }),
+      Promise.resolve(cappedBestMatchTotal),
     ]);
 
     return {
@@ -391,7 +446,10 @@ export async function listJobs(params: ListJobsParams) {
       const scoredJobs = candidateJobs
         .map((job) => {
           const match = scoreResumeToJob(profile, job);
-          const rolePriority = getRoleFamilyPriority(params.targetPosition, job.title);
+          const rolePriority = getRoleFamilyPriority(
+            params.targetPosition,
+            job.title,
+          );
           return {
             job,
             match,
@@ -405,12 +463,18 @@ export async function listJobs(params: ListJobsParams) {
           if (b.rolePriority !== a.rolePriority) {
             return b.rolePriority - a.rolePriority;
           }
-          const postedA = safeDateMs(a.job.postedAt) || safeDateMs(a.job.createdAt);
-          const postedB = safeDateMs(b.job.postedAt) || safeDateMs(b.job.createdAt);
+          const postedA =
+            safeDateMs(a.job.postedAt) || safeDateMs(a.job.createdAt);
+          const postedB =
+            safeDateMs(b.job.postedAt) || safeDateMs(b.job.createdAt);
           return postedB - postedA;
         });
 
-      const pageItems = scoredJobs.slice((page - 1) * pageSize, page * pageSize);
+      const cappedScoredJobs = scoredJobs.slice(0, BEST_MATCH_RETURN_CAP);
+      const pageItems = cappedScoredJobs.slice(
+        (page - 1) * pageSize,
+        page * pageSize,
+      );
 
       return {
         jobs: pageItems.map(({ job, match }) => ({
@@ -424,7 +488,10 @@ export async function listJobs(params: ListJobsParams) {
         total,
         page,
         pageSize,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        totalPages: Math.max(
+          1,
+          Math.ceil(Math.min(total, BEST_MATCH_RETURN_CAP) / pageSize),
+        ),
         usedFallback: true,
         warmup: {
           ...warmupUiState,
@@ -551,7 +618,9 @@ export async function listSavedJobs(params: {
       return application === null;
     })
     .map((savedJob) => {
-      const match = params.resumeProfileId ? (savedJob.job.matches[0] ?? null) : null;
+      const match = params.resumeProfileId
+        ? (savedJob.job.matches[0] ?? null)
+        : null;
       return {
         id: savedJob.job.id,
         title: savedJob.job.title,
