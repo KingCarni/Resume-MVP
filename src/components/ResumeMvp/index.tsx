@@ -5802,8 +5802,9 @@ const resumeHtml = useMemo(() => {
   }, [searchParamsKey, applyPackBundle]);
 
 
-const syncResumeProfileDraft = useCallback(async () => {
+const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean }) => {
   if (status !== "authenticated" || !analysis) return null;
+  const forceSync = Boolean(options?.force);
 
   setProfileSyncSaving(true);
 
@@ -5856,7 +5857,7 @@ const syncResumeProfileDraft = useCallback(async () => {
 
   const signature = resumeProfileSyncSignature;
 
-  if (!signature || lastProfileSyncSignatureRef.current === signature) {
+  if (!signature || (!forceSync && lastProfileSyncSignatureRef.current === signature)) {
     setProfileSyncSaving(false);
     return activeResumeProfileId || null;
   }
@@ -5978,10 +5979,11 @@ useEffect(() => {
 }, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
 
   const handleRefreshAtsScore = useCallback(async () => {
+    setError(null);
     setConfirmedAtsScore(liveAtsScore);
     setAtsScoreUpdatedAt(Date.now());
     setAtsScoreInitialized(true);
-    const syncedProfileId = await syncResumeProfileDraft();
+    const syncedProfileId = await syncResumeProfileDraft({ force: true });
     await refreshCurrentJobMatch(syncedProfileId);
   }, [liveAtsScore, syncResumeProfileDraft, refreshCurrentJobMatch]);
 

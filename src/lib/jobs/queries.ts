@@ -308,7 +308,6 @@ export async function listJobs(params: ListJobsParams) {
   const canUsePartialCache =
     sort === "match" &&
     Boolean(params.resumeProfileId) &&
-    shouldUseCache &&
     partialCacheCount >= page * pageSize;
 
   const warmupUiState = getJobMatchWarmupUiState({
@@ -316,11 +315,10 @@ export async function listJobs(params: ListJobsParams) {
     usedFallback: sort === "match" && Boolean(params.resumeProfileId) && !shouldUseCache,
   });
 
-  // Only use cached best-match results when the cache has at least one surfaced match.
-  // A warmup can be marked ready/stale while newly imported production jobs have not been scored yet,
-  // or while all cached matches sit below the surfacing threshold. In that case, returning the cache
-  // path would produce a false empty state even though active jobs exist. Fall back to the normal
-  // active jobs query until score cache rows are available.
+  // Use cached best-match results as soon as enough surfaced rows exist for this page.
+  // Do not wait for the entire warmup to be ready; otherwise users keep seeing recent jobs
+  // even after strong matches have already been scored. If there are not enough cached rows
+  // for the requested page, fall back to dynamic/recent behaviour while warmup continues.
   if (canUsePartialCache && params.resumeProfileId) {
     const [matches, total] = await Promise.all([
       prisma.jobMatch.findMany({

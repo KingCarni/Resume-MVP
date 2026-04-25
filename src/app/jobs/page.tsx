@@ -273,7 +273,7 @@ function getWarmupHeadline(args: {
       : null;
   const resultsText = hasRankedMatches
     ? "Best matches so far while search completes"
-    : "Newest roles while best matches prepare";
+    : "Recent roles while best matches prepare";
   const cadenceText = getWarmupRefreshCadenceText(warmupPollCount);
 
   return [resultsText, completionText, remainingText, cadenceText]
@@ -733,6 +733,7 @@ export default function JobsPage() {
 
         const items = Array.isArray(json.items) ? json.items : [];
         if (!items.length) return;
+        if (jobsRef.current.some((item) => item.match?.totalScore != null)) return;
 
         setJobs(items);
         setTotalPages(Math.max(1, json.totalPages ?? 1));
@@ -750,7 +751,7 @@ export default function JobsPage() {
           lastError: null,
           shortLabel: "Preparing best matches",
           message:
-            "Newest roles are showing while best matches are prepared for this resume profile.",
+            "Recent roles are showing while best matches are prepared for this resume profile.",
         });
       } catch {
         // The real best-match request below still owns the visible error state.
@@ -832,7 +833,7 @@ export default function JobsPage() {
                   ? "Preparing best matches"
                   : "Best match ready",
                 message: json.usedFallback
-                  ? "Best matches are still preparing, so the feed is showing recent jobs for now."
+                  ? "Best matches are still preparing, so the feed is showing recent roles until enough ranked matches are ready."
                   : "Best-match cache is ready.",
               })
             : null,
