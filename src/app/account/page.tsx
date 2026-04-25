@@ -24,6 +24,7 @@ export default async function AccountPage() {
               { href: "/cover-letter", label: "Cover Letter" },
               { href: "/account", label: "Account" },
               { href: "/jobs/saved", label: "Saved Jobs" },
+              ...(isAdmin ? [{ href: "/admin/debug", label: "Admin Debug" }] : []),
             ]}
           >
             <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
@@ -38,10 +39,12 @@ export default async function AccountPage() {
               <Link href="/cover-letter" className="shell-nav-link">Cover Letter</Link>
               <Link href="/account" className="shell-nav-link">Account</Link>
               <Link href="/jobs/saved" className="shell-nav-link">Saved Jobs</Link>
+              {isAdmin ? <Link href="/admin/debug" className="shell-nav-link">Admin Debug</Link> : null}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
               <Link href="/account/donate" className="shell-secondary-btn">Donate</Link>
+              {isAdmin ? <Link href="/admin/debug" className="shell-secondary-btn">Admin Debug</Link> : null}
             </div>
           </div>
         </div>

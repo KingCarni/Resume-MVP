@@ -1,4 +1,4 @@
-import { DocumentType } from "@prisma/client";
+import { DocumentType, SeniorityLevel } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -347,6 +347,17 @@ export async function PATCH(request: NextRequest) {
     data.title = nextTitle;
   }
 
+  if (body.summary !== undefined) {
+    const nextSummary = String(body.summary ?? "").trim();
+    data.summary = nextSummary || null;
+  }
+
+  if (body.seniority !== undefined) {
+    const nextSeniority = String(body.seniority ?? "unknown").trim().toLowerCase();
+    const allowedSeniorities = new Set<string>(Object.values(SeniorityLevel));
+    data.seniority = allowedSeniorities.has(nextSeniority) ? nextSeniority : SeniorityLevel.unknown;
+  }
+
   const nextSkillsSource = body.normalizedSkills ?? body.skills;
   if (nextSkillsSource !== undefined) {
     data.normalizedSkills = cleanTagArray(nextSkillsSource);
@@ -408,7 +419,10 @@ export async function PATCH(request: NextRequest) {
   const rankingRelevantChanged =
     JSON.stringify(currentSkills) !== JSON.stringify(nextSkills) ||
     JSON.stringify(currentTitles) !== JSON.stringify(nextTitles) ||
-    JSON.stringify(currentKeywords) !== JSON.stringify(nextKeywords);
+    JSON.stringify(currentKeywords) !== JSON.stringify(nextKeywords) ||
+    data.summary !== undefined ||
+    data.seniority !== undefined ||
+    data.sourceDocumentId !== undefined;
 
   const item = await prisma.resumeProfile.update({
     where: { id },
@@ -455,32 +469,28 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
 
-  let body: { id?: string | null } | null = null;
+  let body: { id?: string | null; ids?: string[] | null } | null = null;
   try {
-    body = (await request.json().catch(() => null)) as { id?: string | null } | null;
+    body = (await request.json().catch(() => null)) as { id?: string | null; ids?: string[] | null } | null;
   } catch {
     body = null;
   }
 
-  const id = String(body?.id ?? searchParams.get("id") ?? "").trim();
+  const bodyIds = Array.isArray(body?.ids) ? body?.ids : [];
+  const ids = Array.from(new Set([...bodyIds, body?.id, searchParams.get("id")].map((value) => String(value ?? "").trim()).filter(Boolean)));
 
-  if (!id) {
+  if (!ids.length) {
     return NextResponse.json({ ok: false, error: "Missing profile id" }, { status: 400 });
   }
 
   try {
-    const existing = await prisma.resumeProfile.findFirst({
-      where: { id, userId },
-      select: { id: true },
-    });
-
-    if (!existing) {
+    const existing = await prisma.resumeProfile.findMany({ where: { id: { in: ids }, userId }, select: { id: true } });
+    if (!existing.length) {
       return NextResponse.json({ ok: false, error: "Resume profile not found" }, { status: 404 });
     }
-
-    await prisma.resumeProfile.delete({ where: { id } });
-
-    return NextResponse.json({ ok: true, deletedId: id });
+    const existingIds = existing.map((profile) => profile.id);
+    await prisma.resumeProfile.deleteMany({ where: { id: { in: existingIds }, userId } });
+    return NextResponse.json({ ok: true, deletedId: existingIds[0] ?? null, deletedIds: existingIds });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete profile.";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

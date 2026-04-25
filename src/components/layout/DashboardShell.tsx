@@ -1,6 +1,7 @@
 import Link from "next/link";
 import React from "react";
 
+import GitAJobLogo from "@/components/layout/GitAJobLogo";
 import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
 
 type Props = {
@@ -35,7 +36,8 @@ export default function DashboardShell({
           </MobileHeaderMenu>
 
           <div className="hidden flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <GitAJobLogo imageClassName="h-8 w-auto object-contain" />
               <Link href="/" className="shell-nav-link">
                 Home
               </Link>

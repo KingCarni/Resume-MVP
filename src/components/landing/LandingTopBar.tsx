@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import GitAJobLogo from "@/components/layout/GitAJobLogo";
 import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
 
 type Props = {
@@ -56,9 +57,7 @@ export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props)
 
       <div className="hidden flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
         <div className="flex items-center gap-4">
-          <Link href="/" className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl">
-            Git-a-Job
-          </Link>
+          <GitAJobLogo imageClassName="h-8 w-auto object-contain" />
           <div className="hidden items-center gap-2 md:flex">
             {isAuthed ? (
               <Link href="/jobs" className="shell-nav-link">
