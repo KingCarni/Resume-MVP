@@ -101,6 +101,7 @@ type VisibleMatchesResponse = {
 type RemoteFilter = "all" | "remote" | "hybrid" | "onsite" | "unknown";
 type SortMode = "match" | "newest" | "salary";
 type FeedbackTone = "success" | "error" | "info";
+type JobsExportTier = "match50" | "match100";
 
 type FeedbackState = {
   tone: FeedbackTone;
@@ -253,7 +254,7 @@ function normalizeInputValue(value: string) {
 }
 
 const BEST_MATCH_AUTO_REFRESH_DELAYS_MS = [10_000, 30_000, 60_000] as const;
-const BEST_MATCH_VISIBLE_CAP = 50;
+const BEST_MATCH_VISIBLE_CAP = 100;
 
 function getWarmupRefreshCadenceText(pollCount: number) {
   if (pollCount < BEST_MATCH_AUTO_REFRESH_DELAYS_MS.length) {
@@ -481,6 +482,7 @@ export default function JobsPage() {
   const [savingJobIds, setSavingJobIds] = useState<Record<string, boolean>>({});
   const [hidingJobIds, setHidingJobIds] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [exportInFlightTier, setExportInFlightTier] = useState<JobsExportTier | null>(null);
   const trackedFeedViewKeyRef = useRef("");
   const trackedProfileSelectionRef = useRef("");
   const jobsRef = useRef<JobListItem[]>([]);
@@ -1128,6 +1130,85 @@ export default function JobsPage() {
     }
   }
 
+  async function exportJobs(tier: JobsExportTier) {
+    if (!selectedProfileId) {
+      setFeedback({
+        tone: "error",
+        message: "Choose a resume profile before exporting matched jobs.",
+      });
+      return;
+    }
+
+    setExportInFlightTier(tier);
+    try {
+      const response = await fetch("/api/jobs/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tier,
+          resumeProfileId: selectedProfileId,
+          q: appliedSearch || undefined,
+          remote: appliedRemote !== "all" ? appliedRemote : undefined,
+          location: appliedLocation || undefined,
+          seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
+          minSalary: appliedMinSalary || undefined,
+          targetPosition: appliedTargetPosition || undefined,
+          sort:
+            showAllRolesMode && appliedSort === "match" ? "newest" : appliedSort,
+        }),
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      if (!response.ok || contentType.includes("application/json")) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(payload.error || "Could not export jobs.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = filenameMatch?.[1] || `git-a-job-${tier}-jobs.xls`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      setFeedback({
+        tone: "success",
+        message:
+          tier === "match100"
+            ? "Export started for your top 100 matched jobs."
+            : "Export started for your top 50 matched jobs.",
+      });
+      trackJobEvent({
+        event: "jobs_export_clicked",
+        resumeProfileId: selectedProfileId,
+        route: "/jobs",
+        mode: "browse",
+        page,
+        sort: appliedSort,
+        meta: {
+          tier,
+          targetPosition: appliedTargetPosition || undefined,
+          showAllRolesMode,
+        },
+      });
+    } catch (error) {
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not export jobs.",
+      });
+    } finally {
+      setExportInFlightTier(null);
+    }
+  }
+
   async function updateApplicationStatus(
     job: JobListItem,
     status: JobApplicationStatus,
@@ -1481,7 +1562,8 @@ export default function JobsPage() {
         | "remote"
         | "seniority"
         | "minSalary"
-        | "sort";
+        | "sort"
+        | "targetPosition";
       label: string;
     }> = [];
     if (appliedSearch)
@@ -1503,6 +1585,12 @@ export default function JobsPage() {
         key: "minSalary",
         label: `Min salary: ${appliedMinSalary}`,
       });
+    if (appliedTargetPosition) {
+      pills.push({
+        key: "targetPosition",
+        label: `Target role: ${appliedTargetPosition}`,
+      });
+    }
     if (appliedSort !== defaultSort) {
       const sortLabel = appliedSort === "newest" ? "Newest" : "Salary";
       pills.push({ key: "sort", label: `Sort: ${sortLabel}` });
@@ -1515,6 +1603,7 @@ export default function JobsPage() {
     appliedSearch,
     appliedSeniority,
     appliedSort,
+    appliedTargetPosition,
     defaultSort,
   ]);
 
@@ -1609,14 +1698,14 @@ export default function JobsPage() {
 
             <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
-                Target position
+                Target role focus
               </label>
               <input
                 list="job-target-position-options"
                 value={targetPositionInput}
                 onChange={(event) => setTargetPositionInput(event.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="QA Engineer, Product Manager..."
+                placeholder="QA Analyst, QA Engineer, Product Manager..."
                 className="w-full rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-400/50"
               />
               <datalist id="job-target-position-options">
@@ -1625,8 +1714,8 @@ export default function JobsPage() {
                 ))}
               </datalist>
               <p className="mt-2 text-xs text-slate-400">
-                Use this to prioritize closely related roles first during
-                best-match warmup.
+                Use this to prioritize exact/closely related titles first, then
+                fall back to the broader role family when needed.
               </p>
             </div>
 
@@ -1864,6 +1953,30 @@ export default function JobsPage() {
                     Return to best match
                   </button>
                 )}
+              </>
+            ) : null}
+            {selectedProfileId && appliedSort === "match" && !showAllRolesMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => exportJobs("match50")}
+                  disabled={exportInFlightTier != null || jobsLoading}
+                  className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportInFlightTier === "match50"
+                    ? "Exporting..."
+                    : "Export top 50 — 10 credits"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportJobs("match100")}
+                  disabled={exportInFlightTier != null || jobsLoading}
+                  className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {exportInFlightTier === "match100"
+                    ? "Exporting..."
+                    : "Export top 100 — 15 credits"}
+                </button>
               </>
             ) : null}
             <span>Press Enter in a text field or use Apply filters.</span>

@@ -9,7 +9,8 @@ import {
 } from "@/lib/jobs/warmup";
 import {
   getRoleFamilyMatchStrength,
-  getRoleFamilyPriority,
+  getTargetPositionPriority,
+  isRoleCandidateAllowedForTarget,
   shouldHardExcludeRoleCandidate,
 } from "@/lib/jobs/roleFamilies";
 
@@ -31,11 +32,12 @@ export type ListJobsParams = {
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
-const BEST_MATCH_RETURN_CAP = 50;
+const BEST_MATCH_RETURN_CAP = 100;
 const MIN_SCORE_TO_SURFACE = 21;
 const CANDIDATE_SCAN_MULTIPLIER = 2;
 const WARMUP_SCAN_LIMIT = 500;
-const DYNAMIC_MATCH_SCAN_LIMIT = 250;
+const DYNAMIC_MATCH_SCAN_LIMIT = 500;
+const TARGETED_CACHE_SCAN_LIMIT = 500;
 
 function normalizedValue(value: string | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
@@ -173,7 +175,7 @@ export async function listMatchCandidateJobIds(params: {
 
   const ranked = jobs
     .map((job) => {
-      const rolePriority = getRoleFamilyPriority(
+      const rolePriority = getTargetPositionPriority(
         params.targetPosition,
         job.title,
       );
@@ -228,7 +230,7 @@ export async function listWarmupCandidateJobIds(params: {
 
   const ranked = jobs
     .map((job) => {
-      const rolePriority = getRoleFamilyPriority(
+      const rolePriority = getTargetPositionPriority(
         params.targetPosition,
         job.title,
       );
@@ -354,6 +356,7 @@ export async function listJobs(params: ListJobsParams) {
     BEST_MATCH_RETURN_CAP,
   );
   const bestMatchOffset = (page - 1) * pageSize;
+  const hasTargetPosition = Boolean(normalizedValue(params.targetPosition));
   const canUsePartialCache =
     sort === "match" &&
     Boolean(params.resumeProfileId) &&
@@ -372,33 +375,59 @@ export async function listJobs(params: ListJobsParams) {
   // path would produce a false empty state even though active jobs exist. Fall back to the normal
   // active jobs query until score cache rows are available.
   if (canUsePartialCache && params.resumeProfileId) {
-    const [matches, total] = await Promise.all([
-      prisma.jobMatch.findMany({
-        where: cacheWhere,
-        orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
-        skip: bestMatchOffset,
-        take: Math.min(
-          pageSize,
-          Math.max(0, BEST_MATCH_RETURN_CAP - bestMatchOffset),
-        ),
-        include: {
-          job: {
-            include: {
-              source: true,
-              applications: {
-                where: { userId: params.userId },
-                take: 1,
-                orderBy: { updatedAt: "desc" },
-              },
+    const cachedMatches = await prisma.jobMatch.findMany({
+      where: cacheWhere,
+      orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
+      skip: hasTargetPosition ? 0 : bestMatchOffset,
+      take: hasTargetPosition
+        ? Math.min(
+            TARGETED_CACHE_SCAN_LIMIT,
+            Math.max(BEST_MATCH_RETURN_CAP, page * pageSize * 3),
+          )
+        : Math.min(
+            pageSize,
+            Math.max(0, BEST_MATCH_RETURN_CAP - bestMatchOffset),
+          ),
+      include: {
+        job: {
+          include: {
+            source: true,
+            applications: {
+              where: { userId: params.userId },
+              take: 1,
+              orderBy: { updatedAt: "desc" },
             },
           },
         },
-      }),
-      Promise.resolve(cappedBestMatchTotal),
-    ]);
+      },
+    });
+
+    const rankedMatches = cachedMatches
+      .filter((match) =>
+        isRoleCandidateAllowedForTarget(params.targetPosition, match.job.title),
+      )
+      .sort((a, b) => {
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+        const priorityA = getTargetPositionPriority(
+          params.targetPosition,
+          a.job.title,
+        );
+        const priorityB = getTargetPositionPriority(
+          params.targetPosition,
+          b.job.title,
+        );
+        if (priorityB !== priorityA) return priorityB - priorityA;
+        return safeDateMs(b.updatedAt) - safeDateMs(a.updatedAt);
+      })
+      .slice(0, BEST_MATCH_RETURN_CAP);
+
+    const pageMatches = hasTargetPosition
+      ? rankedMatches.slice(bestMatchOffset, bestMatchOffset + pageSize)
+      : rankedMatches;
+    const total = hasTargetPosition ? rankedMatches.length : cappedBestMatchTotal;
 
     return {
-      jobs: matches.map((match) => ({
+      jobs: pageMatches.map((match) => ({
         ...match.job,
         matchScore: match.totalScore,
         explanationShort: match.explanationShort,
@@ -444,9 +473,12 @@ export async function listJobs(params: ListJobsParams) {
       ]);
 
       const scoredJobs = candidateJobs
+        .filter((job) =>
+          isRoleCandidateAllowedForTarget(params.targetPosition, job.title),
+        )
         .map((job) => {
           const match = scoreResumeToJob(profile, job);
-          const rolePriority = getRoleFamilyPriority(
+          const rolePriority = getTargetPositionPriority(
             params.targetPosition,
             job.title,
           );
@@ -485,13 +517,10 @@ export async function listJobs(params: ListJobsParams) {
           missingSkills: match.missingSkills,
           application: mapApplication(job.applications[0] ?? null),
         })),
-        total,
+        total: cappedScoredJobs.length,
         page,
         pageSize,
-        totalPages: Math.max(
-          1,
-          Math.ceil(Math.min(total, BEST_MATCH_RETURN_CAP) / pageSize),
-        ),
+        totalPages: Math.max(1, Math.ceil(cappedScoredJobs.length / pageSize)),
         usedFallback: true,
         warmup: {
           ...warmupUiState,

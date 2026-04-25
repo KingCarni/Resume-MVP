@@ -14,6 +14,38 @@ export type RoleFamilyKey =
 
 export type RoleFamilyMatchStrength = "exact" | "adjacent" | "weak" | "exclude";
 
+const TITLE_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "associate",
+  "contract",
+  "contractor",
+  "entry",
+  "full",
+  "i",
+  "ii",
+  "iii",
+  "intern",
+  "intermediate",
+  "jr",
+  "junior",
+  "lead",
+  "manager",
+  "mid",
+  "of",
+  "part",
+  "principal",
+  "remote",
+  "senior",
+  "sr",
+  "staff",
+  "temporary",
+  "the",
+  "time",
+  "to",
+]);
+
 export type RoleFamilyDefinition = {
   key: RoleFamilyKey;
   label: string;
@@ -272,6 +304,10 @@ function normalize(value: string): string {
     .trim();
 }
 
+export function normalizeRoleText(value: string | null | undefined): string {
+  return normalize(value ?? "");
+}
+
 function splitInput(value: string | null | undefined): string[] {
   const normalized = normalize(value ?? "");
   if (!normalized) return [];
@@ -390,4 +426,86 @@ export function shouldHardExcludeRoleCandidate(
     if (!family?.exclusionKeywords?.length) return false;
     return family.exclusionKeywords.some((keyword) => normalizedJobTitle.includes(normalize(keyword)));
   });
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => normalize(value)).filter(Boolean)));
+}
+
+function getTargetTitleVariants(targetPosition: string | null | undefined): string[] {
+  const normalized = normalize(targetPosition ?? "");
+  if (!normalized) return [];
+
+  const variants = [normalized];
+
+  if (normalized.includes("qa")) {
+    variants.push(normalized.replace(/\bqa\b/g, "quality assurance"));
+  }
+
+  if (normalized.includes("quality assurance")) {
+    variants.push(normalized.replace(/quality assurance/g, "qa"));
+  }
+
+  if (normalized.includes("sdet")) {
+    variants.push("software development engineer in test");
+    variants.push("software developer in test");
+    variants.push("test automation engineer");
+  }
+
+  if (normalized.includes("test automation")) {
+    variants.push(normalized.replace("test automation", "qa automation"));
+    variants.push(normalized.replace("test automation", "automation qa"));
+  }
+
+  return unique(variants);
+}
+
+function getSignificantTitleTokens(targetPosition: string | null | undefined): string[] {
+  const variants = getTargetTitleVariants(targetPosition);
+  const tokens = variants
+    .flatMap((variant) => variant.split(/\s+/))
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1 && !TITLE_STOP_WORDS.has(token));
+
+  return Array.from(new Set(tokens));
+}
+
+export function getTargetPositionPriority(
+  targetPosition: string | null | undefined,
+  jobTitle: string | null | undefined,
+): number {
+  const target = normalize(targetPosition ?? "");
+  const title = normalize(jobTitle ?? "");
+  if (!target || !title) return 0;
+
+  const variants = getTargetTitleVariants(targetPosition);
+
+  if (variants.some((variant) => title === variant)) {
+    return 340;
+  }
+
+  if (variants.some((variant) => title.includes(variant))) {
+    return 300;
+  }
+
+  const tokens = getSignificantTitleTokens(targetPosition);
+  if (tokens.length >= 2 && tokens.every((token) => title.includes(token))) {
+    return 240;
+  }
+
+  const familyPriority = getRoleFamilyPriority(targetPosition, jobTitle);
+  if (familyPriority >= 100) return 120;
+  if (familyPriority > 0) return familyPriority;
+
+  return 0;
+}
+
+export function isRoleCandidateAllowedForTarget(
+  targetPosition: string | null | undefined,
+  jobTitle: string | null | undefined,
+): boolean {
+  const targetFamilies = inferRoleFamilies(targetPosition);
+  if (!targetFamilies.length) return true;
+  if (shouldHardExcludeRoleCandidate(targetPosition, jobTitle)) return false;
+  return getRoleFamilyMatchStrength(targetPosition, jobTitle) !== "exclude";
 }

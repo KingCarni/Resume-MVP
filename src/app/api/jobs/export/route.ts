@@ -5,18 +5,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { chargeCredits } from "@/lib/credits";
 import { prisma } from "@/lib/prisma";
+import {
+  getTargetPositionPriority,
+  isRoleCandidateAllowedForTarget,
+} from "@/lib/jobs/roleFamilies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ADMIN_EMAILS = ["gitajob.com@gmail.com"];
 const EXPORT_TIERS = {
+  match50: { credits: 10, limit: 50, label: "Top 50 matched jobs" },
+  match100: { credits: 15, limit: 100, label: "Top 100 matched jobs" },
   lite: { credits: 25, limit: 500, label: "Top 500 filtered jobs" },
   plus: { credits: 50, limit: 2000, label: "Top 2,000 filtered jobs" },
   admin: { credits: 0, limit: 10000, label: "Admin full export" },
 } as const;
 
 type ExportTier = keyof typeof EXPORT_TIERS;
+
+const EXPORT_REASON_BY_TIER: Record<ExportTier, string> = {
+  match50: "export_jobs_match_50",
+  match100: "export_jobs_match_100",
+  lite: "export_jobs_500",
+  plus: "export_jobs_2000",
+  admin: "export_jobs_admin",
+};
+
+const MATCH_EXPORT_SCAN_CAP = 5000;
+const FILTERED_EXPORT_SCAN_CAP = 5000;
 
 type ExportRequestBody = {
   tier?: ExportTier;
@@ -28,6 +45,33 @@ type ExportRequestBody = {
   minSalary?: string | number | null;
   targetPosition?: string | null;
   sort?: "match" | "newest" | "salary" | null;
+};
+
+type ExportRowJob = {
+  title: string;
+  company: string;
+  location: string | null;
+  remoteType: RemoteType;
+  seniority: SeniorityLevel;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+  applyUrl: string | null;
+  sourceUrl: string | null;
+  postedAt: Date | null;
+  createdAt: Date;
+  source: { slug: string; name: string } | null;
+  savedBy: Array<{ id: string }>;
+  applications: Array<{ status: string; updatedAt: Date }>;
+};
+
+type ExportItem = {
+  job: ExportRowJob;
+  match: {
+    totalScore: number;
+    matchingSkills: unknown;
+    missingSkills: unknown;
+  } | null;
 };
 
 function json(payload: unknown, init?: ResponseInit) {
@@ -88,7 +132,10 @@ function normalizeSeniority(value: unknown): SeniorityLevel | null {
   return null;
 }
 
-function buildExportWhere(body: ExportRequestBody, userId: string): Prisma.JobWhereInput {
+function buildExportWhere(
+  body: ExportRequestBody,
+  userId: string,
+): Prisma.JobWhereInput {
   const q = normalizeString(body.q);
   const location = normalizeString(body.location);
   const remote = normalizeRemote(body.remote);
@@ -119,7 +166,10 @@ function buildExportWhere(body: ExportRequestBody, userId: string): Prisma.JobWh
     ...(seniority ? { seniority } : {}),
     ...(minSalary != null
       ? {
-          OR: [{ salaryMin: { gte: minSalary } }, { salaryMax: { gte: minSalary } }],
+          OR: [
+            { salaryMin: { gte: minSalary } },
+            { salaryMax: { gte: minSalary } },
+          ],
         }
       : {}),
   };
@@ -152,10 +202,15 @@ function formatDate(value: Date | null | undefined) {
   return date.toISOString().slice(0, 10);
 }
 
-function formatSalary(job: { salaryMin: number | null; salaryMax: number | null; salaryCurrency: string | null }) {
+function formatSalary(job: {
+  salaryMin: number | null;
+  salaryMax: number | null;
+  salaryCurrency: string | null;
+}) {
   const currency = job.salaryCurrency || "";
   if (job.salaryMin == null && job.salaryMax == null) return "";
-  if (job.salaryMin != null && job.salaryMax != null) return `${currency} ${job.salaryMin}-${job.salaryMax}`.trim();
+  if (job.salaryMin != null && job.salaryMax != null)
+    return `${currency} ${job.salaryMin}-${job.salaryMax}`.trim();
   if (job.salaryMin != null) return `${currency} ${job.salaryMin}+`.trim();
   return `${currency} up to ${job.salaryMax}`.trim();
 }
@@ -211,6 +266,136 @@ function buildExcelHtml(args: { title: string; rows: Array<Record<string, unknow
 </html>`;
 }
 
+function limitForScan(limit: number, hasTargetPosition: boolean) {
+  if (!hasTargetPosition) return limit;
+  return Math.min(FILTERED_EXPORT_SCAN_CAP, Math.max(limit * 5, limit));
+}
+
+function filterAndRankExportItems(
+  items: ExportItem[],
+  body: ExportRequestBody,
+  limit: number,
+): ExportItem[] {
+  const targetPosition = normalizeString(body.targetPosition);
+  const sort = body.sort ?? "match";
+
+  const allowed = targetPosition
+    ? items.filter((item) =>
+        isRoleCandidateAllowedForTarget(targetPosition, item.job.title),
+      )
+    : items;
+
+  if (sort === "match") {
+    return allowed
+      .sort((a, b) => {
+        const scoreA = a.match?.totalScore ?? -1;
+        const scoreB = b.match?.totalScore ?? -1;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        const priorityA = getTargetPositionPriority(targetPosition, a.job.title);
+        const priorityB = getTargetPositionPriority(targetPosition, b.job.title);
+        if (priorityB !== priorityA) return priorityB - priorityA;
+        const postedA = a.job.postedAt?.getTime() ?? a.job.createdAt.getTime();
+        const postedB = b.job.postedAt?.getTime() ?? b.job.createdAt.getTime();
+        return postedB - postedA;
+      })
+      .slice(0, limit);
+  }
+
+  return allowed.slice(0, limit);
+}
+
+async function getExportItems(args: {
+  body: ExportRequestBody;
+  userId: string;
+  limit: number;
+}): Promise<ExportItem[]> {
+  const where = buildExportWhere(args.body, args.userId);
+  const resumeProfileId = normalizeString(args.body.resumeProfileId);
+  const targetPosition = normalizeString(args.body.targetPosition);
+  const sort = args.body.sort ?? "match";
+
+  if (sort === "match" && resumeProfileId) {
+    const matches = await prisma.jobMatch.findMany({
+      where: {
+        userId: args.userId,
+        resumeProfileId,
+        job: where,
+      },
+      orderBy: [{ totalScore: "desc" }, { updatedAt: "desc" }],
+      take: Math.min(
+        MATCH_EXPORT_SCAN_CAP,
+        Math.max(args.limit, targetPosition ? args.limit * 5 : args.limit),
+      ),
+      include: {
+        job: {
+          include: {
+            source: true,
+            savedBy: { where: { userId: args.userId }, take: 1 },
+            applications: {
+              where: { userId: args.userId },
+              take: 1,
+              orderBy: { updatedAt: "desc" },
+            },
+          },
+        },
+      },
+    });
+
+    return filterAndRankExportItems(
+      matches.map((match) => ({
+        job: match.job,
+        match: {
+          totalScore: match.totalScore,
+          matchingSkills: match.matchingSkills,
+          missingSkills: match.missingSkills,
+        },
+      })),
+      args.body,
+      args.limit,
+    );
+  }
+
+  const jobs = await prisma.job.findMany({
+    where,
+    include: {
+      source: true,
+      savedBy: { where: { userId: args.userId }, take: 1 },
+      applications: {
+        where: { userId: args.userId },
+        take: 1,
+        orderBy: { updatedAt: "desc" },
+      },
+      matches: {
+        where: resumeProfileId
+          ? { userId: args.userId, resumeProfileId }
+          : { id: "__no_resume_profile_selected__" },
+        take: 1,
+        orderBy: { updatedAt: "desc" },
+      },
+    },
+    orderBy: orderByForExport(sort),
+    take: limitForScan(args.limit, Boolean(targetPosition)),
+  });
+
+  return filterAndRankExportItems(
+    jobs.map((job) => {
+      const match = resumeProfileId ? job.matches?.[0] : null;
+      return {
+        job,
+        match: match
+          ? {
+              totalScore: match.totalScore,
+              matchingSkills: match.matchingSkills,
+              missingSkills: match.missingSkills,
+            }
+          : null,
+      };
+    }),
+    args.body,
+    args.limit,
+  );
+}
+
 export async function GET(request: NextRequest) {
   const { user, isAdmin } = await getSessionUser();
   if (!user) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -226,8 +411,8 @@ export async function POST(request: NextRequest) {
     if (!user) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const body = (await request.json().catch(() => ({}))) as ExportRequestBody;
-    const requestedTier = body.tier || "lite";
-    const tier: ExportTier = requestedTier in EXPORT_TIERS ? requestedTier : "lite";
+    const requestedTier = body.tier || "match50";
+    const tier: ExportTier = requestedTier in EXPORT_TIERS ? requestedTier : "match50";
 
     if (tier === "admin" && !isAdmin) {
       return json({ ok: false, error: "Admin export is forbidden." }, { status: 403 });
@@ -239,13 +424,16 @@ export async function POST(request: NextRequest) {
       const charge = await chargeCredits({
         userId: user.id,
         cost: tierConfig.credits,
-        reason: tier === "plus" ? "export_jobs_2000" : "export_jobs_500",
+        reason: EXPORT_REASON_BY_TIER[tier],
         eventType: "purchase",
         meta: {
           feature: "jobs_export",
           tier,
           limit: tierConfig.limit,
           label: tierConfig.label,
+          sort: body.sort ?? "match",
+          resumeProfileId: normalizeString(body.resumeProfileId) || undefined,
+          targetPosition: normalizeString(body.targetPosition) || undefined,
         },
       });
 
@@ -261,53 +449,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const where = buildExportWhere(body, user.id);
-    const resumeProfileId = normalizeString(body.resumeProfileId);
-
-    const jobs = await prisma.job.findMany({
-      where,
-      include: {
-        source: true,
-        savedBy: {
-          where: { userId: user.id },
-          take: 1,
-        },
-        applications: {
-          where: { userId: user.id },
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-        },
-        matches: {
-          where: resumeProfileId
-            ? { userId: user.id, resumeProfileId }
-            : { id: "__no_resume_profile_selected__" },
-          take: 1,
-          orderBy: { updatedAt: "desc" },
-        },
-      },
-      orderBy: orderByForExport(body.sort),
-      take: tierConfig.limit,
+    const items = await getExportItems({
+      body,
+      userId: user.id,
+      limit: tierConfig.limit,
     });
 
-    const rows = jobs.map((job) => {
-      const match = resumeProfileId ? job.matches?.[0] : null;
-      return {
-        title: job.title,
-        company: job.company,
-        location: job.location ?? "",
-        remoteType: job.remoteType,
-        seniority: job.seniority,
-        salary: formatSalary(job),
-        source: job.source?.name || job.source?.slug || "Unknown",
-        applyUrl: job.applyUrl ?? job.sourceUrl ?? "",
-        postedAt: formatDate(job.postedAt),
-        matchScore: match?.totalScore ?? "",
-        strongSignals: safeArray(match?.matchingSkills).join(", "),
-        likelyGaps: safeArray(match?.missingSkills).join(", "),
-        saved: job.savedBy.length > 0 ? "yes" : "no",
-        applicationStatus: job.applications[0]?.status ?? "",
-      };
-    });
+    const rows = items.map(({ job, match }) => ({
+      title: job.title,
+      company: job.company,
+      location: job.location ?? "",
+      remoteType: job.remoteType,
+      seniority: job.seniority,
+      salary: formatSalary(job),
+      source: job.source?.name || job.source?.slug || "Unknown",
+      applyUrl: job.applyUrl ?? job.sourceUrl ?? "",
+      postedAt: formatDate(job.postedAt),
+      matchScore: match?.totalScore ?? "",
+      strongSignals: safeArray(match?.matchingSkills).join(", "),
+      likelyGaps: safeArray(match?.missingSkills).join(", "),
+      saved: job.savedBy.length > 0 ? "yes" : "no",
+      applicationStatus: job.applications[0]?.status ?? "",
+    }));
 
     const html = buildExcelHtml({
       title: `Git-a-Job ${tierConfig.label}`,

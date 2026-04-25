@@ -31,7 +31,8 @@ export type JobAnalyticsEventName =
   | "job_application_moved_to_interview"
   | "job_application_moved_to_offer"
   | "job_application_marked_rejected"
-  | "job_application_archived";
+  | "job_application_archived"
+  | "jobs_export_clicked";
 
 export type JobAnalyticsPayload = {
   event: JobAnalyticsEventName;
