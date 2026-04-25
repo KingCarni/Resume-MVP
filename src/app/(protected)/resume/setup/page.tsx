@@ -7,6 +7,7 @@ import ResumeMvp from "@/components/ResumeMvp";
 import DashboardShell from "@/components/layout/DashboardShell";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SETUP_REQUIRED_REASON_COPY } from "@/lib/resumeProfiles/profileGate";
 
 async function hasExistingResumeProfile() {
   const session = await getServerSession(authOptions);
@@ -28,10 +29,22 @@ async function hasExistingResumeProfile() {
   return !!user?.id && user._count.resumeProfiles > 0;
 }
 
-export default async function ResumeSetupPage() {
+type SearchParamsValue = string | string[] | undefined;
+
+function readParam(value: SearchParamsValue) {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+export default async function ResumeSetupPage(props: {
+  searchParams?: Promise<Record<string, SearchParamsValue>>;
+}) {
   if (await hasExistingResumeProfile()) {
     redirect("/resume");
   }
+
+  const searchParams = (await props.searchParams) ?? {};
+  const reason = readParam(searchParams.reason).trim();
+  const setupPrompt = reason ? SETUP_REQUIRED_REASON_COPY[reason] ?? SETUP_REQUIRED_REASON_COPY.jobs : null;
 
   return (
     <DashboardShell
@@ -50,12 +63,6 @@ export default async function ResumeSetupPage() {
           >
             Donate
           </a>
-          <Link href="/jobs" className="shell-secondary-btn">
-            Browse Jobs
-          </Link>
-          <Link href="/jobs/saved" className="shell-secondary-btn">
-            Saved Jobs
-          </Link>
           <Link href="/account" className="shell-secondary-btn">
             Account
           </Link>
@@ -63,6 +70,12 @@ export default async function ResumeSetupPage() {
       }
     >
       <div className="text-black dark:text-white">
+        {setupPrompt ? (
+          <div className="mb-4 rounded-2xl border border-cyan-400/30 bg-cyan-500/10 p-4 text-sm leading-6 text-cyan-50 shadow-[0_18px_50px_rgba(8,145,178,0.12)]">
+            <div className="font-extrabold text-white">Resume setup required</div>
+            <p className="mt-1 text-cyan-100/90">{setupPrompt}</p>
+          </div>
+        ) : null}
         <ResumeMvp mode="setup" />
       </div>
     </DashboardShell>

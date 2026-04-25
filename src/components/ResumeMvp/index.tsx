@@ -6122,7 +6122,7 @@ useEffect(() => {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* Inputs */}
-        <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 sm:p-4">
           <div className="mb-4 rounded-2xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/10">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -6135,20 +6135,23 @@ useEffect(() => {
               </div>
             </div>
 
-            <div className="mt-3 grid gap-2">
+            <div className="mt-3 grid min-w-0 gap-2">
               {checklistItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"}`}>
-                      {item.done ? "✓" : "•"}
-                    </span>
-                    <span className="min-w-0 truncate font-semibold text-slate-900 dark:text-white">{item.label}</span>
-                  </div>
+                <div
+                  key={item.id}
+                  className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/70 sm:gap-3 sm:px-3"
+                >
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"}`}>
+                    {item.done ? "✓" : "•"}
+                  </span>
+                  <span className="min-w-0 overflow-hidden break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white sm:text-[15px]">
+                    {item.label}
+                  </span>
                   {item.onAction ? (
                     <button
                       type="button"
                       onClick={item.onAction}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                      className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                     >
                       {item.actionLabel || "Open"}
                     </button>

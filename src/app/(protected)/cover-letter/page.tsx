@@ -2,6 +2,7 @@ import CoverLetterGenerator from "@/components/CoverLetterGenerator";
 import DashboardShell from "@/components/layout/DashboardShell";
 import CreditsPill from "@/components/Billing/CreditsPill";
 import Link from "next/link";
+import { requireResumeProfileForRoute } from "@/lib/resumeProfiles/profileGate";
 
 type SearchParamsValue = string | string[] | undefined;
 
@@ -29,6 +30,8 @@ function buildBuyCreditsHref(searchParams: Record<string, SearchParamsValue>) {
 export default async function Page(props: {
   searchParams?: Promise<Record<string, SearchParamsValue>>;
 }) {
+  await requireResumeProfileForRoute("cover-letter");
+
   const searchParams = (await props.searchParams) ?? {};
   const buyCreditsHref = buildBuyCreditsHref(searchParams);
 
