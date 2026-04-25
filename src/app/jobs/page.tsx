@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import CreditsPill from "@/components/Billing/CreditsPill";
-import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
+import AppHeader from "@/components/layout/AppHeader";
 import { TARGET_POSITION_OPTIONS } from "@/lib/jobs/roleFamilies";
 
 type ResumeProfileItem = {
@@ -100,7 +100,6 @@ type VisibleMatchesResponse = {
 
 type RemoteFilter = "all" | "remote" | "hybrid" | "onsite" | "unknown";
 type SortMode = "match" | "newest" | "salary";
-type ExportTier = "lite" | "plus" | "admin";
 type FeedbackTone = "success" | "error" | "info";
 
 type FeedbackState = {
@@ -475,8 +474,6 @@ export default function JobsPage() {
   const [jobsRefreshNonce, setJobsRefreshNonce] = useState(0);
   const [showAllRolesMode, setShowAllRolesMode] = useState(false);
   const [warmupPollCount, setWarmupPollCount] = useState(0);
-  const [exportingTier, setExportingTier] = useState<ExportTier | null>(null);
-  const [exportAdminEnabled, setExportAdminEnabled] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState<Record<string, boolean>>({});
   const [applyingJobIds, setApplyingJobIds] = useState<Record<string, boolean>>(
     {},
@@ -668,28 +665,6 @@ export default function JobsPage() {
   }, [feedback]);
 
   useEffect(() => {
-    let active = true;
-
-    async function checkExportAdmin() {
-      try {
-        const response = await fetch("/api/jobs/export?check=1", {
-          method: "GET",
-          cache: "no-store",
-        });
-        const json = (await response.json()) as { ok?: boolean; isAdmin?: boolean };
-        if (active && response.ok && json.ok) setExportAdminEnabled(!!json.isAdmin);
-      } catch {
-        if (active) setExportAdminEnabled(false);
-      }
-    }
-
-    void checkExportAdmin();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
     setPage(1);
   }, [selectedProfileId]);
 
@@ -727,79 +702,6 @@ export default function JobsPage() {
       appliedTargetPosition,
     ],
   );
-
-  function buildExportPayload(tier: ExportTier) {
-    return {
-      tier,
-      resumeProfileId: selectedProfileId || undefined,
-      q: appliedSearch || undefined,
-      remote: appliedRemote !== "all" ? appliedRemote : undefined,
-      location: appliedLocation || undefined,
-      seniority: appliedSeniority !== "all" ? appliedSeniority : undefined,
-      minSalary: appliedMinSalary || undefined,
-      targetPosition: appliedTargetPosition || undefined,
-      sort: appliedSort,
-    };
-  }
-
-  async function exportJobs(tier: ExportTier) {
-    const credits = tier === "plus" ? 50 : tier === "lite" ? 25 : 0;
-    const label = tier === "plus" ? "up to 2,000 filtered jobs" : tier === "lite" ? "up to 500 filtered jobs" : "the admin full export";
-
-    if (tier !== "admin") {
-      const confirmed = window.confirm(`Export ${label} for ${credits} credits?`);
-      if (!confirmed) return;
-    } else if (!window.confirm("Run admin full job export? This does not charge credits.")) {
-      return;
-    }
-
-    setExportingTier(tier);
-    setFeedback(null);
-
-    try {
-      const response = await fetch("/api/jobs/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify(buildExportPayload(tier)),
-      });
-
-      const contentType = response.headers.get("content-type") || "";
-      if (!response.ok) {
-        if (contentType.includes("application/json")) {
-          const json = (await response.json()) as { error?: string };
-          throw new Error(json.error || `Export failed (${response.status})`);
-        }
-        throw new Error(`Export failed (${response.status})`);
-      }
-
-      const blob = await response.blob();
-      const disposition = response.headers.get("content-disposition") || "";
-      const fileNameMatch = disposition.match(/filename="?([^";]+)"?/i);
-      const filename = fileNameMatch?.[1] || `git-a-job-${tier}-jobs.xls`;
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
-
-      const count = response.headers.get("x-git-a-job-export-count");
-      setFeedback({
-        tone: "success",
-        message: `Export ready${count ? ` (${count} jobs)` : ""}.`,
-      });
-    } catch (error) {
-      setFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : "Could not export jobs.",
-      });
-    } finally {
-      setExportingTier(null);
-    }
-  }
 
   async function loadProfiles() {
     setProfilesLoading(true);
@@ -1618,65 +1520,15 @@ export default function JobsPage() {
 
   return (
     <main className="min-h-screen text-white">
-      <header className="shell-wrap pt-5">
-        <MobileHeaderMenu
-          navItems={[
-            { href: "/", label: "Home" },
-            { href: "/resume", label: "Resume" },
-            { href: "/cover-letter", label: "Cover Letter" },
-            { href: "/account", label: "Account" },
-          ]}
-        >
-          <CreditsPill />
-          <Link href="/buy-credits" className="shell-primary-btn">
-            Buy Credits
-          </Link>
-          <Link href="/donate" className="shell-secondary-btn">
-            Donate
-          </Link>
-          <Link href="/jobs/saved" className="shell-secondary-btn">
-            Saved Jobs
-          </Link>
-        </MobileHeaderMenu>
-
-        <div className="hidden flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/"
-              className="text-lg font-bold tracking-[0.08em] text-white sm:text-xl"
-            >
-              Git-a-Job
-            </Link>
-            <div className="hidden items-center gap-2 md:flex">
-              <Link href="/" className="shell-nav-link">
-                Home
-              </Link>
-              <Link href="/resume" className="shell-nav-link">
-                Resume
-              </Link>
-              <Link href="/cover-letter" className="shell-nav-link">
-                Cover Letter
-              </Link>
-              <Link href="/account" className="shell-nav-link">
-                Account
-              </Link>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap">
-            <CreditsPill />
-            <Link href="/buy-credits" className="shell-primary-btn">
-              Buy Credits
-            </Link>
-            <Link href="/donate" className="shell-secondary-btn">
-              Donate
-            </Link>
-            <Link href="/jobs/saved" className="shell-secondary-btn">
-              Saved Jobs
-            </Link>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        menuItems={[
+          { href: "/jobs/saved", label: "Saved Jobs" },
+          { href: "/buy-credits", label: "Buy Credits" },
+          { href: "/donate", label: "Donate" },
+        ]}
+      >
+        <CreditsPill />
+      </AppHeader>
 
       <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20 backdrop-blur">
@@ -1686,7 +1538,7 @@ export default function JobsPage() {
                 Git-a-Job 2.0
               </p>
               <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                Job Match
+                AI Job Match
               </h1>
               <p className="mt-3 text-sm text-slate-300 sm:text-base">
                 Browse real jobs, score them against your resume profile, and
@@ -1924,35 +1776,6 @@ export default function JobsPage() {
               >
                 Reset all
               </button>
-              <button
-                type="button"
-                onClick={() => void exportJobs("lite")}
-                disabled={exportingTier !== null}
-                className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Export up to 500 filtered jobs for 25 credits"
-              >
-                {exportingTier === "lite" ? "Exporting…" : "Export 500 (25 credits)"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void exportJobs("plus")}
-                disabled={exportingTier !== null}
-                className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Export up to 2,000 filtered jobs for 50 credits"
-              >
-                {exportingTier === "plus" ? "Exporting…" : "Export 2,000 (50 credits)"}
-              </button>
-              {exportAdminEnabled ? (
-                <button
-                  type="button"
-                  onClick={() => void exportJobs("admin")}
-                  disabled={exportingTier !== null}
-                  className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Admin full export; no credit charge"
-                >
-                  {exportingTier === "admin" ? "Exporting…" : "Admin full export"}
-                </button>
-              ) : null}
             </div>
           </div>
         </section>

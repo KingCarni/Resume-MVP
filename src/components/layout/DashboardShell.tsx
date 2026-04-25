@@ -1,8 +1,6 @@
-import Link from "next/link";
 import React from "react";
 
-import GitAJobLogo from "@/components/layout/GitAJobLogo";
-import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
+import AppHeader from "@/components/layout/AppHeader";
 
 type Props = {
   title: string;
@@ -21,44 +19,9 @@ export default function DashboardShell({
 }: Props) {
   return (
     <main className="min-h-screen pb-10">
+      <AppHeader>{topRight}</AppHeader>
+
       <div className="shell-wrap py-6">
-        <div className="mb-6">
-          <MobileHeaderMenu
-            navItems={[
-              { href: "/", label: "Home" },
-              { href: "/jobs", label: "Jobs" },
-              { href: "/resume", label: "Resume" },
-              { href: "/cover-letter", label: "Cover Letter" },
-              { href: "/account", label: "Account" },
-            ]}
-          >
-            {topRight}
-          </MobileHeaderMenu>
-
-          <div className="hidden flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
-            <div className="flex flex-wrap items-center gap-3">
-              <GitAJobLogo imageClassName="h-8 w-auto object-contain" />
-              <Link href="/" className="shell-nav-link">
-                Home
-              </Link>
-              <Link href="/jobs" className="shell-nav-link">
-                Jobs
-              </Link>
-              <Link href="/resume" className="shell-nav-link">
-                Resume
-              </Link>
-              <Link href="/cover-letter" className="shell-nav-link">
-                Cover Letter
-              </Link>
-              <Link href="/account" className="shell-nav-link">
-                Account
-              </Link>
-            </div>
-
-            {topRight ? <div className="flex flex-wrap items-center justify-end gap-2">{topRight}</div> : null}
-          </div>
-        </div>
-
         <section className="shell-panel overflow-hidden">
           {!hideHeader ? (
             <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(15,23,42,0.05)_52%,rgba(8,145,178,0.06))] px-6 py-8 sm:px-8 lg:px-10">

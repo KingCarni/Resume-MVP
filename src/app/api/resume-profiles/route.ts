@@ -1,4 +1,4 @@
-import { DocumentType, SeniorityLevel } from "@prisma/client";
+import { DocumentType } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -82,6 +82,31 @@ function cleanTagArray(values: string[]): string[] {
   }
 
   return out;
+}
+
+const ALLOWED_SENIORITY_LEVELS = new Set([
+  "entry",
+  "junior",
+  "mid",
+  "senior",
+  "lead",
+  "staff",
+  "principal",
+  "manager",
+  "director",
+  "executive",
+  "unknown",
+]);
+
+function cleanGeneratedProfileSummary(value: unknown) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/^[^.]*profile\s+auto-created\s+from\s+resume\s+analysis\.\s*/i, "")
+    .replace(/^auto-created\s+from\s+resume\s+analysis\.\s*/i, "")
+    .replace(/\bEvidence captured:\s*[^.]+\.?/gi, "")
+    .replace(/\bSource parse:\s*[^.]+\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatResumeDocument(document: ResumeDocumentPayload) {
@@ -347,15 +372,18 @@ export async function PATCH(request: NextRequest) {
     data.title = nextTitle;
   }
 
+
   if (body.summary !== undefined) {
-    const nextSummary = String(body.summary ?? "").trim();
+    const nextSummary = cleanGeneratedProfileSummary(body.summary);
     data.summary = nextSummary || null;
   }
 
   if (body.seniority !== undefined) {
     const nextSeniority = String(body.seniority ?? "unknown").trim().toLowerCase();
-    const allowedSeniorities = new Set<string>(Object.values(SeniorityLevel));
-    data.seniority = allowedSeniorities.has(nextSeniority) ? nextSeniority : SeniorityLevel.unknown;
+    if (!ALLOWED_SENIORITY_LEVELS.has(nextSeniority)) {
+      return NextResponse.json({ ok: false, error: "Invalid seniority level" }, { status: 400 });
+    }
+    data.seniority = nextSeniority;
   }
 
   const nextSkillsSource = body.normalizedSkills ?? body.skills;
@@ -420,9 +448,7 @@ export async function PATCH(request: NextRequest) {
     JSON.stringify(currentSkills) !== JSON.stringify(nextSkills) ||
     JSON.stringify(currentTitles) !== JSON.stringify(nextTitles) ||
     JSON.stringify(currentKeywords) !== JSON.stringify(nextKeywords) ||
-    data.summary !== undefined ||
-    data.seniority !== undefined ||
-    data.sourceDocumentId !== undefined;
+    (typeof data.seniority === "string" && data.seniority !== String(existing.seniority));
 
   const item = await prisma.resumeProfile.update({
     where: { id },
@@ -469,28 +495,32 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
 
-  let body: { id?: string | null; ids?: string[] | null } | null = null;
+  let body: { id?: string | null } | null = null;
   try {
-    body = (await request.json().catch(() => null)) as { id?: string | null; ids?: string[] | null } | null;
+    body = (await request.json().catch(() => null)) as { id?: string | null } | null;
   } catch {
     body = null;
   }
 
-  const bodyIds = Array.isArray(body?.ids) ? body?.ids : [];
-  const ids = Array.from(new Set([...bodyIds, body?.id, searchParams.get("id")].map((value) => String(value ?? "").trim()).filter(Boolean)));
+  const id = String(body?.id ?? searchParams.get("id") ?? "").trim();
 
-  if (!ids.length) {
+  if (!id) {
     return NextResponse.json({ ok: false, error: "Missing profile id" }, { status: 400 });
   }
 
   try {
-    const existing = await prisma.resumeProfile.findMany({ where: { id: { in: ids }, userId }, select: { id: true } });
-    if (!existing.length) {
+    const existing = await prisma.resumeProfile.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+
+    if (!existing) {
       return NextResponse.json({ ok: false, error: "Resume profile not found" }, { status: 404 });
     }
-    const existingIds = existing.map((profile) => profile.id);
-    await prisma.resumeProfile.deleteMany({ where: { id: { in: existingIds }, userId } });
-    return NextResponse.json({ ok: true, deletedId: existingIds[0] ?? null, deletedIds: existingIds });
+
+    await prisma.resumeProfile.delete({ where: { id } });
+
+    return NextResponse.json({ ok: true, deletedId: id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete profile.";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

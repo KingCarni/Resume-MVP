@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 
-import GitAJobLogo from "@/components/layout/GitAJobLogo";
-import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
+import AppHeader from "@/components/layout/AppHeader";
 
 type Props = {
   isAuthed: boolean;
@@ -12,104 +11,34 @@ type Props = {
 };
 
 export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props) {
+  const menuItems = isAuthed
+    ? [
+        { href: "/jobs/saved", label: "Saved Jobs" },
+        { href: "/donate", label: "Donate" },
+        { href: signOutHref, label: "Sign Out" },
+      ]
+    : [
+        { href: "/jobs", label: "Browse Jobs" },
+        { href: "/resume", label: "Start Free" },
+        { href: "/donate", label: "Donate" },
+      ];
+
   return (
-    <header className="shell-wrap pt-5">
-      <MobileHeaderMenu
-        navItems={[
-          ...(isAuthed ? [{ href: "/jobs", label: "Open Jobs" }] : []),
-          { href: "/resume", label: "Resume" },
-          { href: "/cover-letter", label: "Cover Letter" },
-          { href: "/account", label: "Account" },
-        ]}
-      >
-        {isAuthed ? (
-          <>
-            <div className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-5 py-3 text-sm font-semibold text-cyan-100">
-              Credits: {credits}
-            </div>
-            <Link href="/buy-credits" className="shell-primary-btn">
-              Buy Credits
-            </Link>
-            <Link href="/donate" className="shell-secondary-btn">
-              Donate
-            </Link>
-            <Link href={signOutHref} className="shell-secondary-btn">
-              Sign Out
-            </Link>
-          </>
-        ) : (
-          <>
-            <Link href="/buy-credits" className="shell-primary-btn">
-              Buy Credits
-            </Link>
-            <Link href="/donate" className="shell-secondary-btn">
-              Donate
-            </Link>
-            <Link href="/jobs" className="shell-secondary-btn">
-              Browse Jobs
-            </Link>
-            <Link href="/resume" className="shell-secondary-btn">
-              Start Free
-            </Link>
-          </>
-        )}
-      </MobileHeaderMenu>
-
-      <div className="hidden flex-wrap items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
-        <div className="flex items-center gap-4">
-          <GitAJobLogo imageClassName="h-8 w-auto object-contain" />
-          <div className="hidden items-center gap-2 md:flex">
-            {isAuthed ? (
-              <Link href="/jobs" className="shell-nav-link">
-                Open Jobs
-              </Link>
-            ) : null}
-            <Link href="/resume" className="shell-nav-link">
-              Resume
-            </Link>
-            <Link href="/cover-letter" className="shell-nav-link">
-              Cover Letter
-            </Link>
-            <Link href="/account" className="shell-nav-link">
-              Account
-            </Link>
+    <AppHeader menuItems={menuItems}>
+      {isAuthed ? (
+        <>
+          <div className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100">
+            Credits: {credits}
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {isAuthed ? (
-            <>
-              <div className="inline-flex min-h-[48px] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-5 py-3 text-sm font-semibold text-cyan-100">
-                Credits: {credits}
-              </div>
-              <Link href="/buy-credits" className="shell-primary-btn">
-                Buy Credits
-              </Link>
-              <Link href="/donate" className="shell-secondary-btn">
-                Donate
-              </Link>
-              <Link href={signOutHref} className="shell-secondary-btn">
-                Sign Out
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/buy-credits" className="shell-primary-btn">
-                Buy Credits
-              </Link>
-              <Link href="/donate" className="shell-secondary-btn">
-                Donate
-              </Link>
-              <Link href="/jobs" className="shell-secondary-btn">
-                Browse Jobs
-              </Link>
-              <Link href="/resume" className="shell-secondary-btn">
-                Start Free
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
-    </header>
+          <Link href="/buy-credits" className="shell-primary-btn">
+            Buy Credits
+          </Link>
+        </>
+      ) : (
+        <Link href="/buy-credits" className="shell-primary-btn">
+          Buy Credits
+        </Link>
+      )}
+    </AppHeader>
   );
 }

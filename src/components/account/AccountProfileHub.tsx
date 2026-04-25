@@ -132,12 +132,56 @@ function buildProfileDisplayTitle(profile: ResumeProfileItem) {
   return profileTitle || resumeTitle || "Resume Profile";
 }
 
+function cleanGeneratedSummary(value: string | null | undefined) {
+  let cleaned = String(value || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+
+  cleaned = cleaned
+    .replace(/^[^.]*profile\s+auto-created\s+from\s+resume\s+analysis\.\s*/i, "")
+    .replace(/^auto-created\s+from\s+resume\s+analysis\.\s*/i, "")
+    .replace(/\bEvidence captured:\s*[^.]+\.?/gi, "")
+    .replace(/\bSource parse:\s*[^.]+\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/^detected strengths:/i.test(cleaned)) return cleaned;
+  return cleaned;
+}
+
 function cleanSummaryForCard(value: string | null | undefined) {
-  const cleaned = String(value || "").replace(/\s+/g, " ").trim();
+  const cleaned = cleanGeneratedSummary(value);
   if (!cleaned || cleaned.length < 8) return "No summary stored yet.";
   if (cleaned.length <= 150) return cleaned;
   return `${cleaned.slice(0, 147).trim()}…`;
 }
+
+function shouldHideProfileTag(value: string) {
+  const normalized = normalizeTag(value);
+  return (
+    normalized === "professional resume" ||
+    normalized === "resume" ||
+    normalized === "profile" ||
+    normalized === "resume profile"
+  );
+}
+
+function cleanProfileTags(values: string[]) {
+  return values.map(normalizeTag).filter((value) => value && !shouldHideProfileTag(value));
+}
+
+const SENIORITY_OPTIONS = [
+  "unknown",
+  "entry",
+  "junior",
+  "mid",
+  "senior",
+  "lead",
+  "staff",
+  "principal",
+  "manager",
+  "director",
+  "executive",
+];
 
 
 function normalizeTag(value: string) {
@@ -206,10 +250,7 @@ function ProfileCard(props: {
   profile: ResumeProfileItem;
   isActive: boolean;
   isSelected: boolean;
-  isChecked: boolean;
-  multiSelectCount: number;
   onSelect: () => void;
-  onToggleCheck: () => void;
   onActivate: () => void;
 }) {
   return (
@@ -253,14 +294,22 @@ function ProfileCard(props: {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={(event) => { event.stopPropagation(); props.onToggleCheck(); }} className={cn("inline-flex items-center justify-center rounded-2xl border px-3 py-2 text-xs font-semibold transition", props.isChecked ? "border-cyan-400/40 bg-cyan-500/15 text-cyan-100" : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:bg-white/10")} aria-pressed={props.isChecked}>{props.isChecked ? "Selected" : "Select"}</button>
-          {!props.isActive ? (
-            <button type="button" onClick={(event) => { event.stopPropagation(); if (props.multiSelectCount > 1) return; props.onActivate(); }} disabled={props.multiSelectCount > 1} className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-45" title={props.multiSelectCount > 1 ? "Clear multi-select before setting an active profile." : undefined}>Set active</button>
-          ) : (
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Current default</span>
-          )}
-        </div>
+        {!props.isActive ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onActivate();
+            }}
+            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10"
+          >
+            Set active
+          </button>
+        ) : (
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Current default
+          </span>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -281,14 +330,14 @@ function ProfileCard(props: {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {props.profile.normalizedTitles.length > 0 ? (
+        {cleanProfileTags(props.profile.normalizedTitles).length > 0 ? (
           <>
-            {props.profile.normalizedTitles.slice(0, 3).map((title) => (
+            {cleanProfileTags(props.profile.normalizedTitles).slice(0, 3).map((title) => (
               <TagChip key={title} value={title} />
             ))}
-            {props.profile.normalizedTitles.length > 3 ? (
+            {cleanProfileTags(props.profile.normalizedTitles).length > 3 ? (
               <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-                +{props.profile.normalizedTitles.length - 3} more
+                +{cleanProfileTags(props.profile.normalizedTitles).length - 3} more
               </span>
             ) : null}
           </>
@@ -318,11 +367,10 @@ export default function AccountProfileHub(props: Props) {
   const [balance, setBalance] = useState<number | null>(null);
   const [paidCredits, setPaidCredits] = useState<number | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState("");
-  const [checkedProfileIds, setCheckedProfileIds] = useState<string[]>([]);
   const [activeProfileId, setActiveProfileId] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
   const [summaryDraft, setSummaryDraft] = useState("");
-  const [seniorityDraft, setSeniorityDraft] = useState("");
+  const [seniorityDraft, setSeniorityDraft] = useState("unknown");
   const [documentDraft, setDocumentDraft] = useState("");
   const [skillDraft, setSkillDraft] = useState("");
   const [titleKeywordDraft, setTitleKeywordDraft] = useState("");
@@ -338,10 +386,6 @@ export default function AccountProfileHub(props: Props) {
     () => profiles.find((profile) => profile.id === selectedProfileId) || null,
     [profiles, selectedProfileId],
   );
-
-  const checkedProfiles = useMemo(() => checkedProfileIds.map((id) => profiles.find((profile) => profile.id === id) || null).filter((profile): profile is ResumeProfileItem => !!profile), [checkedProfileIds, profiles]);
-  const hasMultiProfileSelection = checkedProfiles.length > 1;
-  const profileIdsToDelete = checkedProfiles.length ? checkedProfiles.map((profile) => profile.id) : selectedProfile ? [selectedProfile.id] : [];
 
   const visibleSkillTags = useMemo(
     () => (skillsExpanded ? skillTags : skillTags.slice(0, 12)),
@@ -450,7 +494,7 @@ export default function AccountProfileHub(props: Props) {
     if (!selectedProfile) {
       setTitleDraft("");
       setSummaryDraft("");
-      setSeniorityDraft("");
+      setSeniorityDraft("unknown");
       setDocumentDraft("");
       setSkillTags([]);
       setTitleTags([]);
@@ -459,11 +503,11 @@ export default function AccountProfileHub(props: Props) {
     }
 
     setTitleDraft(selectedProfile.title || "Resume Profile");
-    setSummaryDraft(selectedProfile.summary || "");
-    setSeniorityDraft(selectedProfile.seniority || "unknown");
+    setSummaryDraft(cleanGeneratedSummary(selectedProfile.summary));
+    setSeniorityDraft(String(selectedProfile.seniority || "unknown"));
     setDocumentDraft(selectedProfile.sourceDocumentId || "");
-    setSkillTags(selectedProfile.normalizedSkills);
-    setTitleTags(selectedProfile.normalizedTitles);
+    setSkillTags(cleanProfileTags(selectedProfile.normalizedSkills));
+    setTitleTags(cleanProfileTags(selectedProfile.normalizedTitles));
     setSkillsExpanded(false);
   }, [selectedProfile]);
 
@@ -474,10 +518,6 @@ export default function AccountProfileHub(props: Props) {
   }, [feedback]);
 
   function setProfileActive(profileId: string) {
-    if (checkedProfileIds.length > 1) {
-      setFeedback({ tone: "error", message: "Clear multi-select before choosing an active profile." });
-      return;
-    }
     setActiveProfileId(profileId);
     setSelectedProfileId(profileId);
     setFeedback({
@@ -485,17 +525,6 @@ export default function AccountProfileHub(props: Props) {
       message: "Active profile updated. Jobs match and tailoring now use that profile.",
     });
   }
-
-  function toggleProfileChecked(profileId: string) {
-    setCheckedProfileIds((current) => {
-      const exists = current.includes(profileId);
-      const next = exists ? current.filter((id) => id !== profileId) : [...current, profileId];
-      if (!exists && next.length === 1) setSelectedProfileId(profileId);
-      return next;
-    });
-  }
-
-  function clearCheckedProfiles() { setCheckedProfileIds([]); }
 
   function addSkillTag() {
     const next = mergeTag(skillTags, skillDraft);
@@ -518,7 +547,6 @@ export default function AccountProfileHub(props: Props) {
   }
 
   async function saveProfileChanges() {
-    if (hasMultiProfileSelection) { setFeedback({ tone: "error", message: "Clear multi-select before saving profile changes." }); return; }
     if (!selectedProfile) return;
 
     const nextTitle = titleDraft.trim();
@@ -536,10 +564,10 @@ export default function AccountProfileHub(props: Props) {
           id: selectedProfile.id,
           title: nextTitle,
           summary: summaryDraft.trim() || null,
-          seniority: seniorityDraft || null,
+          seniority: seniorityDraft || "unknown",
           sourceDocumentId: documentDraft || null,
-          normalizedSkills: skillTags,
-          normalizedTitles: titleTags,
+          normalizedSkills: cleanProfileTags(skillTags),
+          normalizedTitles: cleanProfileTags(titleTags),
         }),
       });
 
@@ -574,27 +602,37 @@ export default function AccountProfileHub(props: Props) {
   }
 
   async function deleteSelectedProfile() {
-    if (!profileIdsToDelete.length || deleteProfileLoading) return;
-    const selectedNames = profileIdsToDelete.map((id) => profiles.find((profile) => profile.id === id)?.title || "Resume Profile").slice(0, 4);
-    const extraCount = Math.max(0, profileIdsToDelete.length - selectedNames.length);
-    const label = profileIdsToDelete.length === 1 ? '"' + selectedNames[0] + '"' : profileIdsToDelete.length + " profiles: " + selectedNames.join(", ") + (extraCount ? " and " + extraCount + " more" : "");
-    const confirmed = window.confirm("Delete " + label + "? This removes saved profile metadata but keeps your account.");
+    if (!selectedProfile || deleteProfileLoading) return;
+    const confirmed = window.confirm(`Delete profile "${selectedProfile.title || "Resume Profile"}"? This removes the saved profile metadata but keeps your account.`);
     if (!confirmed) return;
+
     setDeleteProfileLoading(true);
     try {
-      const response = await fetch("/api/resume-profiles", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: profileIdsToDelete }) });
-      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; deletedIds?: string[] } | null;
-      if (!response.ok || !json?.ok) throw new Error(json?.error || "Could not delete profile.");
-      const deletedIds = Array.isArray(json.deletedIds) && json.deletedIds.length ? json.deletedIds : profileIdsToDelete;
-      const deletedSet = new Set(deletedIds);
-      setProfiles((current) => current.filter((profile) => !deletedSet.has(profile.id)));
-      setCheckedProfileIds((current) => current.filter((id) => !deletedSet.has(id)));
-      setSelectedProfileId((current) => (deletedSet.has(current) ? "" : current));
-      setActiveProfileId((current) => (deletedSet.has(current) ? "" : current));
-      setFeedback({ tone: "success", message: deletedIds.length === 1 ? "Profile deleted." : deletedIds.length + " profiles deleted." });
+      const response = await fetch("/api/resume-profiles", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedProfile.id }),
+      });
+      const json = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !json?.ok) {
+        throw new Error(json?.error || "Could not delete profile.");
+      }
+
+      setProfiles((current) => current.filter((profile) => profile.id !== selectedProfile.id));
+      setSelectedProfileId((current) => (current === selectedProfile.id ? "" : current));
+      setActiveProfileId((current) => (current === selectedProfile.id ? "" : current));
+      setFeedback({
+        tone: "success",
+        message: "Profile deleted.",
+      });
     } catch (error) {
-      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Could not delete profile." });
-    } finally { setDeleteProfileLoading(false); }
+      setFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Could not delete profile.",
+      });
+    } finally {
+      setDeleteProfileLoading(false)
+    }
   }
 
   async function deleteSelectedResume() {
@@ -809,10 +847,13 @@ export default function AccountProfileHub(props: Props) {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {checkedProfileIds.length > 0 ? (<><span className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100">{checkedProfileIds.length} selected</span><button type="button" onClick={clearCheckedProfiles} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10">Clear selection</button></>) : null}
-                <button type="button" onClick={loadProfiles} className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-slate-800">Reload</button>
-              </div>
+              <button
+                type="button"
+                onClick={loadProfiles}
+                className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-slate-800"
+              >
+                Reload
+              </button>
             </div>
 
             <div className="grid gap-4">
@@ -822,10 +863,7 @@ export default function AccountProfileHub(props: Props) {
                   profile={profile}
                   isActive={profile.id === activeProfileId}
                   isSelected={profile.id === selectedProfileId}
-                  isChecked={checkedProfileIds.includes(profile.id)}
-                  multiSelectCount={checkedProfileIds.length}
                   onSelect={() => setSelectedProfileId(profile.id)}
-                  onToggleCheck={() => toggleProfileChecked(profile.id)}
                   onActivate={() => setProfileActive(profile.id)}
                 />
               ))}
@@ -844,12 +882,7 @@ export default function AccountProfileHub(props: Props) {
               so this is for clean metadata adjustments, not freestyle profile rewriting.
             </p>
 
-            {hasMultiProfileSelection ? (
-              <div className="mt-6 space-y-5">
-                <div className="rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-5 text-sm leading-6 text-cyan-100"><div className="font-semibold text-white">{checkedProfiles.length} profiles selected</div><p className="mt-2 text-cyan-100/85">Multi-select is for deletion only. Clear selection before saving metadata changes or setting an active profile.</p></div>
-                <button type="button" onClick={deleteSelectedProfile} disabled={deleteProfileLoading || !profileIdsToDelete.length} className="inline-flex w-full items-center justify-center rounded-2xl border border-rose-400/20 bg-rose-500/10 px-5 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-400/35 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60">{deleteProfileLoading ? "Deleting profiles..." : "Delete " + checkedProfiles.length + " selected profiles"}</button>
-              </div>
-            ) : selectedProfile ? (
+            {selectedProfile ? (
               <div className="mt-6 space-y-5">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-300">
@@ -909,8 +942,41 @@ export default function AccountProfileHub(props: Props) {
                   </p>
                 </div>
 
-                <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Summary</label><textarea value={summaryDraft} onChange={(event) => setSummaryDraft(event.target.value)} rows={5} placeholder="Add the short profile summary used for matching context." className="mt-3 w-full resize-y rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-cyan-400/40" /></div>
-                <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4"><label className="block text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Seniority</label><select value={seniorityDraft} onChange={(event) => setSeniorityDraft(event.target.value)} className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"><option value="unknown">Unknown</option><option value="entry">Entry</option><option value="junior">Junior</option><option value="mid">Mid-level</option><option value="senior">Senior</option><option value="lead">Lead</option><option value="manager">Manager</option><option value="director">Director</option><option value="executive">Executive</option></select><p className="mt-2 text-xs leading-5 text-slate-400">This affects job matching. Use Manager only when you want management-level roles scored higher.</p></div>
+                <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4">
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                    Summary
+                  </label>
+                  <textarea
+                    value={summaryDraft}
+                    onChange={(event) => setSummaryDraft(event.target.value)}
+                    rows={5}
+                    placeholder="Add a short plain-English profile summary. Keep it useful and honest."
+                    className="mt-3 w-full resize-y rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-white outline-none transition focus:border-cyan-400/40"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Auto-generated setup text is stripped out. Keep strengths if they are useful, but remove anything that feels like dev copy.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4">
+                  <label className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                    Seniority
+                  </label>
+                  <select
+                    value={seniorityDraft}
+                    onChange={(event) => setSeniorityDraft(event.target.value)}
+                    className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
+                  >
+                    {SENIORITY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {titleCase(option)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    This affects job matching and should describe the target level for this profile.
+                  </p>
+                </div>
 
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
                   <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-4">
@@ -1038,7 +1104,7 @@ export default function AccountProfileHub(props: Props) {
                   <button
                     type="button"
                     onClick={saveProfileChanges}
-                    disabled={saveLoading || hasMultiProfileSelection}
+                    disabled={saveLoading}
                     className="inline-flex items-center justify-center rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saveLoading ? "Saving profile..." : "Save profile changes"}

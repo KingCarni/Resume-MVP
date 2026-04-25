@@ -1,8 +1,7 @@
 import { getServerSession } from "next-auth";
-import Link from "next/link";
 
 import AccountProfileHub from "@/components/account/AccountProfileHub";
-import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
+import AppHeader from "@/components/layout/AppHeader";
 import { authOptions } from "@/lib/auth";
 
 const ADMIN_EMAIL = "gitajob.com@gmail.com";
@@ -14,41 +13,14 @@ export default async function AccountPage() {
 
   return (
     <main className="min-h-screen pb-10 text-white">
+      <AppHeader menuItems={[
+        { href: "/jobs/saved", label: "Saved Jobs" },
+        { href: "/buy-credits", label: "Buy Credits" },
+        { href: "/account/donate", label: "Donate" },
+        ...(isAdmin ? [{ href: "/admin/debug", label: "Admin Debug" }] : []),
+      ]} />
+
       <div className="shell-wrap py-6">
-        <div className="mb-6">
-          <MobileHeaderMenu
-            navItems={[
-              { href: "/", label: "Home" },
-              { href: "/jobs", label: "Jobs" },
-              { href: "/resume", label: "Resume" },
-              { href: "/cover-letter", label: "Cover Letter" },
-              { href: "/account", label: "Account" },
-              { href: "/jobs/saved", label: "Saved Jobs" },
-              ...(isAdmin ? [{ href: "/admin/debug", label: "Admin Debug" }] : []),
-            ]}
-          >
-            <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
-            <Link href="/account/donate" className="shell-secondary-btn">Donate</Link>
-          </MobileHeaderMenu>
-
-          <div className="hidden flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href="/" className="shell-nav-link">Home</Link>
-              <Link href="/jobs" className="shell-nav-link">Jobs</Link>
-              <Link href="/resume" className="shell-nav-link">Resume</Link>
-              <Link href="/cover-letter" className="shell-nav-link">Cover Letter</Link>
-              <Link href="/account" className="shell-nav-link">Account</Link>
-              <Link href="/jobs/saved" className="shell-nav-link">Saved Jobs</Link>
-              {isAdmin ? <Link href="/admin/debug" className="shell-nav-link">Admin Debug</Link> : null}
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Link href="/buy-credits" className="shell-primary-btn">Buy Credits</Link>
-              <Link href="/account/donate" className="shell-secondary-btn">Donate</Link>
-              {isAdmin ? <Link href="/admin/debug" className="shell-secondary-btn">Admin Debug</Link> : null}
-            </div>
-          </div>
-        </div>
-
         <div className="shell-panel overflow-hidden">
           <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(15,23,42,0.05)_52%,rgba(8,145,178,0.06))] px-6 py-8 sm:px-8 lg:px-10">
             <p className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Account hub</p>
@@ -56,10 +28,10 @@ export default async function AccountPage() {
           </div>
 
           <div className="px-4 py-6 sm:px-6 lg:px-8">
-        <AccountProfileHub
-          email={String(session?.user?.email ?? "").trim()}
-          isAdmin={isAdmin}
-        />
+            <AccountProfileHub
+              email={String(session?.user?.email ?? "").trim()}
+              isAdmin={isAdmin}
+            />
           </div>
         </div>
       </div>
