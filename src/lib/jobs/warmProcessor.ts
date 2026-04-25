@@ -24,7 +24,8 @@ type ResumeProfileRow = {
 };
 
 const MAX_CANDIDATES = 1500;
-const WARMUP_BATCH_SIZE = 75;
+// Keep batches small so /jobs can refresh visible best matches quickly instead of waiting ~30s.
+const WARMUP_BATCH_SIZE = 20;
 
 function ensureStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];

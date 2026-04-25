@@ -269,11 +269,11 @@ function getWarmupHeadline(args: {
     : null;
   const remainingText =
     rolesRemaining != null
-      ? `${rolesRemaining} role${rolesRemaining === 1 ? "" : "s"} left to rank`
+      ? `${rolesRemaining} selected role${rolesRemaining === 1 ? "" : "s"} left to rank`
       : null;
   const resultsText = hasRankedMatches
     ? "Best matches so far while search completes"
-    : "Recent jobs while best matches prepare";
+    : "Newest roles while best matches prepare";
   const cadenceText = getWarmupRefreshCadenceText(warmupPollCount);
 
   return [resultsText, completionText, remainingText, cadenceText]
@@ -1183,6 +1183,7 @@ export default function JobsPage() {
         totalCandidates?: number;
         continueRecommended?: boolean;
         ready?: boolean;
+        didWork?: boolean;
       };
 
       if (!response.ok || json.ok === false) {
@@ -1220,8 +1221,8 @@ export default function JobsPage() {
               : "Preparing best matches";
         const nextMessage =
           nextTotal > 0
-            ? `We are ranking and expanding best matches for this profile (${nextProcessed}/${nextTotal}). Ranked results will start showing as soon as they are ready.`
-            : "We are ranking and expanding best matches for this profile now. Ranked results will start showing as soon as they are ready.";
+            ? `We are ranking the selected role set for this profile (${nextProcessed}/${nextTotal}). Best matches will update as each batch finishes.`
+            : "We are ranking the selected role set for this profile now. Best matches will update as each batch finishes.";
 
         return {
           ...current,
@@ -1242,9 +1243,12 @@ export default function JobsPage() {
         };
       });
 
+      if (json.didWork || nextReady) {
+        setJobsRefreshNonce((value) => value + 1);
+      }
+
       if (nextReady) {
         setWarmupPollCount(0);
-        setJobsRefreshNonce((value) => value + 1);
       }
     } catch (error) {
       const message =
@@ -1705,7 +1709,7 @@ export default function JobsPage() {
             {jobsLoading && jobs.length === 0 ? (
               <span>Loading jobs…</span>
             ) : jobsLoading ? (
-              <span>Updating best matches… showing current jobs below.</span>
+              <span>Updating best matches… keeping current jobs visible below.</span>
             ) : (
               <span>
                 Showing{" "}
