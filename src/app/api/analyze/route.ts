@@ -1734,7 +1734,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const analysis: any = analyzeKeywordFit(resumeText, jobText);
+    const analysis: any = analyzeKeywordFit(jobText, resumeText);
     const metaBlocks = isFirstTimeSetup
       ? { gamesShipped: [] as string[], metrics: [] as string[] }
       : extractMetaBlocks(resumeText);

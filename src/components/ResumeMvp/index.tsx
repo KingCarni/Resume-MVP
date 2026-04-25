@@ -336,6 +336,59 @@ function normalizeForMatch(s: string) {
   return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function inferTargetPositionFromJobContext(jobContext: string) {
+  const text = String(jobContext || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+
+  const ignoredPrefixes = /^(location|remote\s*type|remote|seniority|salary|company|posted|apply|source|about|overview|role\s*overview|description|requirements|responsibilities|what\s+you\s+will\s+do)\s*[:\-]/i;
+  const explicitTitlePrefixes = /^(job\s*title|title|position|role)\s*[:\-]\s*/i;
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  for (const rawLine of lines) {
+    if (!rawLine || ignoredPrefixes.test(rawLine)) continue;
+    if (/^https?:\/\//i.test(rawLine)) continue;
+
+    let candidate = rawLine.replace(/^#+\s*/, "").replace(/^[-•*]\s*/, "").trim();
+    candidate = candidate.replace(explicitTitlePrefixes, "").trim();
+
+    const atMatch = candidate.match(/^(.+?)\s+at\s+.+$/i);
+    if (atMatch?.[1]) candidate = atMatch[1].trim();
+
+    const separators = [" | ", " — ", " – ", " - "];
+    for (const separator of separators) {
+      if (candidate.includes(separator)) {
+        const first = candidate.split(separator)[0]?.trim() || "";
+        if (first) {
+          candidate = first;
+          break;
+        }
+      }
+    }
+
+    candidate = candidate
+      .replace(/\s*\([^)]*(remote|hybrid|onsite|full[-\s]?time|part[-\s]?time)[^)]*\)\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const wordCount = candidate.split(/\s+/).filter(Boolean).length;
+    if (
+      candidate.length >= 3 &&
+      candidate.length <= 90 &&
+      wordCount <= 10 &&
+      /[a-z]/i.test(candidate) &&
+      !ignoredPrefixes.test(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -3439,8 +3492,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             if (cancelled) return;
 
             setApplyPackBundle(queryBundle === "apply-pack" ? nextBundle : null);
-            setJobText((current) => (current.trim() ? current : String(fetchedJob.jobContextText || "").trim()));
-            if (String(fetchedJob.title || "").trim()) setTargetPosition(String(fetchedJob.title || "").trim());
+            const fetchedJobText = String(fetchedJob.jobContextText || "").trim();
+            const fetchedTargetPosition =
+              String(fetchedJob.title || "").trim() ||
+              inferTargetPositionFromJobContext(fetchedJobText);
+            setJobText((current) => (current.trim() ? current : fetchedJobText));
+            if (fetchedTargetPosition) {
+              setTargetPosition((current) => current.trim() ? current : fetchedTargetPosition);
+            }
             setJobTextOverrideMode(false);
             return;
           }
@@ -3477,6 +3536,13 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       cancelled = true;
     };
   }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (targetPosition.trim()) return;
+
+    const inferredTargetPosition = inferTargetPositionFromJobContext(jobText);
+    if (inferredTargetPosition) setTargetPosition(inferredTargetPosition);
+  }, [jobText, targetPosition]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -3537,7 +3603,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
   function syncJobTextFromApplyPack() {
     const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
-    const savedTargetPosition = String(applyPackBundle?.job?.title || "").trim();
+    const savedTargetPosition =
+      String(applyPackBundle?.job?.title || "").trim() ||
+      inferTargetPositionFromJobContext(savedJobText);
 
     if (savedJobText) setJobText(savedJobText);
     if (savedTargetPosition) setTargetPosition(savedTargetPosition);

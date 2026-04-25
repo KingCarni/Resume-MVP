@@ -2060,13 +2060,17 @@ export default function JobsPage() {
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                             Match
                           </p>
-                          <p className="mt-1 text-3xl font-bold text-white">
-                            {job.match?.totalScore != null
-                              ? `${job.match.totalScore}%`
-                              : hasProfile
-                                ? "Loading"
-                                : "—"}
-                          </p>
+                          {job.match?.totalScore != null ? (
+                            <p className="mt-1 text-3xl font-bold text-white">
+                              {job.match.totalScore}%
+                            </p>
+                          ) : hasProfile ? (
+                            <p className="mt-1 text-sm font-semibold text-slate-300">
+                              Loading match
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-3xl font-bold text-white">—</p>
+                          )}
                           <p className="mt-1 text-xs text-slate-400">
                             {hasProfile
                               ? "Based on your selected resume profile"

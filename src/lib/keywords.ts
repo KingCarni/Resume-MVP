@@ -38,6 +38,9 @@ export type AtsGapAnalysis = {
   evaluated: string[];
   present: string[];
   missing: string[];
+  /** Compatibility aliases used by analyzer route consumers. */
+  presentKeywords: string[];
+  missingKeywords: string[];
   addedByRewrite: string[];
   remainingAfterRewrite: string[];
 };
@@ -249,6 +252,8 @@ export function analyzeKeywordFit(
     evaluated,
     present,
     missing,
+    presentKeywords: present,
+    missingKeywords: missing,
     addedByRewrite,
     remainingAfterRewrite,
     keywordsFromJob,
