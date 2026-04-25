@@ -533,6 +533,130 @@ function buildAtsAnalysis(args: { resumeText: string; jobText: string; targetPos
   };
 }
 
+
+function classifyJdKeywordForAtsCategory(term: string): AtsCategoryKey {
+  const normalized = normalizeJobText(term).toLowerCase();
+  const compact = normalized.replace(/[.\s-]+/g, "");
+
+  const toolTerms = new Set([
+    "javascript", "typescript", "python", "java", "c#", "c++", "go", "golang", "ruby", "php", "lua", "swift", "kotlin", "scala",
+    "html", "css", "sql", "rest", "rest api", "rest apis", "api", "apis",
+    "react", "next.js", "nextjs", "node.js", "nodejs", "node", "vue", "angular", "svelte", "django", "rails", "spring",
+    "zendesk", "jira", "mode", "looker", "tableau", "figma", "github", "gitlab", "docker", "kubernetes", "postman",
+    "postgresql", "postgres", "mysql", "mongodb", "redis", "aws", "azure", "gcp",
+  ]);
+
+  if (toolTerms.has(normalized) || toolTerms.has(compact)) return "tools";
+
+  if (/\b(ticket|ticketing|triage|escalation|escalations|incident|debug|troubleshoot|troubleshooting|quality|testing|test|documentation|process improvement|time management|customer support|technical support|communication|collaboration|self starter|customer-facing|customer facing)\b/i.test(normalized)) {
+    return "methods";
+  }
+
+  if (/\b(game|gaming|finance|financial|banking|support|customer|developer tools|platform|saas|api platform|ai|database|data visualization|visualization)\b/i.test(normalized)) {
+    return "domain";
+  }
+
+  if (/\b(reduce|improve|increase|optimize|quality|latency|performance|reliability|standards|impact|resolution)\b/i.test(normalized)) {
+    return "outcomes";
+  }
+
+  return "core";
+}
+
+function mergeTerms(...groups: Array<unknown>): string[] {
+  const values = groups.flatMap((group) => safeArray(group));
+  return uniqueCaseInsensitive(values);
+}
+
+function mergeCategoryBuckets(
+  base: Partial<AtsCategoryBuckets> | null | undefined,
+  terms: string[],
+) {
+  const next: AtsCategoryBuckets = {
+    titles: safeArray(base?.titles),
+    core: safeArray(base?.core),
+    tools: safeArray(base?.tools),
+    methods: safeArray(base?.methods),
+    domain: safeArray(base?.domain),
+    outcomes: safeArray(base?.outcomes),
+  };
+
+  for (const term of terms) {
+    const clean = String(term || "").trim();
+    if (!clean) continue;
+    const category = classifyJdKeywordForAtsCategory(clean);
+    next[category] = uniqueCaseInsensitive([...next[category], clean]);
+  }
+
+  return next;
+}
+
+function bridgeJobDescriptionKeywordFitIntoAts(args: {
+  ats: ReturnType<typeof buildAtsAnalysis>;
+  analysis: any;
+}) {
+  const { ats, analysis } = args;
+  const presentFromJobDescription = safeArray(analysis?.presentKeywords ?? analysis?.present).slice(0, 24);
+  const missingFromJobDescription = safeArray(
+    analysis?.highImpactMissing ?? analysis?.missingKeywords ?? analysis?.missing,
+  ).slice(0, 24);
+
+  if (!presentFromJobDescription.length && !missingFromJobDescription.length) return ats;
+
+  const matchedByCategory = mergeCategoryBuckets(
+    ats.matchedByCategory ?? undefined,
+    presentFromJobDescription,
+  );
+  const missingByCategory = mergeCategoryBuckets(
+    ats.missingByCategory ?? undefined,
+    missingFromJobDescription,
+  );
+
+  const matchedTerms = mergeTerms(ats.matchedTerms, presentFromJobDescription).slice(0, 32);
+  const matchedTermsDetailed = uniqueCaseInsensitive([
+    ...safeArray(ats.matchedTermsDetailed?.map((hit) => hit.term)),
+    ...presentFromJobDescription,
+  ]).slice(0, 32).map((term) => ({
+    category: classifyJdKeywordForAtsCategory(term),
+    term,
+    count: 1,
+    score: 0,
+  }));
+
+  const jdMissingTools = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "tools");
+  const jdMissingCore = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "core");
+  const jdMissingMethods = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "methods");
+  const jdMissingDomain = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "domain");
+  const jdMissingOutcomes = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "outcomes");
+
+  const missingCriticalTerms = mergeTerms(ats.missingCriticalTerms, jdMissingTools, jdMissingCore).slice(0, 15);
+  const missingImportantTerms = mergeTerms(ats.missingImportantTerms, jdMissingMethods, jdMissingDomain).slice(0, 15);
+  const missingNiceToHaveTerms = mergeTerms(ats.missingNiceToHaveTerms, jdMissingOutcomes).slice(0, 20);
+
+  const categoryScores = buildAtsCategoryScores({
+    matchedByCategory,
+    missingByCategory,
+  });
+
+  return {
+    ...ats,
+    matchedTerms,
+    matchedTermsDetailed,
+    missingCriticalTerms,
+    missingImportantTerms,
+    missingNiceToHaveTerms,
+    matchedByCategory,
+    missingByCategory,
+    categoryScores,
+    overallScore: buildOverallAtsScore(categoryScores),
+    notes: uniqueCaseInsensitive([
+      ...safeArray(ats.notes),
+      "Job-description keywords were merged into ATS scoring so this role's actual tools and requirements are represented.",
+    ]).slice(0, 8),
+  };
+}
+
+
 function looksLikeDateRangeLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
@@ -1738,7 +1862,8 @@ export async function POST(req: Request) {
     const metaBlocks = isFirstTimeSetup
       ? { gamesShipped: [] as string[], metrics: [] as string[] }
       : extractMetaBlocks(resumeText);
-    const ats = buildAtsAnalysis({ resumeText, jobText, targetPosition });
+    const atsBase = buildAtsAnalysis({ resumeText, jobText, targetPosition });
+    const ats = bridgeJobDescriptionKeywordFitIntoAts({ ats: atsBase, analysis });
 
     const highlights = {
       gamesShipped: metaBlocks.gamesShipped,
