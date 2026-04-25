@@ -2787,10 +2787,14 @@ function buildDisplayedAtsKeywords(args: {
     ...baseMatchedAll.filter((term) => expertiseSet.has(cleanupAtsKeyword(term))),
   ]).slice(0, 16);
 
-  const missingKeywords = uniqueTerms([
-    ...jdExplicitToolDomainBoost,
-    ...primaryMissing,
-  ]).filter((term) => {
+  const missingKeywords = curateDisplayedMissingKeywords({
+    terms: uniqueTerms([
+      ...jdExplicitToolDomainBoost,
+      ...primaryMissing,
+    ]),
+    jobText,
+    dominantFamily,
+  }).filter((term) => {
     const key = cleanupAtsKeyword(term);
     return !ignoredSet.has(key) && !expertiseSet.has(key);
   }).slice(0, 16);
@@ -2814,6 +2818,57 @@ function computeDisplayedKeywordCoverage(matchedKeywords: string[], missingKeywo
   const total = matchedKeywords.length + missingKeywords.length;
   if (!total) return 0;
   return matchedKeywords.length / total;
+}
+
+
+const ATS_TESTING_VARIANT_NOISE = [
+  /\bgame testing\b/i,
+  /\bgameplay testing\b/i,
+  /\bquest testing\b/i,
+  /\bmission testing\b/i,
+  /\blevel testing\b/i,
+  /\bprogression testing\b/i,
+  /\bsanity testing\b/i,
+  /\bsmoke testing\b/i,
+  /\bfunctional testing\b/i,
+  /\bregression testing\b/i,
+  /\brelease readiness\b/i,
+  /\bbug prevention\b/i,
+  /\bdefect detection\b/i,
+  /\bdefect containment\b/i,
+];
+
+function isAtsTestingVariantNoise(term: string) {
+  const clean = cleanupAtsKeyword(term);
+  return ATS_TESTING_VARIANT_NOISE.some((pattern) => pattern.test(clean));
+}
+
+function curateDisplayedMissingKeywords(args: {
+  terms: string[];
+  jobText: string;
+  dominantFamily: AtsRoleFamily;
+}) {
+  const jobText = String(args.jobText ?? "").trim();
+  const dominantFamily = args.dominantFamily;
+  const maxTestingVariants = dominantFamily === "qa" ? 4 : 1;
+  let testingVariantCount = 0;
+
+  return uniqueTerms(args.terms).filter((term) => {
+    if (!isAtsTestingVariantNoise(term)) return true;
+
+    if (!jobText) {
+      testingVariantCount += 1;
+      return testingVariantCount <= maxTestingVariants;
+    }
+
+    const evidence = evaluateJobTermEvidence(jobText, term, "methods", dominantFamily);
+    const explicitlyInJob = evidence.exactVariant || evidence.strong;
+
+    if (!explicitlyInJob && dominantFamily !== "qa") return false;
+
+    testingVariantCount += 1;
+    return testingVariantCount <= maxTestingVariants;
+  });
 }
 
 function atsRoleDisplayLabel(ats?: AnalyzeAtsPayload, fallbackTargetPosition = "") {
@@ -7187,19 +7242,6 @@ useEffect(() => {
             {showAtsKeywords ? (
               <div className="mt-3 grid gap-3">
                 <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
-                  <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
-                    Matched Keywords ({liveAtsScore.matchedKeywords.length})
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {liveAtsScore.matchedKeywords.length ? (
-                      liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
-                    ) : (
-                      <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
                       Missing Keywords ({liveAtsScore.missingKeywords.length})
@@ -7267,7 +7309,19 @@ useEffect(() => {
                     </div>
                   ) : null}
                 </div>
-              </div>
+
+                <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
+                  <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
+                    Matched Keywords ({liveAtsScore.matchedKeywords.length})
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {liveAtsScore.matchedKeywords.length ? (
+                      liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
+                    ) : (
+                      <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
+                    )}
+                  </div>
+                </div>              </div>
             ) : (
               <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                 ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
