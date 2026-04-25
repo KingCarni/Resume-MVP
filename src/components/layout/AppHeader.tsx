@@ -47,12 +47,16 @@ export default function AppHeader({
   logoAlt = "Git-a-Job",
 }: Props) {
   const pathname = usePathname() || "/";
-  const filteredNavItems = navItems.filter((item) => !isActivePath(pathname, item.href));
-  const filteredMenuItems = menuItems.filter((item) => !isActivePath(pathname, item.href));
+  const filteredNavItems = navItems.filter(
+    (item) => !isActivePath(pathname, item.href),
+  );
+  const filteredMenuItems = menuItems.filter(
+    (item) => !isActivePath(pathname, item.href),
+  );
 
   return (
-    <header className="shell-wrap pt-5">
-      <details className="group rounded-3xl border border-white/10 bg-slate-950/80 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl md:hidden">
+    <header className="shell-wrap relative z-[9999] pt-5">
+      <details className="group relative z-[9999] rounded-3xl border border-white/10 bg-slate-950/90 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.45)] backdrop-blur-xl md:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-white marker:hidden [&::-webkit-details-marker]:hidden">
           <Link
             href={brandHref}
@@ -74,13 +78,13 @@ export default function AppHeader({
           </span>
         </summary>
 
-        <div className="mt-4 grid gap-3 border-t border-white/10 pt-4">
+        <div className="relative z-[10000] mt-4 grid gap-3 border-t border-white/10 pt-4">
           <nav className="grid gap-2">
             {filteredNavItems.map((item) => (
               <Link
                 key={`${item.href}-${item.label}`}
                 href={item.href}
-                className="rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-800"
+                className="rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-slate-800"
               >
                 {item.label}
               </Link>
@@ -90,7 +94,11 @@ export default function AppHeader({
           <div className="grid gap-2 border-t border-white/10 pt-3 [&_a]:w-full [&_button]:w-full">
             {children}
             {filteredMenuItems.map((item) => (
-              <Link key={`${item.href}-${item.label}`} href={item.href} className="shell-secondary-btn">
+              <Link
+                key={`${item.href}-${item.label}`}
+                href={item.href}
+                className="shell-secondary-btn"
+              >
                 {item.label}
               </Link>
             ))}
@@ -98,9 +106,13 @@ export default function AppHeader({
         </div>
       </details>
 
-      <div className="hidden items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
+      <div className="relative z-[9999] hidden items-center justify-between gap-4 rounded-full border border-white/10 bg-slate-950/80 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.45)] backdrop-blur-xl sm:px-6 md:flex">
         <div className="flex min-w-0 items-center gap-4">
-          <Link href={brandHref} className="inline-flex shrink-0 items-center" aria-label="Git-a-Job home">
+          <Link
+            href={brandHref}
+            className="inline-flex shrink-0 items-center"
+            aria-label="Git-a-Job home"
+          >
             <Image
               src={logoSrc}
               alt={logoAlt}
@@ -113,7 +125,11 @@ export default function AppHeader({
 
           <nav className="hidden min-w-0 items-center gap-2 lg:flex">
             {filteredNavItems.map((item) => (
-              <Link key={`${item.href}-${item.label}`} href={item.href} className="shell-nav-link whitespace-nowrap">
+              <Link
+                key={`${item.href}-${item.label}`}
+                href={item.href}
+                className="shell-nav-link whitespace-nowrap"
+              >
                 {item.label}
               </Link>
             ))}
@@ -121,14 +137,18 @@ export default function AppHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <details className="group relative">
+          <details className="group relative z-[10000]">
             <summary className="shell-secondary-btn cursor-pointer list-none marker:hidden [&::-webkit-details-marker]:hidden">
               Menu
             </summary>
-            <div className="absolute right-0 z-50 mt-3 grid min-w-[230px] gap-2 rounded-3xl border border-white/10 bg-slate-950/95 p-3 shadow-[0_22px_60px_rgba(2,6,23,0.55)] backdrop-blur-xl">
+            <div className="absolute right-0 z-[10001] mt-3 grid min-w-[230px] gap-2 rounded-3xl border border-white/10 bg-slate-950/95 p-3 shadow-[0_22px_60px_rgba(2,6,23,0.65)] backdrop-blur-xl">
               <div className="grid gap-2 lg:hidden">
                 {filteredNavItems.map((item) => (
-                  <Link key={`${item.href}-${item.label}-dropdown`} href={item.href} className="shell-secondary-btn w-full justify-center">
+                  <Link
+                    key={`${item.href}-${item.label}-dropdown`}
+                    href={item.href}
+                    className="shell-secondary-btn w-full justify-center"
+                  >
                     {item.label}
                   </Link>
                 ))}
@@ -141,7 +161,11 @@ export default function AppHeader({
               ) : null}
 
               {filteredMenuItems.map((item) => (
-                <Link key={`${item.href}-${item.label}-menu`} href={item.href} className="shell-secondary-btn w-full justify-center">
+                <Link
+                  key={`${item.href}-${item.label}-menu`}
+                  href={item.href}
+                  className="shell-secondary-btn w-full justify-center"
+                >
                   {item.label}
                 </Link>
               ))}
