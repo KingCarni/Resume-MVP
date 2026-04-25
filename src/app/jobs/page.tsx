@@ -282,6 +282,7 @@ function getWarmupHeadline(args: {
 }
 
 const JOBS_PAGE_STATE_KEY = "jobsPageState:v2";
+const BEST_MATCH_RESULTS_CACHE_PREFIX = "jobsBestMatchResults:v1:";
 
 type PersistedJobsPageState = {
   selectedProfileId?: string;
@@ -294,6 +295,39 @@ type PersistedJobsPageState = {
   targetPosition?: string;
   page?: number;
 };
+
+type PersistedBestMatchResults = {
+  items: JobListItem[];
+  total: number;
+  totalPages: number;
+  cachedAt: number;
+};
+
+function buildBestMatchCacheKey(queryString: string) {
+  return BEST_MATCH_RESULTS_CACHE_PREFIX + queryString;
+}
+
+function readBestMatchCache(queryString: string): PersistedBestMatchResults | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(buildBestMatchCacheKey(queryString));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedBestMatchResults;
+    if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeBestMatchCache(queryString: string, payload: PersistedBestMatchResults) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(buildBestMatchCacheKey(queryString), JSON.stringify(payload));
+  } catch {
+    // Best-match cache is a convenience only. Ignore storage failures.
+  }
+}
 
 function isRemoteFilter(value: unknown): value is RemoteFilter {
   return (
@@ -724,7 +758,32 @@ export default function JobsPage() {
     }
 
     async function loadJobs() {
-      setJobsLoading(true);
+      const cachedBestMatch =
+        selectedProfileId && appliedSort === "match" ? readBestMatchCache(queryString) : null;
+
+      if (cachedBestMatch && active) {
+        setJobs(cachedBestMatch.items);
+        setTotalPages(Math.max(1, cachedBestMatch.totalPages));
+        setTotalJobs(cachedBestMatch.total);
+        setMatchWarmup((current) =>
+          current ?? {
+            status: "running",
+            ready: false,
+            active: true,
+            usedFallback: false,
+            processedCount: 0,
+            totalCandidateCount: 0,
+            progressPercent: 0,
+            shouldPoll: true,
+            shouldTriggerWarmup: true,
+            lastError: null,
+            shortLabel: "Refreshing best matches",
+            message: "Showing your last best-match results while we refresh this profile in the background.",
+          },
+        );
+      }
+
+      setJobsLoading(!cachedBestMatch && jobsRef.current.length === 0);
       setJobsError(null);
 
       const fallbackPromise = loadNewestFallbackWhileMatching();
@@ -739,9 +798,23 @@ export default function JobsPage() {
           throw new Error(json.error || "Could not load jobs.");
         if (!active) return;
         const items = Array.isArray(json.items) ? json.items : [];
-        setJobs(items);
-        setTotalPages(Math.max(1, json.totalPages ?? 1));
-        setTotalJobs(json.total ?? 0);
+        const hasBestMatchRows = selectedProfileId && appliedSort === "match" && items.some((item) => item.match);
+
+        if (items.length > 0 || jobsRef.current.length === 0) {
+          setJobs(items);
+          setTotalPages(Math.max(1, json.totalPages ?? 1));
+          setTotalJobs(json.total ?? 0);
+        }
+
+        if (hasBestMatchRows) {
+          writeBestMatchCache(queryString, {
+            items,
+            total: json.total ?? items.length,
+            totalPages: Math.max(1, json.totalPages ?? 1),
+            cachedAt: Date.now(),
+          });
+        }
+
         setMatchWarmup(
           selectedProfileId && appliedSort === "match"
             ? (json.warmup ?? {
