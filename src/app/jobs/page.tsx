@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trackJobEvent } from "@/lib/analytics/jobs";
 import CreditsPill from "@/components/Billing/CreditsPill";
+import MobileHeaderMenu from "@/components/layout/MobileHeaderMenu";
 import { TARGET_POSITION_OPTIONS } from "@/lib/jobs/roleFamilies";
 
 type ResumeProfileItem = {
@@ -1520,7 +1521,27 @@ export default function JobsPage() {
   return (
     <main className="min-h-screen text-white">
       <header className="shell-wrap pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6">
+        <MobileHeaderMenu
+          navItems={[
+            { href: "/", label: "Home" },
+            { href: "/resume", label: "Resume" },
+            { href: "/cover-letter", label: "Cover Letter" },
+            { href: "/account", label: "Account" },
+          ]}
+        >
+          <CreditsPill />
+          <Link href="/buy-credits" className="shell-primary-btn">
+            Buy Credits
+          </Link>
+          <Link href="/donate" className="shell-secondary-btn">
+            Donate
+          </Link>
+          <Link href="/jobs/saved" className="shell-secondary-btn">
+            Saved Jobs
+          </Link>
+        </MobileHeaderMenu>
+
+        <div className="hidden flex-wrap items-center justify-between gap-3 rounded-full border border-white/10 bg-slate-950/70 px-4 py-3 shadow-[0_18px_50px_rgba(2,6,23,0.35)] backdrop-blur-xl sm:px-6 md:flex">
           <div className="flex items-center gap-4">
             <Link
               href="/"
@@ -2042,7 +2063,9 @@ export default function JobsPage() {
                           <p className="mt-1 text-3xl font-bold text-white">
                             {job.match?.totalScore != null
                               ? `${job.match.totalScore}%`
-                              : "—"}
+                              : hasProfile
+                                ? "Loading"
+                                : "—"}
                           </p>
                           <p className="mt-1 text-xs text-slate-400">
                             {hasProfile
