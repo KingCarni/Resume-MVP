@@ -7,6 +7,7 @@ import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trackJobEvent } from "@/lib/analytics/jobs";
+import ParserDiagnosticsPanel, { type ParserDiagnosticsForUi } from "@/components/resumeParser/ParserDiagnosticsPanel";
 import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
 import { buildResumeTemplateSelection, getRecommendedColorSchemeForLayout, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, RESUME_COLOR_SCHEME_OPTIONS, RESUME_LAYOUT_CATEGORY_LABELS, RESUME_LAYOUT_CATEGORY_ORDER, RESUME_LAYOUT_OPTIONS, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
 import { COLOR_SCHEMES, type ColorSchemeId } from "@/lib/templates/colorSchemes";
@@ -226,6 +227,8 @@ type ApplyPackBundle = {
 type AnalyzeResponse = {
   ok: boolean;
   error?: string;
+  warnings?: string[];
+  parserDiagnostics?: ParserDiagnosticsForUi | null;
   matchScore?: number;
   missingKeywords?: string[];
   presentKeywords?: string[];
@@ -6714,6 +6717,16 @@ useEffect(() => {
 
         {/* Preview */}
         <section className="min-w-0">
+          <ParserDiagnosticsPanel
+            diagnostics={analysis?.parserDiagnostics ?? null}
+            warnings={analysis?.warnings ?? []}
+            extractedText={
+              analysis?.debug?.normalizedText ??
+              analysis?.debug?.rawText ??
+              resumeText
+            }
+            className="mb-4"
+          />
           <HtmlDocPreview
             html={liveResumeHtml}
             footer={

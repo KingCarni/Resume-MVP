@@ -13,7 +13,9 @@
     "import:registry": "tsx src/scripts/import-job-sources.ts",
     "validate:jobs:scoring": "tsx src/scripts/validate-jobs-scoring.ts",
     "validate:jobs:api": "tsx src/scripts/validate-jobs-api.ts",
-    "validate:jobs": "tsx src/scripts/validate-jobs-scoring.ts && tsx src/scripts/validate-jobs-api.ts"
+    "validate:jobs": "tsx src/scripts/validate-jobs-scoring.ts && tsx src/scripts/validate-jobs-api.ts",
+    "validate:resume-parser": "tsx src/scripts/validate-resume-parser.ts",
+    "validate:resume-parser:corpus": "tsx src/scripts/validate-resume-parser-corpus.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

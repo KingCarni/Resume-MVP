@@ -1,4 +1,5 @@
 // src/app/api/analyze/route.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 import { analyzeKeywordFit } from "@/lib/keywords";
@@ -11,6 +12,11 @@ import { prisma } from "@/lib/prisma";
 import { chargeCredits, getCreditBalance, refundCredits } from "@/lib/credits";
 import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
 import { upsertLatestResumeProfileForUser } from "@/lib/resumeProfiles/buildProfile";
+import {
+  parseResumeForCompatibility,
+  type ResumeParserCompatibilityOutput,
+  type ResumeParserExtractor,
+} from "@/lib/resumeParser";
 
 import { ocrPdfWithGoogleVision } from "@/lib/pdf_ocr_google";
 import { assessPdfTextQuality } from "@/lib/pdf_quality";
@@ -24,7 +30,7 @@ const BOOT_TAG = "analyze_route_boot_ok";
 const MAX_FILE_MB = 25;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
-const PDF_WEIRD_WARNING = "PDF looks weird; DOCX recommended — we’ll still try to extract.";
+const PDF_WEIRD_WARNING = "PDF looks weird; DOCX recommended â€” weâ€™ll still try to extract.";
 
 type ResumeBullet = {
   id: string;
@@ -68,6 +74,47 @@ type JobsAnalyticsContext = {
 function cleanOptionalString(value: unknown) {
   const s = String(value ?? "").trim();
   return s || undefined;
+}
+
+function resolveResumeParserExtractor(args: {
+  parserUsed: "pdfjs" | "vision_ocr" | "mammoth" | "txt" | "unknown";
+  detectedType: string;
+}): ResumeParserExtractor {
+  if (args.parserUsed === "pdfjs") return "pdf_text";
+  if (args.parserUsed === "vision_ocr") return "ocr_google_vision";
+  if (args.parserUsed === "mammoth") return "docx_mammoth";
+  if (args.parserUsed === "txt") return "plain_text";
+
+  const detected = String(args.detectedType || "").toLowerCase();
+  if (detected === "pdf") return "pdf_text";
+  if (detected === "docx" || detected === "doc") return "docx_mammoth";
+  if (detected === "txt") return "plain_text";
+
+  return "unknown";
+}
+
+function formatResumeParserWarnings(parserOutput: ResumeParserCompatibilityOutput | null) {
+  return (parserOutput?.parserDiagnostics?.warnings || [])
+    .map((warning) => String(warning?.message || "").trim())
+    .filter(Boolean);
+}
+
+function buildResumeParserDebug(parserOutput: ResumeParserCompatibilityOutput | null) {
+  if (!parserOutput) return null;
+
+  return {
+    confidence: parserOutput.parserDiagnostics.confidence,
+    quality: parserOutput.parserDiagnostics.quality,
+    warningCount: parserOutput.parserDiagnostics.warnings.length,
+    warnings: parserOutput.parserDiagnostics.warnings.map((warning) => ({
+      code: warning.code,
+      severity: warning.severity,
+      message: warning.message,
+    })),
+    sectionKinds: Object.keys(parserOutput.sections || {}),
+    jobsDetected: parserOutput.jobs.length,
+    bulletsDetected: parserOutput.bullets.length,
+  };
 }
 
 function buildJobsAnalyticsContext(input: {
@@ -271,8 +318,8 @@ function normalizeForContains(s: string) {
   return String(s || "")
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
+    .replace(/[â€œâ€]/g, '"')
+    .replace(/[â€˜â€™]/g, "'")
     .trim();
 }
 
@@ -304,7 +351,7 @@ function filterBadBullets(arr: string[]) {
 }
 
 function cleanLeadingBulletGarbage(s: string) {
-  return String(s || "").replace(/^[\s•●\u2022\u00B7o-]+/g, "").trim();
+  return String(s || "").replace(/^[\sâ€¢â—\u2022\u00B7oï‚§-]+/g, "").trim();
 }
 
 function safeArray(input: unknown): string[] {
@@ -663,7 +710,7 @@ function looksLikeDateRangeLine(lineRaw: string) {
 
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
-  const dash = "[–—-]";
+  const dash = "[â€“â€”-]";
   const re = new RegExp(`\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`, "i");
   return re.test(line);
 }
@@ -671,14 +718,14 @@ function looksLikeDateRangeLine(lineRaw: string) {
 function looksLikeJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
-  if (!(line.includes("—") || line.includes("-"))) return false;
+  if (!(line.includes("â€”") || line.includes("-"))) return false;
   if (!line.includes("|")) return false;
-  return /^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/.test(line);
+  return /^(.{2,140}?)\s*(â€”|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/.test(line);
 }
 
 function parseJobHeaderLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
-  const m = line.match(/^(.{2,140}?)\s*(—|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/);
+  const m = line.match(/^(.{2,140}?)\s*(â€”|-)\s*(.{2,220}?)\s*\|\s*(.{0,80})$/);
   if (!m) return null;
 
   return {
@@ -691,14 +738,14 @@ function parseJobHeaderLine(lineRaw: string) {
 function looksLikeCompanyDashTitleHeader(lineRaw: string) {
   const line = String(lineRaw || "").trim();
   if (!line) return false;
-  if (/^[\s]*[•●\u2022\u00B7o-]\s+/.test(line)) return false;
+  if (/^[\s]*[â€¢â—\u2022\u00B7oï‚§-]\s+/.test(line)) return false;
   if (/^(highlights|experience|education|skills|projects|certifications|certificates|volunteer|interests)\b/i.test(line))
     return false;
-  if (!line.includes(" - ") && !line.includes(" — ")) return false;
+  if (!line.includes(" - ") && !line.includes(" â€” ")) return false;
   if (line.includes("|")) return false;
   if (line.length < 8 || line.length > 170) return false;
 
-  const normalized = line.replace(/\s+—\s+/g, " - ");
+  const normalized = line.replace(/\s+â€”\s+/g, " - ");
   const idx = normalized.indexOf(" - ");
   if (idx <= 0) return false;
 
@@ -712,7 +759,7 @@ function looksLikeCompanyDashTitleHeader(lineRaw: string) {
 
 function parseCompanyDashTitleHeader(lineRaw: string) {
   const line = String(lineRaw || "").trim();
-  const normalized = line.replace(/\s+—\s+/g, " - ");
+  const normalized = line.replace(/\s+â€”\s+/g, " - ");
   const idx = normalized.indexOf(" - ");
   if (idx <= 0) return null;
 
@@ -813,7 +860,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     if (looksLikeMetaLine(line)) continue;
     if (looksLikeContactOrReferenceLine(line)) continue;
 
-    const isGlyphBullet = /^[•●\u2022\u00B7o-]\s+/.test(line);
+    const isGlyphBullet = /^[â€¢â—\u2022\u00B7oï‚§-]\s+/.test(line);
     const cleaned = isGlyphBullet ? cleanLeadingBulletGarbage(line) : line;
 
     const candidate = String(cleaned || "").trim();
@@ -967,7 +1014,7 @@ function extractExperienceSection(fullText: string) {
   const lines = text.split("\n");
   const month = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)";
   const year = "(19|20)\\d{2}";
-  const dash = "[–—-]";
+  const dash = "[â€“â€”-]";
   const dateRangeRegex = new RegExp(
     `\\b${month}\\s+${year}\\s*${dash}\\s*(${month}\\s+${year}|present|current)\\b`,
     "i"
@@ -1002,7 +1049,7 @@ function extractMetaBlocks(fullText: string) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const gamesShippedRegex = /^(?:🎮\s*)?games shipped:\s*(.*)$/i;
+  const gamesShippedRegex = /^(?:ðŸŽ®\s*)?games shipped:\s*(.*)$/i;
   const metricLikeRegex = /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
   const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
 
@@ -1012,7 +1059,7 @@ function extractMetaBlocks(fullText: string) {
   const seenMetrics = new Set<string>();
 
   const pushGame = (value: string) => {
-    const cleaned = value.replace(/^[-•]\s*/, "").replace(/\s+/g, " ").trim();
+    const cleaned = value.replace(/^[-â€¢]\s*/, "").replace(/\s+/g, " ").trim();
     if (!cleaned) return;
     if (cleaned.length > 90) return;
     if (actionVerbRe.test(cleaned)) return;
@@ -1031,7 +1078,7 @@ function extractMetaBlocks(fullText: string) {
     if (gamesMatch) {
       const rest = String(gamesMatch[1] ?? "").trim();
       if (rest) {
-        const parts = rest.split(/\s*[•|]\s*|\s*,\s*(?=[A-Z0-9])/).map((x) => x.trim()).filter(Boolean);
+        const parts = rest.split(/\s*[â€¢|]\s*|\s*,\s*(?=[A-Z0-9])/).map((x) => x.trim()).filter(Boolean);
         if (parts.length > 1) {
           parts.forEach(pushGame);
         } else {
@@ -1508,7 +1555,7 @@ function looksLikeWrappedBulletContinuation(prev: string, next: string) {
   if (looksLikeDateRangeLine(b)) return false;
   if (looksLikeJobHeaderLine(b)) return false;
   if (looksLikeCompanyDashTitleHeader(b)) return false;
-  if (/^[•●\u2022\u00B7o-]\s+/.test(b)) return false;
+  if (/^[â€¢â—\u2022\u00B7oï‚§-]\s+/.test(b)) return false;
 
   const prevEndsSentence = /[.!?]$/.test(a);
   const prevEndsSoftWrap =
@@ -1557,7 +1604,7 @@ function scanBulletsFromTextFallback(text: string) {
 
   const out: string[] = [];
   const seen = new Set<string>();
-  const bulletRe = /^[\s]*([•●\u2022\u00B7o-])\s+/;
+  const bulletRe = /^[\s]*([â€¢â—\u2022\u00B7oï‚§-])\s+/;
   let current: string | null = null;
 
   const flush = () => {
@@ -1622,6 +1669,7 @@ export async function POST(req: Request) {
     let parserUsed: "pdfjs" | "vision_ocr" | "mammoth" | "txt" | "unknown" = "unknown";
     let pdfInfo: any = null;
     let detectedType = "unknown";
+    let parserCompatibility: ResumeParserCompatibilityOutput | null = null;
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
@@ -1747,7 +1795,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const warningsUnique = Array.from(new Set(warnings));
+    let warningsUnique = Array.from(new Set(warnings));
 
     if (!resumeText || !jobText || !targetPosition) {
       return okJson({ ok: false, error: "Missing resumeText (or file/resumeBlobUrl), jobText, or targetPosition" }, { status: 400 });
@@ -1771,6 +1819,19 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    parserCompatibility = parseResumeForCompatibility(resumeText, {
+      sourceMimeType: detectedType,
+      extractor: resolveResumeParserExtractor({ parserUsed, detectedType }),
+      extractedAt: new Date().toISOString(),
+    });
+
+    if (parserCompatibility.resumeText) {
+      resumeText = sanitizeResumeInput(parserCompatibility.resumeText);
+    }
+
+    warnings.push(...formatResumeParserWarnings(parserCompatibility));
+    warningsUnique = Array.from(new Set(warnings));
 
     const effectiveJobsContextResult = await resolveEffectiveJobsAnalyticsContext(
       jobsAnalyticsContext,
@@ -1889,6 +1950,34 @@ export async function POST(req: Request) {
         ),
       }));
 
+    const parserJobs = normalizeJobs(parserCompatibility?.jobs || []);
+    const parserFlat = flattenFromJobs(parserJobs);
+    const parserBullets = filterBadBullets(
+      parserFlat.outBullets.length
+        ? parserFlat.outBullets
+        : mergeWrappedBulletLines((parserCompatibility?.bullets || []).map((b) => String(b || "").trim()).filter(Boolean))
+    );
+
+    if (parserJobs.length) {
+      experienceJobs = parserJobs;
+    }
+
+    if (parserBullets.length) {
+      bullets = parserBullets;
+      if (parserFlat.outBullets.length) {
+        const keep = new Set(parserBullets.map((b) => normalizeForContains(b)));
+        bulletJobIds = [];
+        for (let i = 0; i < parserFlat.outBullets.length; i++) {
+          if (keep.has(normalizeForContains(parserFlat.outBullets[i]))) {
+            bulletJobIds.push(parserFlat.outJobIds[i] || experienceJobs[0]?.id || "job_default");
+          }
+        }
+      } else {
+        const fallbackJobId = experienceJobs[0]?.id || "job_default";
+        bulletJobIds = bullets.map(() => fallbackJobId);
+      }
+    }
+
     const tryExtract = async (text: string) => {
       try {
         const mod: any = await import("@/lib/extractResumeBullets");
@@ -1919,11 +2008,16 @@ export async function POST(req: Request) {
     }
 
     const strict1 = await tryExtract(experienceSlice.experienceText);
-    experienceJobs = normalizeJobs(strict1.jobs);
 
-    const flat1 = flattenFromJobs(experienceJobs);
-    bullets = filterBadBullets(flat1.outBullets);
-    bulletJobIds = flat1.outJobIds;
+    if (!bullets.length) {
+      experienceJobs = normalizeJobs(strict1.jobs);
+
+      const flat1 = flattenFromJobs(experienceJobs);
+      bullets = filterBadBullets(flat1.outBullets);
+      bulletJobIds = flat1.outJobIds;
+    } else if (!experienceJobs.length) {
+      experienceJobs = normalizeJobs(strict1.jobs);
+    }
 
     if (!bullets.length) {
       const strict2 = await tryExtract(bulletSourceText);
@@ -1975,6 +2069,7 @@ export async function POST(req: Request) {
             detectedType,
             warnings: warningsUnique,
             pdfInfo,
+            parserDiagnostics: buildResumeParserDebug(parserCompatibility),
           },
         });
 
@@ -2013,7 +2108,7 @@ export async function POST(req: Request) {
           {
             ok: false,
             error:
-              "No bullets detected. Your resume may not use bullet markers (•, -, ●, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+              "No bullets detected. Your resume may not use bullet markers (â€¢, -, â—, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: true,
             balance: refunded.balance,
             warnings: warningsUnique,
@@ -2021,6 +2116,7 @@ export async function POST(req: Request) {
               parserUsed,
               detectedType,
               pdfInfo,
+              parserDiagnostics: buildResumeParserDebug(parserCompatibility),
               foundExperienceSection: experienceSlice.foundSection,
               experienceMode: experienceSlice.mode,
               experienceLen: experienceSlice.experienceText.length,
@@ -2067,10 +2163,11 @@ export async function POST(req: Request) {
           {
             ok: false,
             error:
-              "No bullets detected. Your resume may not use bullet markers (•, -, ●, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
+              "No bullets detected. Your resume may not use bullet markers (â€¢, -, â—, etc.) or the experience section could not be parsed. Try uploading DOCX, or paste the resume with bullet characters.",
             refunded: false,
             refundError: refundErr?.message || String(refundErr),
             warnings: warningsUnique,
+            parserDiagnostics: buildResumeParserDebug(parserCompatibility),
           },
           { status: 400 }
         );
@@ -2224,6 +2321,7 @@ export async function POST(req: Request) {
             updatedAt: autoResumeProfile.updatedAt,
           }
         : null,
+      parserDiagnostics: buildResumeParserDebug(parserCompatibility),
       debug: {
         contentType,
         resumeLen: resumeText.length,
@@ -2246,6 +2344,7 @@ export async function POST(req: Request) {
         detectedType,
         parserUsed,
         pdfInfo,
+        parserDiagnostics: buildResumeParserDebug(parserCompatibility),
         rawText: resumeText,
         normalizedText: normalizeResumeText(resumeText),
         atsPrimaryResumeRole: ats?.detectedResumeRole?.roleKey ?? null,
