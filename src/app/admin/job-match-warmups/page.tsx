@@ -37,19 +37,6 @@ export default async function JobMatchWarmupsAdminPage(props: {
   return (
     <DashboardShell
       title="JobMatch warmup monitor"
-      topRight={
-        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-300">
-          <Link href="/admin/jobs-analytics" className="shell-secondary-btn">
-            Jobs analytics
-          </Link>
-          <Link href="/jobs" className="shell-secondary-btn">
-            Open jobs feed
-          </Link>
-          <Link href="/account" className="shell-secondary-btn">
-            Account
-          </Link>
-        </div>
-      }
     >
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm leading-6 text-slate-300">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/80">

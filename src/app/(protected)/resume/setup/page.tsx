@@ -1,7 +1,6 @@
 // src/app/(protected)/resume/setup/page.tsx
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import Link from "next/link";
 
 import ResumeMvp from "@/components/ResumeMvp";
 import DashboardShell from "@/components/layout/DashboardShell";
@@ -44,30 +43,14 @@ export default async function ResumeSetupPage(props: {
 
   const searchParams = (await props.searchParams) ?? {};
   const reason = readParam(searchParams.reason).trim();
-  const setupPrompt = reason ? SETUP_REQUIRED_REASON_COPY[reason] ?? SETUP_REQUIRED_REASON_COPY.jobs : null;
+  const setupPrompt = reason
+    ? SETUP_REQUIRED_REASON_COPY[reason] ?? SETUP_REQUIRED_REASON_COPY.jobs
+    : null;
 
   return (
     <DashboardShell
       title="Resume Setup"
       subtitle="Create your base Git-a-Job resume for free. Once this is done, you can tailor it per role."
-      topRight={
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/buy-credits" className="shell-primary-btn">
-            Buy Credits
-          </Link>
-          <a
-            href="/account/donate"
-            target="_blank"
-            rel="noreferrer"
-            className="shell-secondary-btn"
-          >
-            Donate
-          </a>
-          <Link href="/account" className="shell-secondary-btn">
-            Account
-          </Link>
-        </div>
-      }
     >
       <div className="text-black dark:text-white">
         {setupPrompt ? (

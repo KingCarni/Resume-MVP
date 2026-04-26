@@ -35,16 +35,6 @@ export default async function JobsAnalyticsAdminPage(props: {
   return (
     <DashboardShell
       title="Jobs analytics dashboard"
-      topRight={
-        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-300">
-          <Link href="/jobs" className="shell-secondary-btn">
-            Open jobs feed
-          </Link>
-          <Link href="/account" className="shell-secondary-btn">
-            Account
-          </Link>
-        </div>
-      }
     >
       <div className="grid gap-4 lg:grid-cols-3">
         {summary.cards.map((card, index) => (

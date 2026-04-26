@@ -2,7 +2,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import DashboardShell from "@/components/layout/DashboardShell";
 
 const AMOUNTS = [5, 10, 25, 50, 100] as const;
@@ -45,16 +44,6 @@ export default function DonatePage() {
     <DashboardShell
       title="Donate"
       subtitle="If Git-a-Job helped you, you can support continued development without leaving the same workspace style as the rest of the product."
-      topRight={
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/buy-credits" className="shell-primary-btn">
-            Buy Credits
-          </Link>
-          <Link href="/jobs" className="shell-secondary-btn">
-            Browse Jobs
-          </Link>
-        </div>
-      }
     >
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-lg shadow-black/15">
