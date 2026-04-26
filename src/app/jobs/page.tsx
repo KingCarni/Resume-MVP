@@ -1627,7 +1627,7 @@ export default function JobsPage() {
                 Git-a-Job 2.0
               </p>
               <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                AI Job Match
+                Job Match
               </h1>
               <p className="mt-3 text-sm text-slate-300 sm:text-base">
                 Browse real jobs, score them against your resume profile, and

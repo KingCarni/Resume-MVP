@@ -73,7 +73,7 @@ export default function AppHeader({
               className="h-8 w-auto max-w-[170px] object-contain"
             />
           </Link>
-          <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-200 transition group-open:border-cyan-400/30 group-open:text-cyan-100">
+          <span className="inline-flex shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-100 transition group-open:border-cyan-300/50 group-open:bg-cyan-400/15">
             Menu
           </span>
         </summary>
@@ -91,18 +91,19 @@ export default function AppHeader({
             ))}
           </nav>
 
-          <div className="grid gap-2 border-t border-white/10 pt-3 [&_a]:w-full [&_button]:w-full">
-            {children}
-            {filteredMenuItems.map((item) => (
-              <Link
-                key={`${item.href}-${item.label}`}
-                href={item.href}
-                className="shell-secondary-btn"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
+          {filteredMenuItems.length > 0 ? (
+            <div className="grid gap-2 border-t border-white/10 pt-3">
+              {filteredMenuItems.map((item) => (
+                <Link
+                  key={`${item.href}-${item.label}`}
+                  href={item.href}
+                  className="shell-secondary-btn w-full justify-center"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
         </div>
       </details>
 
@@ -136,9 +137,15 @@ export default function AppHeader({
           </nav>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-3">
+          {children ? (
+            <div className="hidden shrink-0 items-center gap-2 xl:flex [&_a]:shrink-0 [&_button]:shrink-0">
+              {children}
+            </div>
+          ) : null}
+
           <details className="group relative z-[10000]">
-            <summary className="shell-secondary-btn cursor-pointer list-none marker:hidden [&::-webkit-details-marker]:hidden">
+            <summary className="shell-secondary-btn cursor-pointer list-none border-cyan-400/30 bg-cyan-500/10 text-cyan-100 marker:hidden hover:border-cyan-300/50 hover:bg-cyan-400/15 [&::-webkit-details-marker]:hidden">
               Menu
             </summary>
             <div className="absolute right-0 z-[10001] mt-3 grid min-w-[230px] gap-2 rounded-3xl border border-white/10 bg-slate-950/95 p-3 shadow-[0_22px_60px_rgba(2,6,23,0.65)] backdrop-blur-xl">
@@ -153,12 +160,6 @@ export default function AppHeader({
                   </Link>
                 ))}
               </div>
-
-              {children ? (
-                <div className="grid gap-2 border-b border-white/10 pb-2 [&_a]:w-full [&_button]:w-full">
-                  {children}
-                </div>
-              ) : null}
 
               {filteredMenuItems.map((item) => (
                 <Link
