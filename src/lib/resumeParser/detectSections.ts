@@ -1,7 +1,23 @@
 import type { DetectedResumeSection, ResumeFieldConfidence, ResumeSectionKind } from "./types";
 
 const SECTION_ALIASES: Array<{ kind: ResumeSectionKind; aliases: string[] }> = [
-  { kind: "summary", aliases: ["profile", "summary", "professional summary", "career summary", "objective", "profile summary"] },
+  {
+    kind: "summary",
+    aliases: [
+      "profile",
+      "summary",
+      "professional summary",
+      "career summary",
+      "objective",
+      "profile summary",
+      "snapshot",
+      "career snapshot",
+      "professional snapshot",
+      "overview",
+      "about",
+      "about me",
+    ],
+  },
   {
     kind: "experience",
     aliases: [
@@ -13,17 +29,56 @@ const SECTION_ALIASES: Array<{ kind: ResumeSectionKind; aliases: string[] }> = [
       "career history",
       "relevant experience",
       "employment experience",
+      "work story",
+      "career story",
+      "selected work",
+      "selected experience",
+      "role history",
+      "professional background",
+      "career highlights",
+      "highlights",
     ],
   },
-  { kind: "education", aliases: ["education", "academic background", "education and training", "training"] },
+  {
+    kind: "education",
+    aliases: [
+      "education",
+      "academic background",
+      "education and training",
+      "training",
+      "learning",
+      "academic history",
+      "credentials",
+    ],
+  },
   {
     kind: "skills",
-    aliases: ["skills", "technical skills", "core skills", "areas of expertise", "expertise", "key skills", "competencies"],
+    aliases: [
+      "skills",
+      "technical skills",
+      "core skills",
+      "areas of expertise",
+      "expertise",
+      "key skills",
+      "competencies",
+      "toolbox",
+      "tool box",
+      "toolkit",
+      "tool kit",
+      "tools",
+      "technologies",
+      "technology",
+      "tech stack",
+      "technical toolkit",
+      "technical toolbox",
+    ],
   },
   { kind: "certifications", aliases: ["certifications", "certificates", "licenses", "licences", "certifications and licenses"] },
-  { kind: "projects", aliases: ["projects", "selected projects", "professional projects", "portfolio"] },
+  { kind: "projects", aliases: ["projects", "selected projects", "professional projects", "portfolio", "project work", "academic projects"] },
   { kind: "interests", aliases: ["interests", "activities", "volunteer", "volunteering", "community"] },
 ];
+
+const CONTACT_HINT_RE = /(?:@|https?:\/\/|www\.|linkedin\.com|github\.com|\b\d{3}[-.)\s]\d{3})/i;
 
 function normalizeHeading(line: string) {
   return String(line || "")
@@ -36,11 +91,10 @@ function normalizeHeading(line: string) {
 
 function isLikelyHeadingLine(line: string) {
   const trimmed = String(line || "").trim();
-  if (!trimmed || trimmed.length > 70) return false;
+  if (!trimmed || trimmed.length > 80) return false;
   if (trimmed.startsWith("â€¢ ")) return false;
   if (/\b(19|20)\d{2}\b/.test(trimmed)) return false;
-  if (/@/.test(trimmed)) return false;
-  if (/\d{3}[-.)\s]\d{3}/.test(trimmed)) return false;
+  if (CONTACT_HINT_RE.test(trimmed)) return false;
   return true;
 }
 
@@ -57,7 +111,7 @@ export function classifySectionHeading(line: string): { kind: ResumeSectionKind;
 
   for (const group of SECTION_ALIASES) {
     for (const alias of group.aliases) {
-      if (normalized.includes(alias) && normalized.length <= alias.length + 16) {
+      if (normalized.includes(alias) && normalized.length <= alias.length + 18) {
         return { kind: group.kind, confidence: "probable" };
       }
     }
@@ -72,6 +126,8 @@ export function detectResumeSections(lines: string[]): DetectedResumeSection[] {
   lines.forEach((line, index) => {
     const detected = classifySectionHeading(line);
     if (detected) {
+      const priorHeading = headings[headings.length - 1];
+      if (priorHeading && priorHeading.index === index) return;
       headings.push({ line, index, kind: detected.kind, confidence: detected.confidence });
     }
   });

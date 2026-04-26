@@ -1,4 +1,4 @@
-const BULLET_GLYPHS = /^(?:[\s\t]*(?:[•▪◦‣⁃*]|\-)\s+)/;
+const BULLET_GLYPHS = /^(?:[\s\t]*(?:[â€¢â—ï‚§â–ªâ–«â—¦â€£âƒ*Â·â€§âˆ™â—¾â—½â– â–¡â—†â—‡â–ºâ–¸â–¹âž¤âžœâ†’â€ºÂ»âœ“âœ”â˜‘âœ…]|\-)+\s+)/;
 const MULTI_SPACE = /[\t \u00a0]+/g;
 
 export type NormalizedResumeText = {
@@ -7,15 +7,25 @@ export type NormalizedResumeText = {
 };
 
 function normalizeDashVariants(input: string) {
-  return input.replace(/[‐‑‒–—―]/g, "-");
+  return input.replace(/[â€â€‘â€’â€“â€”â€•]/g, "-");
+}
+
+function normalizeCommonMojibake(input: string) {
+  return input
+    .replace(/Ã¢â‚¬Â¢|Ã¯â€šÂ·|ï‚·|â—/g, "â€¢")
+    .replace(/Ã¢â€“Âª|â–ª/g, "â€¢")
+    .replace(/Ã¢â€”Â¦|â—¦/g, "â€¢")
+    .replace(/Ã¢â‚¬Â£|â€£/g, "â€¢")
+    .replace(/Ã¢Å“â€œ|Ã¢Å“â€/g, "â€¢")
+    .replace(/Ã‚Â·/g, "â€¢");
 }
 
 function normalizeBulletLine(line: string) {
-  const trimmed = line.replace(MULTI_SPACE, " ").trim();
+  const trimmed = normalizeCommonMojibake(line).replace(MULTI_SPACE, " ").trim();
   if (!trimmed) return "";
 
   if (BULLET_GLYPHS.test(trimmed)) {
-    return trimmed.replace(BULLET_GLYPHS, "• ").trim();
+    return trimmed.replace(BULLET_GLYPHS, "â€¢ ").trim();
   }
 
   return trimmed;
@@ -23,7 +33,7 @@ function normalizeBulletLine(line: string) {
 
 function shouldJoinWrappedLine(previous: string, current: string) {
   if (!previous || !current) return false;
-  if (current.startsWith("• ")) return false;
+  if (current.startsWith("â€¢ ")) return false;
   if (/^[A-Z][A-Za-z /&+-]{2,50}:$/.test(current)) return false;
   if (/^[A-Z][A-Z /&+-]{2,50}$/.test(current)) return false;
   if (/[.!?;:]$/.test(previous)) return false;
@@ -33,12 +43,12 @@ function shouldJoinWrappedLine(previous: string, current: string) {
 }
 
 export function normalizeResumeTextForParsing(rawText: unknown): NormalizedResumeText {
-  const source = String(rawText ?? "")
+  const source = normalizeCommonMojibake(String(rawText ?? ""))
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/\u00ad/g, "")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'");
+    .replace(/[â€œâ€]/g, '"')
+    .replace(/[â€˜â€™]/g, "'");
 
   const dashed = normalizeDashVariants(source);
   const preliminaryLines = dashed
@@ -58,7 +68,7 @@ export function normalizeResumeTextForParsing(rawText: unknown): NormalizedResum
     }
 
     const previous = rebuilt[rebuilt.length - 1] || "";
-    if (previous.startsWith("• ") && shouldJoinWrappedLine(previous, line)) {
+    if (previous.startsWith("â€¢ ") && shouldJoinWrappedLine(previous, line)) {
       rebuilt[rebuilt.length - 1] = `${previous} ${line}`.replace(MULTI_SPACE, " ").trim();
       continue;
     }
@@ -79,11 +89,11 @@ export function normalizeResumeTextForParsing(rawText: unknown): NormalizedResum
 }
 
 export function stripInternalBulletMarker(text: string) {
-  return String(text || "").replace(/^•\s+/, "").trim();
+  return normalizeCommonMojibake(String(text || "")).replace(BULLET_GLYPHS, "").replace(/^â€¢\s+/, "").trim();
 }
 
 export function normalizeForLooseCompare(text: string) {
-  return String(text || "")
+  return normalizeCommonMojibake(String(text || ""))
     .toLowerCase()
     .replace(/[^a-z0-9+#. ]+/g, " ")
     .replace(/\s+/g, " ")

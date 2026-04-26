@@ -9,8 +9,10 @@ const ACTION_VERBS = [
 
 const TOOL_HINTS = [
   "jira", "selenium", "playwright", "cypress", "postman", "sql", "javascript", "typescript", "python", "java", "api", "rest",
-  "github", "git", "jenkins", "docker", "kubernetes", "aws", "azure", "gcp", "excel", "zendesk", "salesforce",
+  "github", "git", "jenkins", "docker", "kubernetes", "aws", "azure", "gcp", "excel", "zendesk", "salesforce", "figma", "notion", "confluence",
 ];
+
+const RAW_BULLET_RE = /^(?:[\s\t]*(?:[â€¢â—ï‚§â–ªâ–«â—¦â€£âƒ*Â·â€§âˆ™â—¾â—½â– â–¡â—†â—‡â–ºâ–¸â–¹âž¤âžœâ†’â€ºÂ»âœ“âœ”â˜‘âœ…]|\-)+\s+)/;
 
 function findActionVerb(text: string) {
   const normalized = normalizeForLooseCompare(text);
@@ -23,7 +25,7 @@ function findSkillsMentioned(text: string) {
 }
 
 function hasMetric(text: string) {
-  return /(?:\b\d+(?:\.\d+)?%\b|\$\s?\d|\b\d+x\b|\b\d+\+?\s*(?:users|customers|tickets|cases|bugs|defects|reports|hours|days|weeks|months|years)\b)/i.test(text);
+  return /(?:\b\d+(?:\.\d+)?%\b|\$\s?\d|\b\d+x\b|\b\d+\+?\s*(?:users|customers|tickets|cases|bugs|defects|reports|hours|hrs|days|weeks|months|years)\b)/i.test(text);
 }
 
 function classifyBulletType(text: string): ResumeBulletType {
@@ -59,7 +61,8 @@ export function classifyBullet(rawText: string): ParsedResumeBullet {
 }
 
 export function isBulletLine(line: string) {
-  return String(line || "").trim().startsWith("• ");
+  const trimmed = String(line || "").trim();
+  return trimmed.startsWith("â€¢ ") || RAW_BULLET_RE.test(trimmed);
 }
 
 export function collectLooseBullets(lines: string[]) {

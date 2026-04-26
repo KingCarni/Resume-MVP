@@ -65,6 +65,13 @@ export function buildParserWarnings(metrics: ResumeQualityMetrics, hasExperience
 export function scoreParseConfidence(metrics: ResumeQualityMetrics, warnings: ResumeParserWarning[]): ResumeParseConfidence {
   if (warnings.some((warning) => warning.severity === "error")) return "low";
 
+  const warningCodes = new Set(warnings.map((warning) => warning.code));
+  const hasStructuralWarning =
+    warningCodes.has("NO_SECTIONS_DETECTED") ||
+    warningCodes.has("NO_EXPERIENCE_SECTION") ||
+    warningCodes.has("NO_POSITIONS_DETECTED") ||
+    warningCodes.has("NO_BULLETS_DETECTED");
+
   let score = 0;
   if (metrics.textLength >= 900) score += 20;
   else if (metrics.textLength >= 450) score += 10;
@@ -87,6 +94,11 @@ export function scoreParseConfidence(metrics: ResumeQualityMetrics, warnings: Re
   else if (metrics.contactSignalsFound === 1) score += 4;
 
   score -= warnings.filter((warning) => warning.severity === "warning").length * 5;
+
+  if (hasStructuralWarning) score -= 15;
+  if (metrics.contactSignalsFound <= 1) score = Math.min(score, 64);
+  if (metrics.bulletCount === 0) score = Math.min(score, 49);
+  if (metrics.sectionCount === 0) score = Math.min(score, metrics.positionCount > 0 ? 49 : 34);
 
   if (score >= 70) return "high";
   if (score >= 40) return "medium";
