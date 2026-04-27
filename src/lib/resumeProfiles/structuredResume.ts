@@ -271,6 +271,46 @@ function sanitizeStructuredExpertiseItems(value: unknown) {
   return out;
 }
 
+
+function looksLikeBadStructuredProfileName(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return false;
+  if (looksLikeStructuredExperienceBoundary(line)) return true;
+  if (looksLikeSkillOrMetaHeader(line)) return true;
+  if (looksLikeStructuredAchievementOrSentence(line)) return true;
+  if (/^(?:intricate|unorthodox|moldable|professional experience|job experience|skills|summary|profile)$/i.test(line)) return true;
+  if (/[.!?]$/.test(line)) return true;
+  return false;
+}
+
+function looksLikeBadStructuredLocationLine(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikeStructuredAchievementOrSentence(line)) return true;
+  if (line.split(/\s+/).length > 8) return true;
+  if (/[.!?]$/.test(line)) return true;
+  return false;
+}
+
+function sanitizeStructuredProfile(profileInput: Record<string, unknown>): StructuredResumeProfile {
+  const fullName = cleanString(profileInput.fullName);
+  const locationLine = cleanString(profileInput.locationLine);
+  const email = cleanString(profileInput.email);
+  const portfolio = cleanString(profileInput.portfolio);
+
+  return {
+    fullName: looksLikeBadStructuredProfileName(fullName) ? "" : fullName,
+    titleLine: cleanString(profileInput.titleLine),
+    locationLine: looksLikeBadStructuredLocationLine(locationLine) ? "" : locationLine,
+    email,
+    phone: cleanString(profileInput.phone),
+    linkedin: cleanString(profileInput.linkedin),
+    portfolio: portfolio && email && portfolio.toLowerCase().includes(String(email.split("@")[1] || "").toLowerCase()) ? "" : portfolio,
+    summary: cleanString(profileInput.summary),
+  };
+}
+
 function cleanBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -407,16 +447,7 @@ export function sanitizeStructuredResumeSnapshot(value: unknown): StructuredResu
     version: 1,
     targetPosition: cleanString(input.targetPosition),
     template: normalizeStoredResumeTemplateValue(cleanString(input.template) || "modern"),
-    profile: {
-      fullName: cleanString(profileInput.fullName),
-      titleLine: cleanString(profileInput.titleLine),
-      locationLine: cleanString(profileInput.locationLine),
-      email: cleanString(profileInput.email),
-      phone: cleanString(profileInput.phone),
-      linkedin: cleanString(profileInput.linkedin),
-      portfolio: cleanString(profileInput.portfolio),
-      summary: cleanString(profileInput.summary),
-    },
+    profile: sanitizeStructuredProfile(profileInput),
     sections,
     educationItems: cleanStringArray(input.educationItems),
     expertiseItems: sanitizeStructuredExpertiseItems(input.expertiseItems),

@@ -1104,6 +1104,7 @@ function shouldDropPreviewSection(section: {
   if (!section.dates && section.bullets.length === 0 && headerLines.length && headerLines.every(looksLikePreviewSkillPhraseOnly)) return true;
   if (!section.dates && section.bullets.length === 0 && headerLines.some(looksLikePreviewSkillList)) return true;
   if (!section.company && !section.title && !section.dates && !section.location) return true;
+  if (looksLikePreviewBrokenJobHeader(section)) return true;
   if (!hasEmploymentSignal && section.bullets.length === 0) return true;
 
   return false;
@@ -1250,6 +1251,46 @@ function sanitizePreviewExpertiseItemsForResponse(items: unknown[]) {
     .slice(0, 18);
 }
 
+function looksLikeBadPreviewProfileName(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line) return false;
+  if (looksLikePreviewExperienceBoundary(line)) return true;
+  if (looksLikePreviewSkillCategoryLine(line)) return true;
+  if (looksLikePreviewAchievementOrSentence(line)) return true;
+  if (/^(?:intricate|unorthodox|moldable|professional experience|job experience|skills|summary|profile)$/i.test(line)) return true;
+  if (/[.!?]$/.test(line)) return true;
+  return false;
+}
+
+function looksLikeBadPreviewLocationLine(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikePreviewAchievementOrSentence(line)) return true;
+  if (line.split(/\s+/).length > 8) return true;
+  if (/[.!?]$/.test(line)) return true;
+  return false;
+}
+
+function sanitizePreviewProfileForResponse(profile: any) {
+  const fullName = cleanPreviewText(profile?.fullName);
+  const locationLine = cleanPreviewText(profile?.locationLine);
+  const portfolio = cleanPreviewText(profile?.portfolio);
+  const email = cleanPreviewText(profile?.email);
+
+  return {
+    ...profile,
+    fullName: looksLikeBadPreviewProfileName(fullName) ? "" : fullName,
+    titleLine: cleanPreviewText(profile?.titleLine),
+    locationLine: looksLikeBadPreviewLocationLine(locationLine) ? "" : locationLine,
+    email,
+    phone: cleanPreviewText(profile?.phone),
+    linkedin: cleanPreviewText(profile?.linkedin),
+    portfolio: portfolio && email && normalizeForContains(portfolio).includes(normalizeForContains(email.split("@")[1] || "")) ? "" : portfolio,
+    summary: cleanPreviewText(profile?.summary),
+  };
+}
+
 function sanitizeStructuredPreviewSnapshotForResponse(snapshot: ReturnType<typeof buildStructuredPreviewSnapshot>) {
   if (!snapshot) return null;
 
@@ -1262,17 +1303,7 @@ function sanitizeStructuredPreviewSnapshotForResponse(snapshot: ReturnType<typeo
 
   const sanitized = {
     ...snapshot,
-    profile: {
-      ...snapshot.profile,
-      fullName: cleanPreviewText(snapshot.profile?.fullName),
-      titleLine: cleanPreviewText(snapshot.profile?.titleLine),
-      locationLine: cleanPreviewText(snapshot.profile?.locationLine),
-      email: cleanPreviewText(snapshot.profile?.email),
-      phone: cleanPreviewText(snapshot.profile?.phone),
-      linkedin: cleanPreviewText(snapshot.profile?.linkedin),
-      portfolio: cleanPreviewText(snapshot.profile?.portfolio),
-      summary: cleanPreviewText(snapshot.profile?.summary),
-    },
+    profile: sanitizePreviewProfileForResponse(snapshot.profile),
     sections,
     educationItems,
     expertiseItems,
@@ -1291,6 +1322,112 @@ function sanitizeStructuredPreviewSnapshotForResponse(snapshot: ReturnType<typeo
 
 function sanitizeExperienceJobsForResponse(jobs: any[]) {
   return normalizePreviewJobSections(Array.isArray(jobs) ? jobs : []);
+}
+
+function hasPreviewRoleKeyword(value: unknown) {
+  return /\b(engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|qa|quality|support|administrator|consultant|intern)\b/i.test(cleanPreviewText(value));
+}
+
+function extractPreviewDateRangeToken(lineRaw: string) {
+  const line = cleanPreviewText(lineRaw);
+  if (!line) return null;
+
+  const month = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const year = "(?:19|20)\\d{2}";
+  const dateToken = `(?:${month}\\s+${year}|${year}|\\d{1,2}\\/${year}|present|current|now)`;
+  const re = new RegExp(`\\b${dateToken}\\s*(?:-|to|through|thru)\\s*${dateToken}(?:\\s*\\([^)]{1,32}\\))?`, "ig");
+  const matches = Array.from(line.matchAll(re));
+  if (!matches.length) return null;
+
+  const first = matches[0];
+  const firstIndex = typeof first.index === "number" ? first.index : -1;
+  if (firstIndex < 0) return null;
+
+  let dates = first[0].trim();
+  let endIndex = firstIndex + first[0].length;
+
+  const second = matches[1];
+  if (second && typeof second.index === "number") {
+    const gap = line.slice(endIndex, second.index);
+    if (/^\s*,\s*$/.test(gap) || /^\s*(?:and|&)\s*$/i.test(gap)) {
+      dates = `${dates}, ${second[0].trim()}`;
+      endIndex = second.index + second[0].length;
+    }
+  }
+
+  return { dates, index: firstIndex, endIndex };
+}
+
+function parsePreviewDatedJobHeaderLine(lineRaw: string) {
+  const line = cleanPreviewText(lineRaw);
+  if (!line || looksLikePreviewNoiseLine(line)) return null;
+  if (/^[•●◦▪▫·*\-]+\s+/.test(line)) return null;
+
+  const dateMatch = extractPreviewDateRangeToken(line);
+  if (!dateMatch) return null;
+
+  const beforeDate = line
+    .slice(0, dateMatch.index)
+    .replace(/\s*[|,•-]\s*$/g, "")
+    .trim();
+
+  if (!beforeDate || beforeDate.length < 5) return null;
+
+  let company = "";
+  let title = "";
+
+  if (beforeDate.includes("|")) {
+    const parts = beforeDate.split(/\s*\|\s*/).map((part) => cleanPreviewText(part)).filter(Boolean);
+    if (parts.length >= 2) {
+      title = parts[0];
+      company = parts.slice(1).join(" | ");
+    }
+  } else if (beforeDate.includes(",")) {
+    const parts = beforeDate.split(/\s*,\s*/).map((part) => cleanPreviewText(part)).filter(Boolean);
+    if (parts.length >= 2) {
+      company = parts[0];
+      title = parts.slice(1).join(", ");
+    }
+  } else {
+    const dash = beforeDate.match(/^(.{2,90}?)\s+-\s+(.{2,140})$/);
+    if (dash) {
+      company = cleanPreviewText(dash[1]);
+      title = cleanPreviewText(dash[2]);
+    }
+  }
+
+  company = cleanPreviewText(company);
+  title = cleanPreviewText(title);
+
+  if (!company || !title) return null;
+  if (looksLikePreviewNoiseLine(company) || looksLikePreviewNoiseLine(title)) return null;
+  if (looksLikePreviewSkillList(company) || looksLikePreviewSkillList(title)) return null;
+  if (!hasPreviewRoleKeyword(title)) return null;
+  if (/^~?\d|%|latency|server costs|sdk|integration layers/i.test(company)) return null;
+
+  return {
+    company,
+    title,
+    dates: dateMatch.dates,
+  };
+}
+
+function looksLikePreviewBrokenJobHeader(section: {
+  company: string;
+  title: string;
+  dates: string;
+  location: string;
+  bullets: string[];
+}) {
+  const company = cleanPreviewText(section.company);
+  const title = cleanPreviewText(section.title);
+  if (section.dates) return false;
+  if (!company && !title) return true;
+  if (/^~?\d|%|latency|server costs|lowering server costs/i.test(company)) return true;
+  if (/^~?\d|%|latency|server costs|lowering server costs/i.test(title)) return true;
+  if (/\b(?:sdk|agnostic ad|ad integration|integration layers|multiple providers|network traffic)\b/i.test(company)) return true;
+  if (!hasPreviewRoleKeyword(title)) return true;
+  return false;
 }
 
 function parsePreviewPipeJobHeaderLine(lineRaw: string) {
@@ -1418,12 +1555,22 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     if (current) {
       const company = cleanPreviewText(current.company);
       const title = cleanPreviewText(current.title);
-      const bullets = Array.isArray(current.bullets) ? current.bullets : [];
-      if ((company || title) && !looksLikePreviewSkillList(company) && !looksLikePreviewSkillList(title) && !looksLikePreviewNoiseLine(company) && !looksLikePreviewNoiseLine(title)) {
-        current.company = company;
-        current.title = title;
-        current.bullets = bullets;
-        jobs.push(current);
+      const dates = cleanPreviewText(current.dates);
+      const bullets = mergeWrappedBulletLines(Array.isArray(current.bullets) ? current.bullets : [])
+        .filter((bullet) => !looksLikePreviewBulletNoise(bullet))
+        .filter((bullet) => !looksLikePreviewSkillList(bullet));
+
+      const section = {
+        id: current.id || `job_${jobs.length + 1}`,
+        company,
+        title,
+        dates,
+        location: cleanPreviewText(current.location),
+        bullets,
+      };
+
+      if ((section.company || section.title || section.bullets.length) && !shouldDropPreviewSection(section)) {
+        jobs.push(section);
       }
     }
     current = null;
@@ -1432,8 +1579,25 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
   for (let i = 0; i < lines.length; i++) {
     const line = String(lines[i] || "").trim();
     if (!line) continue;
+
+    if (/^(education|education & certifications|certifications?|certificates|projects)\b/i.test(cleanPreviewText(line)) && jobs.length > 0) break;
     if (looksLikePreviewSkillCategoryLine(line)) continue;
-    if (looksLikePreviewExperienceBoundary(line) && jobs.length > 0) break;
+    if (looksLikePreviewExperienceBoundary(line) && jobs.length > 0 && !/^(professional experience|work experience|job experience|employment history|career history)$/i.test(cleanPreviewText(line))) break;
+
+    const datedHeader = parsePreviewDatedJobHeaderLine(line);
+    if (datedHeader) {
+      pushCurrent();
+      current = {
+        id: `job_${jobs.length + 1}`,
+        company: datedHeader.company,
+        title: datedHeader.title,
+        dates: datedHeader.dates,
+        location: "",
+        bullets: [],
+      };
+      pendingHeader = null;
+      continue;
+    }
 
     const pipeHeader = parsePreviewPipeJobHeaderLine(line);
     if (pipeHeader) {
@@ -1503,7 +1667,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
 
     if (looksLikeCompanyDashTitleHeader(line)) {
       const parsed = parseCompanyDashTitleHeader(line);
-      if (parsed) {
+      if (parsed && hasPreviewRoleKeyword(parsed.title)) {
         pendingHeader = { title: parsed.title, company: parsed.company };
         continue;
       }
@@ -1525,12 +1689,13 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     if (!current) continue;
     if (looksLikeMetaLine(line)) continue;
     if (looksLikeContactOrReferenceLine(line)) continue;
+    if (looksLikePreviewSkillCategoryLine(line)) continue;
 
     const isGlyphBullet = /^[â€¢â—\u2022\u00B7oï‚§-]\s+/.test(line);
     const cleaned = isGlyphBullet ? cleanLeadingBulletGarbage(line) : line;
-
     const candidate = String(cleaned || "").trim();
     if (!candidate || candidate.length < 12) continue;
+    if (looksLikePreviewSkillList(candidate)) continue;
 
     current.bullets = mergeWrappedBulletLines([...(current.bullets || []), candidate]);
   }
@@ -1559,7 +1724,7 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     });
   }
 
-  return jobs;
+  return normalizePreviewJobSections(jobs);
 }
 
 function jobsLookPlaceholder(jobs: any[]) {
