@@ -1014,13 +1014,6 @@ function buildPreviewExpertiseItems(
 
   if (parserSectionItems.length > 0) return parserSectionItems.slice(0, 18);
 
-  const resumeTextItems = uniqueCleanPreviewItems(
-    extractPreviewExpertiseItemsFromText(parserCompatibility?.resumeText),
-    18,
-  ).filter(isUsefulPreviewExpertiseItem);
-
-  if (resumeTextItems.length > 0) return resumeTextItems.slice(0, 18);
-
   const conservativeFallback = uniqueCleanPreviewItems([
     ...(document?.skills?.normalized || []),
     ...(document?.skills?.raw || []),
@@ -1166,17 +1159,11 @@ function buildStructuredPreviewSnapshot(args: {
   const parserSections = normalizePreviewJobSections(parserJobs);
   const textSections = normalizePreviewJobSections(textPreviewJobs);
 
-  const documentScore = previewSectionsQualityScore(documentSections);
-  const parserScore = previewSectionsQualityScore(parserSections);
-
-  const sections =
-    textSections.length >= 2
-      ? textSections
-      : documentSections.length && documentScore >= parserScore
-        ? documentSections
-        : parserSections.length
-          ? parserSections
-          : textSections;
+  const sections = selectBestPreviewJobSections([
+    { name: "text", jobs: textSections },
+    { name: "document", jobs: documentSections },
+    { name: "parser", jobs: parserSections },
+  ]);
 
   const educationItems = document?.education?.entries?.length
     ? uniqueCleanPreviewItems(document.education.entries.map((entry) => entry.rawText), 12)
@@ -1378,10 +1365,44 @@ function previewSectionsQualityScore(sections: Array<{ company: string; title: s
     if (section.title) next += 2;
     if (section.dates) next += 2;
     next += Math.min(4, section.bullets.length);
+    if (section.bullets.length) next += 2;
+    if (section.company && section.title && section.dates) next += 3;
     if (looksLikePreviewSkillList(section.company) || looksLikePreviewSkillList(section.title)) next -= 6;
     if (looksLikePreviewNoiseLine(section.company) || looksLikePreviewNoiseLine(section.title)) next -= 4;
+    if (!section.dates && !section.bullets.length) next -= 5;
     return next;
   }, 0);
+}
+
+function selectBestPreviewJobSections(sources: Array<{ name: string; jobs: Array<any> }>) {
+  const candidates = sources
+    .map((source) => {
+      const sections = normalizePreviewJobSections(source.jobs || []);
+      const datedCount = sections.filter((section) => !!section.dates).length;
+      const bulletCount = sections.reduce((sum, section) => sum + section.bullets.length, 0);
+      const completeCount = sections.filter((section) => section.company && section.title && section.dates).length;
+      const score =
+        previewSectionsQualityScore(sections) +
+        sections.length * 3 +
+        datedCount * 4 +
+        completeCount * 3 +
+        Math.min(12, bulletCount);
+
+      return { ...source, sections, datedCount, bulletCount, completeCount, score };
+    })
+    .filter((source) => source.sections.length > 0);
+
+  if (!candidates.length) return [] as ReturnType<typeof normalizePreviewJobSections>;
+
+  candidates.sort((a, b) => {
+    if (b.completeCount !== a.completeCount) return b.completeCount - a.completeCount;
+    if (b.datedCount !== a.datedCount) return b.datedCount - a.datedCount;
+    if (b.sections.length !== a.sections.length) return b.sections.length - a.sections.length;
+    if (b.score !== a.score) return b.score - a.score;
+    return b.bulletCount - a.bulletCount;
+  });
+
+  return candidates[0].sections;
 }
 
 function buildExperienceJobsForPreviewFromText(experienceText: string) {
@@ -2618,11 +2639,31 @@ export async function POST(req: Request) {
         : mergeWrappedBulletLines(uniqueCleanPreviewItems(parserCompatibility?.bullets || [], 80))
     );
 
-    if (parserJobs.length) {
+    const textPreviewJobs = normalizeJobs(buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText));
+    const selectedPreviewJobs = selectBestPreviewJobSections([
+      { name: "text", jobs: textPreviewJobs },
+      { name: "parser", jobs: parserJobs },
+    ]);
+
+    if (selectedPreviewJobs.length) {
+      experienceJobs = selectedPreviewJobs;
+      const selectedFlat = flattenFromJobs(experienceJobs);
+      const selectedBullets = filterBadBullets(selectedFlat.outBullets);
+      if (selectedBullets.length) {
+        const keep = new Set(selectedBullets.map((b) => normalizeForContains(b)));
+        bullets = selectedBullets;
+        bulletJobIds = [];
+        for (let i = 0; i < selectedFlat.outBullets.length; i++) {
+          if (keep.has(normalizeForContains(selectedFlat.outBullets[i]))) {
+            bulletJobIds.push(selectedFlat.outJobIds[i] || experienceJobs[0]?.id || "job_default");
+          }
+        }
+      }
+    } else if (parserJobs.length) {
       experienceJobs = parserJobs;
     }
 
-    if (parserBullets.length) {
+    if (!bullets.length && parserBullets.length) {
       bullets = parserBullets;
       if (parserFlat.outBullets.length) {
         const keep = new Set(parserBullets.map((b) => normalizeForContains(b)));
@@ -2638,24 +2679,6 @@ export async function POST(req: Request) {
       }
     }
 
-    const tryExtract = async (text: string) => {
-      try {
-        const mod: any = await import("@/lib/extractResumeBullets");
-        const extractResumeBullets = mod?.extractResumeBullets as undefined | ((t: string) => any);
-        if (typeof extractResumeBullets !== "function") return { bullets: [] as string[], jobs: [] as any[] };
-
-        const maybe: any = extractResumeBullets(text);
-        if (Array.isArray(maybe)) return { bullets: maybe as string[], jobs: [] as any[] };
-
-        return {
-          bullets: Array.isArray(maybe?.bullets) ? (maybe.bullets as string[]) : [],
-          jobs: Array.isArray(maybe?.jobs) ? maybe.jobs : [],
-        };
-      } catch {
-        return { bullets: [] as string[], jobs: [] as any[] };
-      }
-    };
-
     const seededFileBulletsRaw = filterBadBullets(uniqueCleanPreviewItems(bulletsFromFile || [], 80));
     let seededFileBullets = seededFileBulletsRaw;
 
@@ -2667,33 +2690,10 @@ export async function POST(req: Request) {
       });
     }
 
-    const strict1 = await tryExtract(experienceSlice.experienceText);
-
-    if (!bullets.length) {
-      experienceJobs = normalizeJobs(strict1.jobs);
-
-      const flat1 = flattenFromJobs(experienceJobs);
-      bullets = filterBadBullets(flat1.outBullets);
-      bulletJobIds = flat1.outJobIds;
-    } else if (!experienceJobs.length) {
-      experienceJobs = normalizeJobs(strict1.jobs);
-    }
-
-    if (!bullets.length) {
-      const strict2 = await tryExtract(bulletSourceText);
-      const jobs2 = normalizeJobs(strict2.jobs);
-      const flat2 = flattenFromJobs(jobs2);
-
-      if (flat2.outBullets.length) {
-        experienceJobs = jobs2;
-        bullets = filterBadBullets(flat2.outBullets);
-        bulletJobIds = flat2.outJobIds;
-      } else {
-        const raw = mergeWrappedBulletLines(uniqueCleanPreviewItems(strict2.bullets || [], 80));
-        bullets = filterBadBullets(raw);
-        const fallbackJobId = experienceJobs[0]?.id || "job_default";
-        bulletJobIds = bullets.map(() => fallbackJobId);
-      }
+    if (!bullets.length && experienceJobs.length) {
+      const flatJobs = flattenFromJobs(experienceJobs);
+      bullets = filterBadBullets(flatJobs.outBullets);
+      bulletJobIds = flatJobs.outJobIds;
     }
 
     if (!bullets.length) {
@@ -2959,7 +2959,44 @@ export async function POST(req: Request) {
     });
 
     const responseExperienceJobs = sanitizeExperienceJobsForResponse(experienceJobs);
-    const responseStructuredPreview = sanitizeStructuredPreviewSnapshotForResponse(parserStructuredPreview);
+    const responseStructuredPreviewBase = sanitizeStructuredPreviewSnapshotForResponse(parserStructuredPreview);
+    const responseStructuredPreview = responseStructuredPreviewBase
+      ? {
+          ...responseStructuredPreviewBase,
+          sections: responseExperienceJobs.length ? responseExperienceJobs : responseStructuredPreviewBase.sections,
+        }
+      : responseExperienceJobs.length
+        ? {
+            version: 1 as const,
+            targetPosition: cleanPreviewText(targetPosition),
+            template: "modern",
+            profile: {
+              fullName: "",
+              titleLine: responseExperienceJobs[0]?.title || "",
+              locationLine: "",
+              email: "",
+              phone: "",
+              linkedin: "",
+              portfolio: "",
+              summary: "",
+            },
+            sections: responseExperienceJobs,
+            educationItems: [] as string[],
+            expertiseItems: [] as string[],
+            metaGames: [] as string[],
+            metaMetrics: [] as string[],
+            shippedLabelMode: "games",
+            includeMetaInResumeDoc: true,
+            showShippedBlock: true,
+            showMetricsBlock: true,
+            showEducationOnResume: true,
+            showExpertiseOnResume: true,
+            showProfilePhoto: true,
+            profilePhotoDataUrl: "",
+            profilePhotoShape: "circle" as const,
+            profilePhotoSize: 112,
+          }
+        : null;
 
     return okJson({
       ok: true,
@@ -3004,7 +3041,7 @@ export async function POST(req: Request) {
         metaMetricsCount: metaBlocks.metrics.length,
         maxFileMb: MAX_FILE_MB,
         blobDebug,
-        jobsWerePlaceholder: jobsLookPlaceholder(normalizeJobs(strict1?.jobs || [])),
+        jobsWerePlaceholder: jobsLookPlaceholder(experienceJobs),
         detectedType,
         parserUsed,
         pdfInfo,
