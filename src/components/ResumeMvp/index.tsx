@@ -248,6 +248,7 @@ type AnalyzeResponse = {
 
   experienceJobs?: ExperienceJobFromApi[];
   bulletJobIds?: string[];
+  structuredData?: StructuredResumeSnapshot | null;
   autoResumeProfile?: {
     id?: string | null;
     title?: string | null;
@@ -3296,38 +3297,45 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
     if (!next) return false;
 
-    setTargetPosition(next.targetPosition || "");
+    const cleanOrFallback = (incoming: unknown, fallback: string) => {
+      const clean = String(incoming ?? "").trim();
+      return clean || fallback;
+    };
+
+    setTargetPosition((prev) => cleanOrFallback(next.targetPosition, prev));
     if (isLegacyResumeTemplateId(next.template)) {
       setResumeTemplate(next.template);
     }
-    setProfile({
-      fullName: next.profile.fullName,
-      titleLine: next.profile.titleLine,
-      locationLine: next.profile.locationLine,
-      email: next.profile.email,
-      phone: next.profile.phone,
-      linkedin: next.profile.linkedin,
-      portfolio: next.profile.portfolio,
-      summary: next.profile.summary,
-    });
 
-    const nextSections = next.sections.length
-      ? next.sections
-      : [{ id: "default", company: "Experience", title: "", dates: "", location: "", bullets: [] }];
+    setProfile((prev) => ({
+      fullName: cleanOrFallback(next.profile.fullName, prev.fullName),
+      titleLine: cleanOrFallback(next.profile.titleLine, prev.titleLine),
+      locationLine: cleanOrFallback(next.profile.locationLine, prev.locationLine),
+      email: cleanOrFallback(next.profile.email, prev.email),
+      phone: cleanOrFallback(next.profile.phone, prev.phone),
+      linkedin: cleanOrFallback(next.profile.linkedin, prev.linkedin),
+      portfolio: cleanOrFallback(next.profile.portfolio, prev.portfolio),
+      summary: cleanOrFallback(next.profile.summary, prev.summary),
+    }));
 
-    setSections(nextSections.map(({ bullets: _bullets, ...section }) => section));
-    setEditorBulletsBySection(
-      nextSections.reduce<Record<string, string[]>>((acc, section) => {
-        acc[section.id] = Array.isArray(section.bullets)
-          ? section.bullets.map((bullet) => String(bullet ?? ""))
-          : [];
-        return acc;
-      }, {})
-    );
-    setEditorEducationItems(next.educationItems);
-    setEditorExpertiseItems(next.expertiseItems);
-    setEditorMetaGames(next.metaGames);
-    setEditorMetaMetrics(next.metaMetrics);
+    if (next.sections.length) {
+      const nextSections = next.sections;
+      setSections(nextSections.map(({ bullets: _bullets, ...section }) => section));
+      setEditorBulletsBySection(
+        nextSections.reduce<Record<string, string[]>>((acc, section) => {
+          acc[section.id] = Array.isArray(section.bullets)
+            ? section.bullets.map((bullet) => String(bullet ?? ""))
+            : [];
+          return acc;
+        }, {})
+      );
+    }
+
+    if (next.educationItems.length) setEditorEducationItems(next.educationItems);
+    if (next.expertiseItems.length) setEditorExpertiseItems(next.expertiseItems);
+    if (next.metaGames.length) setEditorMetaGames(next.metaGames);
+    if (next.metaMetrics.length) setEditorMetaMetrics(next.metaMetrics);
+
     setShippedLabelMode(next.shippedLabelMode === "apps" ? "Apps" : "Games");
     setIncludeMetaInResumeDoc(next.includeMetaInResumeDoc);
     setShowShippedBlock(next.showShippedBlock);
@@ -3335,7 +3343,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     setShowEducationOnResume(next.showEducationOnResume);
     setShowExpertiseOnResume(next.showExpertiseOnResume);
     setShowProfilePhoto(next.showProfilePhoto);
-    setProfilePhotoDataUrl(next.profilePhotoDataUrl);
+    setProfilePhotoDataUrl((prev) => cleanOrFallback(next.profilePhotoDataUrl, prev));
     setProfilePhotoShape(next.profilePhotoShape);
     setProfilePhotoSize(next.profilePhotoSize);
 
@@ -3982,6 +3990,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       }
 
       const data = payload as AnalyzeResponse;
+      const serverStructuredSnapshot = sanitizeStructuredResumeSnapshot(data?.structuredData || null);
+      const appliedServerStructuredSnapshot = !shouldPreserveStructuredSource && serverStructuredSnapshot
+        ? applyStructuredSnapshot(serverStructuredSnapshot)
+        : false;
       const normalizedAnalysis = shouldPreserveStructuredSource
         ? {
             ...data,
@@ -4001,6 +4013,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         if (canonicalAnalyzeText) {
           setResumeText(canonicalAnalyzeText);
         }
+      } else if (appliedServerStructuredSnapshot && serverStructuredSnapshot) {
+        const serverAnalyzeText = structuredSnapshotToAnalyzeText(serverStructuredSnapshot).trim();
+        const serverResumeText = structuredSnapshotToResumeText(serverStructuredSnapshot).trim();
+        setResumeText(serverAnalyzeText || serverResumeText || resumeTextForApi);
       } else if (resumeTextForApi.trim()) {
         setResumeText(resumeTextForApi);
       }
@@ -4015,7 +4031,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       const rewritePlanLocal = Array.isArray(data?.rewritePlan) ? data.rewritePlan! : [];
       const planLen = rewritePlanLocal.length;
 
-      if (shouldPreserveStructuredSource) {
+      if (shouldPreserveStructuredSource || appliedServerStructuredSnapshot) {
         setAssignments({});
       } else {
         const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];

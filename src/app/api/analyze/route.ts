@@ -13,7 +13,9 @@ import { chargeCredits, getCreditBalance, refundCredits } from "@/lib/credits";
 import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
 import { upsertLatestResumeProfileForUser } from "@/lib/resumeProfiles/buildProfile";
 import {
-  parseResumeForCompatibility,
+  parseResumeDocument,
+  toResumeParserCompatibilityOutput,
+  type ParsedResumeDocument,
   type ResumeParserCompatibilityOutput,
   type ResumeParserExtractor,
 } from "@/lib/resumeParser";
@@ -284,11 +286,31 @@ async function resolveEffectiveJobsAnalyticsContext(
 
 function normalizeResumeText(input: unknown) {
   const raw = String(input ?? "");
-  return raw
+  return normalizePreviewText(raw)
     .replace(/\r\n/g, "\n")
     .replace(/\u00A0/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizePreviewText(input: unknown) {
+  return String(input ?? "")
+    .replace(/\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00ef\u201a\u00b7|\u00ef\u201a\u00a7|\u00e2\u2014\u008f|\u00e2\u2014\u00a6|\u00e2\u2013\u00aa|\u00c2\u00b7/g, "•")
+    .replace(/\u00e2\u20ac\u201c|\u00e2\u20ac\u201d|\u00e2\u20ac\u2015|\u00e2\u20ac\u2014|\u2013|\u2014/g, "-")
+    .replace(/\u00e2\u20ac\u0153|\u00e2\u20ac\u009d/g, '"')
+    .replace(/\u00e2\u20ac\u02dc|\u00e2\u20ac\u2122/g, "'")
+    .replace(/^[ \t]*(?:[•●◦▪▫·*\-]+[ \t]*){2,}/gm, "• ")
+    .replace(/^[ \t]*[•●◦▪▫·*\-]+[ \t]+/gm, "• ");
+}
+
+function cleanPreviewText(input: unknown) {
+  return normalizePreviewText(input).replace(/\s+/g, " ").trim();
+}
+
+function cleanPreviewBullet(input: unknown) {
+  return cleanPreviewText(input)
+    .replace(/^(?:[•●◦▪▫·*\-]+\s*)+/g, "")
     .trim();
 }
 
@@ -779,6 +801,202 @@ function looksLikeMetaLine(s: string) {
   if (/^tools\s*:/i.test(t)) return true;
   if (/^experi\s*e\s*n\s*ce$/i.test(t.replace(/\s+/g, ""))) return true;
   return false;
+}
+
+function looksLikePreviewNoiseLine(input: unknown) {
+  const line = cleanPreviewText(input);
+  if (!line) return true;
+  if (looksLikeContactOrReferenceLine(line)) return true;
+  if (looksLikeMetaLine(line)) return true;
+  if (/^(skills|technical skills|core skills|areas of expertise|expertise|toolkit|tools|technologies|education|certifications?)\s*:?$/i.test(line)) return true;
+  if (/^(skills|technical skills|core skills|areas of expertise|expertise|toolkit|tools|technologies)\s*:/i.test(line)) return true;
+  return false;
+}
+
+function looksLikePreviewBulletNoise(input: unknown) {
+  const line = cleanPreviewText(input);
+  if (!line) return true;
+  if (/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(line)) return true;
+  if (/\blinkedin\.com\/in\/\S+|\bhttps?:\/\/\S+|\bwww\.\S+/i.test(line)) return true;
+  if (/^references?$/i.test(line)) return true;
+  if (/available\s+upon\s+request/i.test(line)) return true;
+  if (/^(skills|technical skills|core skills|areas of expertise|expertise|toolkit|tools|technologies)\s*:?$/i.test(line)) return true;
+  if (/^(skills|technical skills|core skills|areas of expertise|expertise|toolkit|tools|technologies)\s*:/i.test(line)) return true;
+  return false;
+}
+
+function looksLikePreviewSkillHeader(input: unknown) {
+  const line = cleanPreviewText(input);
+  if (!line) return false;
+  return /^(skills|technical skills|core skills|areas of expertise|expertise|toolkit|tools|technologies|platforms|languages|frameworks|certifications?|education)\s*:?/i.test(line);
+}
+
+function looksLikePreviewSkillList(input: unknown) {
+  const line = cleanPreviewText(input);
+  if (!line) return false;
+  if (looksLikePreviewBulletNoise(line)) return true;
+  if (line.length > 120) return false;
+  if (/\b(improved|managed|created|led|owned|tested|built|designed|implemented|automated|reduced|increased|shipped|launched|coordinated|analyzed|validated|executed)\b/i.test(line)) return false;
+  const separatorCount = (line.match(/[,•|/]/g) || []).length;
+  if (separatorCount >= 2) return true;
+  if (/^(jira|testrail|selenium|cypress|playwright|postman|figma|unity|unreal|javascript|typescript|python|sql|excel|agile|scrum)\b/i.test(line)) return true;
+  return false;
+}
+
+function sectionHasPreviewEmploymentSignal(section: {
+  company: string;
+  title: string;
+  dates: string;
+  location: string;
+  bullets: string[];
+}) {
+  if (section.dates && looksLikeDateRangeLine(section.dates)) return true;
+  const header = [section.title, section.company].filter(Boolean).join(" ");
+  if (/\b(engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|qa|quality|support|administrator|consultant|intern)\b/i.test(header)) {
+    return true;
+  }
+  return section.bullets.some((bullet) =>
+    /\b(improved|managed|created|led|owned|tested|built|designed|implemented|automated|reduced|increased|shipped|launched|coordinated|analyzed|validated|executed)\b/i.test(bullet)
+  );
+}
+
+function shouldDropPreviewSection(section: {
+  company: string;
+  title: string;
+  dates: string;
+  location: string;
+  bullets: string[];
+}) {
+  const headerLines = [section.company, section.title, section.dates, section.location].filter(Boolean);
+  const hasSkillHeader = headerLines.some(looksLikePreviewSkillHeader);
+  const hasNoiseHeader = headerLines.some(looksLikePreviewNoiseLine);
+  const hasEmploymentSignal = sectionHasPreviewEmploymentSignal(section);
+
+  if (hasSkillHeader && !hasEmploymentSignal) return true;
+  if (hasNoiseHeader && !hasEmploymentSignal && section.bullets.every(looksLikePreviewSkillList)) return true;
+  if (!section.company && !section.title && !section.dates && !section.location) return true;
+
+  return false;
+}
+
+function uniqueCleanPreviewItems(items: unknown[], limit = 60) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items || []) {
+    const clean = cleanPreviewBullet(item);
+    const key = normalizeForContains(clean);
+    if (!clean || !key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= limit) break;
+  }
+
+  return out;
+}
+
+function buildStructuredPreviewSnapshot(args: {
+  document: ParsedResumeDocument | null;
+  parserCompatibility: ResumeParserCompatibilityOutput | null;
+  targetPosition: string;
+}) {
+  const document = args.document;
+  const parserCompatibility = args.parserCompatibility;
+  if (!document && !parserCompatibility) return null;
+
+  const contact = document?.contact;
+  const links = Array.isArray(contact?.links) ? contact.links.map((link) => cleanPreviewText(link)).filter(Boolean) : [];
+  const linkedin = links.find((link) => /linkedin\.com/i.test(link)) || "";
+  const portfolio = links.find((link) => link && link !== linkedin) || "";
+  const firstPosition = document?.experience?.positions?.find((position) => cleanPreviewText(position.title));
+
+  const parserJobs = Array.isArray(parserCompatibility?.jobs) ? parserCompatibility.jobs : [];
+  const positions = document?.experience?.positions?.length
+    ? document.experience.positions.map((position) => ({
+        id: position.id,
+        company: position.company,
+        title: position.title,
+        dates: [position.startDate, position.endDate].filter(Boolean).join(" - "),
+        location: position.location,
+        bullets: position.bullets.map((bullet) => bullet.text),
+      }))
+    : parserJobs;
+
+  const sections = positions
+    .map((position, index) => {
+      const company = cleanPreviewText(position.company);
+      const title = cleanPreviewText(position.title);
+      const dates = cleanPreviewText(position.dates);
+      const location = cleanPreviewText(position.location);
+      const bullets = uniqueCleanPreviewItems(Array.isArray(position.bullets) ? position.bullets : [], 30)
+        .filter((bullet) => !looksLikePreviewBulletNoise(bullet));
+
+      const section = {
+        id: cleanPreviewText(position.id) || `position_${index + 1}`,
+        company,
+        title,
+        dates,
+        location,
+        bullets,
+      };
+
+      if (!bullets.length && !company && !title) return null;
+      if (looksLikePreviewNoiseLine(company) && !title && !bullets.length) return null;
+      if (looksLikePreviewNoiseLine(title) && !company && !bullets.length) return null;
+      if (shouldDropPreviewSection(section)) return null;
+
+      return section;
+    })
+    .filter((section): section is { id: string; company: string; title: string; dates: string; location: string; bullets: string[] } => Boolean(section));
+
+  const educationItems = document?.education?.entries?.length
+    ? uniqueCleanPreviewItems(document.education.entries.map((entry) => entry.rawText), 12)
+    : [];
+  const expertiseItems = uniqueCleanPreviewItems([
+    ...(document?.skills?.raw || []),
+    ...(document?.skills?.normalized || []),
+  ], 18);
+
+  const snapshot = {
+    version: 1 as const,
+    targetPosition: cleanPreviewText(args.targetPosition),
+    template: "modern",
+    profile: {
+      fullName: cleanPreviewText(contact?.name),
+      titleLine: cleanPreviewText(firstPosition?.title),
+      locationLine: cleanPreviewText(contact?.location),
+      email: cleanPreviewText(contact?.email),
+      phone: cleanPreviewText(contact?.phone),
+      linkedin,
+      portfolio,
+      summary: cleanPreviewText(document?.summary?.rawText),
+    },
+    sections,
+    educationItems,
+    expertiseItems,
+    metaGames: [] as string[],
+    metaMetrics: [] as string[],
+    shippedLabelMode: "games",
+    includeMetaInResumeDoc: true,
+    showShippedBlock: true,
+    showMetricsBlock: true,
+    showEducationOnResume: true,
+    showExpertiseOnResume: true,
+    showProfilePhoto: true,
+    profilePhotoDataUrl: "",
+    profilePhotoShape: "circle" as const,
+    profilePhotoSize: 112,
+  };
+
+  const hasUsefulPreviewData =
+    !!snapshot.profile.fullName ||
+    !!snapshot.profile.email ||
+    !!snapshot.profile.phone ||
+    !!snapshot.profile.locationLine ||
+    snapshot.sections.some((section) => section.bullets.length || section.company || section.title) ||
+    snapshot.expertiseItems.length > 0;
+
+  return hasUsefulPreviewData ? snapshot : null;
 }
 
 function buildExperienceJobsForPreviewFromText(experienceText: string) {
@@ -1820,10 +2038,16 @@ export async function POST(req: Request) {
       );
     }
 
-    parserCompatibility = parseResumeForCompatibility(resumeText, {
+    const parserDocument = parseResumeDocument(resumeText, {
       sourceMimeType: detectedType,
       extractor: resolveResumeParserExtractor({ parserUsed, detectedType }),
       extractedAt: new Date().toISOString(),
+    });
+    parserCompatibility = toResumeParserCompatibilityOutput(parserDocument);
+    const parserStructuredPreview = buildStructuredPreviewSnapshot({
+      document: parserDocument,
+      parserCompatibility,
+      targetPosition,
     });
 
     if (parserCompatibility.resumeText) {
@@ -1939,23 +2163,32 @@ export async function POST(req: Request) {
     let bulletJobIds: string[] = [];
 
     const normalizeJobs = (jobsIn: any[]) =>
-      (Array.isArray(jobsIn) ? jobsIn : []).map((j) => ({
-        id: String(j?.id ?? "job_default"),
-        company: String(j?.company || "Company"),
-        title: String(j?.title || "Role"),
-        dates: String(j?.dates || "Dates"),
-        location: j?.location ? String(j.location) : "",
-        bullets: mergeWrappedBulletLines(
-          Array.isArray(j?.bullets) ? j.bullets.map((b: any) => String(b || "").trim()).filter(Boolean) : []
-        ),
-      }));
+      (Array.isArray(jobsIn) ? jobsIn : [])
+        .map((j, index) => {
+          const bullets = mergeWrappedBulletLines(
+            uniqueCleanPreviewItems(Array.isArray(j?.bullets) ? j.bullets : [], 40)
+              .filter((bullet) => !looksLikePreviewBulletNoise(bullet))
+          );
+          const company = cleanPreviewText(j?.company);
+          const title = cleanPreviewText(j?.title);
+
+          return {
+            id: cleanPreviewText(j?.id) || `job_${index + 1}`,
+            company: company || "Company",
+            title: title || "Role",
+            dates: cleanPreviewText(j?.dates),
+            location: cleanPreviewText(j?.location),
+            bullets,
+          };
+        })
+        .filter((j) => j.bullets.length || (j.company !== "Company" || j.title !== "Role"));
 
     const parserJobs = normalizeJobs(parserCompatibility?.jobs || []);
     const parserFlat = flattenFromJobs(parserJobs);
     const parserBullets = filterBadBullets(
       parserFlat.outBullets.length
         ? parserFlat.outBullets
-        : mergeWrappedBulletLines((parserCompatibility?.bullets || []).map((b) => String(b || "").trim()).filter(Boolean))
+        : mergeWrappedBulletLines(uniqueCleanPreviewItems(parserCompatibility?.bullets || [], 80))
     );
 
     if (parserJobs.length) {
@@ -1996,7 +2229,7 @@ export async function POST(req: Request) {
       }
     };
 
-    const seededFileBulletsRaw = filterBadBullets(bulletsFromFile || []);
+    const seededFileBulletsRaw = filterBadBullets(uniqueCleanPreviewItems(bulletsFromFile || [], 80));
     let seededFileBullets = seededFileBulletsRaw;
 
     if (onlyExperienceBullets) {
@@ -2029,7 +2262,7 @@ export async function POST(req: Request) {
         bullets = filterBadBullets(flat2.outBullets);
         bulletJobIds = flat2.outJobIds;
       } else {
-        const raw = mergeWrappedBulletLines((strict2.bullets || []).map((b) => String(b || "").trim()).filter(Boolean));
+        const raw = mergeWrappedBulletLines(uniqueCleanPreviewItems(strict2.bullets || [], 80));
         bullets = filterBadBullets(raw);
         const fallbackJobId = experienceJobs[0]?.id || "job_default";
         bulletJobIds = bullets.map(() => fallbackJobId);
@@ -2314,6 +2547,7 @@ export async function POST(req: Request) {
       warnings: autoResumeProfileError
         ? Array.from(new Set([...warningsUnique, "Resume profile auto-save failed."]))
         : warningsUnique,
+      structuredData: parserStructuredPreview,
       autoResumeProfile: autoResumeProfile
         ? {
             id: autoResumeProfile.id,
@@ -2345,6 +2579,7 @@ export async function POST(req: Request) {
         parserUsed,
         pdfInfo,
         parserDiagnostics: buildResumeParserDebug(parserCompatibility),
+        structuredPreviewReturned: !!parserStructuredPreview,
         rawText: resumeText,
         normalizedText: normalizeResumeText(resumeText),
         atsPrimaryResumeRole: ats?.detectedResumeRole?.roleKey ?? null,
