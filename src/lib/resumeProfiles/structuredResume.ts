@@ -157,8 +157,118 @@ function shouldDropStructuredSection(section: StructuredResumeSection) {
   if (hasContactHeader && !hasEmploymentSignal) return true;
   if (hasSkillHeader && !hasEmploymentSignal) return true;
   if ((hasContactHeader || hasSkillHeader) && bullets.every(looksLikeSkillListLine)) return true;
+  if (!section.dates && bullets.length === 0 && headerLines.length && headerLines.every(looksLikeStructuredSkillPhrase)) return true;
+  if (!section.dates && bullets.length === 0 && headerLines.some(looksLikeSkillListLine)) return true;
 
   return false;
+}
+
+
+function looksLikeStructuredAchievementOrSentence(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return true;
+  const words = line.split(/\s+/).filter(Boolean);
+  if (line.length > 90 || words.length > 8) return true;
+  if (/[.!?]$/.test(line) && line.length > 28) return true;
+  if (/\b(?:by|from|to|through|across|while|using|with|including|supporting|contributing|lowering|improving|reducing|increasing)\b/i.test(line) && words.length > 5) return true;
+  if (/%|\$\s?\d|\b\d+(?:\.\d+)?x\b|\b\d+(?:\.\d+)?\s?(?:ms|sec|secs|minutes|min|hrs|hours|days|weeks)\b/i.test(line)) return true;
+  if (/\b(main contributor|release owner|production stability|hotfixes|regression testing|stakeholders?|requirements?|conversion|revenue|retention|churn|iteration time|maintenance costs|daily active users|live service|clinical environment)\b/i.test(line)) return true;
+  return /\b(improved|managed|created|led|owned|tested|built|designed|implemented|automated|reduced|increased|shipped|launched|coordinated|analyzed|validated|executed|served|supported|reviewed|prepared|piloted|collaborated|developed|maintained|organized|hosted|delegated|completed|gathered|applied|architected|drove|integrated|worked|resolved|delivered|accelerated|upholding|contributed|participated|communicated|aligned)\b/i.test(line);
+}
+
+function looksLikeStructuredExperienceBoundary(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return false;
+  return /\b(?:professional experience|work experience|job experience|employment history|career history|experience|education|certifications?|certificates|projects)\b/i.test(line);
+}
+
+function containsStructuredDateRange(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return false;
+  return /\b(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(?:19|20)\d{2}|(?:19|20)\d{2})\s*(?:-|–|—|to|through|thru)\s*(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(?:19|20)\d{2}|(?:19|20)\d{2}|present|current|now)\b/i.test(line);
+}
+
+function looksLikeStructuredSkillPhrase(value: unknown) {
+  const line = cleanString(value);
+  if (!line) return false;
+  if (looksLikeContactOrReferenceLine(line)) return true;
+  if (looksLikeSkillOrMetaHeader(line)) return true;
+  if (looksLikeStructuredExperienceBoundary(line)) return true;
+  if (containsStructuredDateRange(line)) return false;
+  if (looksLikeStructuredAchievementOrSentence(line)) return false;
+  if (/\b(?:lead|manager|director|engineer|developer|analyst|specialist|coordinator|producer|designer|administrator|consultant|intern)\b/i.test(line)) return false;
+
+  const knownSkillOrDomain = /\b(?:qa|quality|testing|test|automation|automated|selenium|cypress|playwright|postman|jira|testrail|zephyr|confluence|excel|powerbi|perforce|unity|unreal|ue4|ue5|vr|biomedical|typescript|javascript|react|vue|node|sql|c#|\.net|java|python|docker|git|github|bitbucket|jenkins|ci\/?cd|agile|scrum|kanban|sdlc|oop|rest|api|apis|microservices|distributed|scalable|systems|architecture|prompt engineering|copilot|codex|growthbook|a\/?b testing|stakeholder|communication|documentation|test case|smoke checks|health checks|game testing|cross-platform|frameworks?|process optimization|process excellence|module testing|cloud migration|unit testing|code reviews|design patterns)\b/i;
+  return knownSkillOrDomain.test(line);
+}
+
+function truncateStructuredCandidateAtBoundary(value: unknown) {
+  let line = cleanString(value);
+  if (!line) return "";
+  const patterns = [
+    /\b(?:professional experience|work experience|job experience|employment history|career history|experience|education|certifications?|certificates|projects)\b/i,
+    /\b(?:qa lead|software engineer|software test engineer|dev support|full-stack software engineer|freelancer developer|software design engineer internship)\s*[|,]/i,
+  ];
+  for (const pattern of patterns) {
+    const match = line.match(pattern);
+    if (match && typeof match.index === "number" && match.index > 0) {
+      line = line.slice(0, match.index).trim();
+    }
+  }
+  return line;
+}
+
+function splitStructuredExpertiseCandidates(value: unknown) {
+  const raw = String(value ?? "")
+    .replace(/\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00ef\u201a\u00b7|\u00ef\u201a\u00a7|\u00e2\u2014\u008f|\u00e2\u2014\u00a6|\u00e2\u2013\u00aa|\u00c2\u00b7/g, "•")
+    .replace(/\u00e2\u20ac\u201c|\u00e2\u20ac\u201d|\u00e2\u20ac\u2015|\u00e2\u20ac\u2014|\u2013|\u2014/g, "-");
+
+  return raw
+    .replace(/\b(?:professional experience|work experience|job experience|employment history|career history|experience|education|certifications?|certificates|projects)\b/gi, "\n$&")
+    .split(/\r?\n|\s*[•|;,]\s*|\s+\/\s+/)
+    .map((candidate) => truncateStructuredCandidateAtBoundary(candidate))
+    .map((candidate) => cleanString(candidate.replace(/^(?:languages?\s*&\s*frameworks?|frameworks?|ai[-\s]augmented development|systems?\s*&\s*architecture|tooling\s*&\s*delivery|engineering practices|technical skills|core skills|skills|tools|technologies|areas of expertise|expertise)\s*:\s*/i, "")))
+    .filter(Boolean);
+}
+
+function isAllowedStructuredExpertiseItem(value: unknown) {
+  const item = cleanString(value);
+  if (!item) return false;
+  if (item.length < 2 || item.length > 64) return false;
+  if (/^(linkedin|github|portfolio|email|e-mail|phone|mobile|summary|profile|contact)$/i.test(item)) return false;
+  if (/\b(?:gmail|hotmail|outlook|yahoo)\.com\b/i.test(item)) return false;
+  if (looksLikeContactOrReferenceLine(item)) return false;
+  if (looksLikeSkillOrMetaHeader(item)) return false;
+  if (looksLikeStructuredExperienceBoundary(item)) return false;
+  if (containsStructuredDateRange(item)) return false;
+  if (looksLikeStructuredAchievementOrSentence(item)) return false;
+
+  const knownSkillOrDomain = /\b(?:qa|quality|testing|test|automation|automated|selenium|cypress|playwright|postman|jira|testrail|zephyr|confluence|excel|powerbi|perforce|unity|unreal|ue4|ue5|vr|biomedical|typescript|javascript|react|vue|node|sql|c#|\.net|java|python|docker|git|github|bitbucket|jenkins|ci\/?cd|agile|scrum|kanban|sdlc|oop|rest|api|apis|microservices|distributed|scalable|systems|architecture|prompt engineering|copilot|codex|growthbook|a\/?b testing|stakeholder|communication|documentation|test case|smoke checks|health checks|game testing|cross-platform|frameworks?|process optimization|process excellence|module testing|cloud migration|unit testing|code reviews|design patterns)\b/i;
+  if (knownSkillOrDomain.test(item)) return true;
+
+  const words = item.split(/\s+/).filter(Boolean);
+  if (words.length > 5) return false;
+  if (/[.!?]/.test(item)) return false;
+  return /^[A-Za-z0-9+#./&() -]+$/.test(item);
+}
+
+function sanitizeStructuredExpertiseItems(value: unknown) {
+  if (!Array.isArray(value)) return [] as string[];
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    for (const candidate of splitStructuredExpertiseCandidates(item)) {
+      if (!isAllowedStructuredExpertiseItem(candidate)) continue;
+      const key = candidate.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(candidate);
+      if (out.length >= 18) return out;
+    }
+  }
+
+  return out;
 }
 
 function cleanBoolean(value: unknown, fallback: boolean) {
@@ -309,7 +419,7 @@ export function sanitizeStructuredResumeSnapshot(value: unknown): StructuredResu
     },
     sections,
     educationItems: cleanStringArray(input.educationItems),
-    expertiseItems: cleanStringArray(input.expertiseItems),
+    expertiseItems: sanitizeStructuredExpertiseItems(input.expertiseItems),
     metaGames: cleanStringArray(input.metaGames),
     metaMetrics: cleanStringArray(input.metaMetrics),
     shippedLabelMode: cleanString(input.shippedLabelMode) || "games",

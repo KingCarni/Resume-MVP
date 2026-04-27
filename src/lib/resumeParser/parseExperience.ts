@@ -15,8 +15,16 @@ const DEGREE_RE = /\b(b\.?s\.?c?|bachelor|associate degree|diploma|certificate|c
 const TABLE_LABEL_RE = /^(?:role|title|job title|position|company|employer|organization|dates?|date range|duration|responsibilities?|achievements?)\b\s*:?\s*$/i;
 const DIRECT_BULLET_RE = /^[\s\t]*[•◦‣▪*-]\s+/;
 
-function cleanLine(line: string) {
+function normalizeParserLine(line: string) {
   return String(line || "")
+    .replace(/\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00ef\u201a\u00b7|\u00ef\u201a\u00a7|\u00e2\u2014\u008f|\u00e2\u2014\u00a6|\u00e2\u2013\u00aa|\u00c2\u00b7/g, "•")
+    .replace(/\u00e2\u20ac\u201c|\u00e2\u20ac\u201d|\u00e2\u20ac\u2015|\u00e2\u20ac\u2014|[–—]/g, "-")
+    .replace(/\u00e2\u20ac\u0153|\u00e2\u20ac\u009d/g, '"')
+    .replace(/\u00e2\u20ac\u02dc|\u00e2\u20ac\u2122/g, "'");
+}
+
+function cleanLine(line: string) {
+  return normalizeParserLine(line)
     .replace(/^(?:Role|Title|Job Title|Position)\s*:?\s+(?=.{3,80}$)/i, "")
     .replace(/^(?:Company|Employer|Organization)\s*:?\s+(?=.{3,80}$)/i, "")
     .trim();
@@ -27,11 +35,11 @@ function isTableLabelOnlyLine(line: string) {
 }
 
 function isDirectBulletLine(line: string) {
-  return DIRECT_BULLET_RE.test(String(line || ""));
+  return DIRECT_BULLET_RE.test(normalizeParserLine(line));
 }
 
 function normalizeDirectBulletLine(line: string) {
-  return String(line || "").replace(DIRECT_BULLET_RE, "• ").trim();
+  return normalizeParserLine(line).replace(DIRECT_BULLET_RE, "• ").trim();
 }
 
 export function extractDateRange(line: string) {
@@ -78,7 +86,8 @@ function isLikelyPositionHeader(line: string) {
   const trimmed = cleanLine(line);
   if (!trimmed || isBulletLine(trimmed)) return false;
   if (isBadHeaderLine(trimmed)) return false;
-  if (trimmed.length > 180) return false;
+  if (trimmed.length > 220) return false;
+  if (parseTechDecoratedInlineHeader(trimmed)) return true;
 
   const hasDate = !!extractDateRange(trimmed);
   const hasSeparator = /\s[-|]\s/.test(trimmed);
@@ -122,7 +131,44 @@ function companyConfidence(company?: string): ResumeFieldConfidence {
   return "unlikely";
 }
 
+function parseTechDecoratedInlineHeader(rawLine: string) {
+  const line = cleanLine(rawLine);
+  const dateRange = extractDateRange(line);
+  if (!line || !dateRange) return null;
+
+  const withoutDate = line
+    .replace(dateRange.raw, "")
+    .replace(/\s*[|,•-]\s*$/g, "")
+    .trim();
+
+  const beforeSkillList = withoutDate.split(/\s*•\s*/)[0]?.trim() || "";
+  if (!beforeSkillList || !beforeSkillList.includes(",")) return null;
+
+  const parts = beforeSkillList.split(/\s*,\s*/).map((part) => cleanLine(part)).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const company = parts[0];
+  const title = parts.slice(1).join(", ");
+  if (!company || !title) return null;
+  if (isBadHeaderLine(company) || isBadHeaderLine(title)) return null;
+  if (!ROLE_HINT_RE.test(title)) return null;
+
+  return {
+    company,
+    title,
+    location: undefined as string | undefined,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+    isCurrent: dateRange.isCurrent,
+  };
+}
+
 function parseHeaderParts(rawHeaderLines: string[]) {
+  if (rawHeaderLines.length === 1) {
+    const decoratedHeader = parseTechDecoratedInlineHeader(rawHeaderLines[0]);
+    if (decoratedHeader) return decoratedHeader;
+  }
+
   const joined = rawHeaderLines.map(cleanLine).filter(Boolean).join(" | ");
   const dateRange = extractDateRange(joined);
   const withoutDate = dateRange
