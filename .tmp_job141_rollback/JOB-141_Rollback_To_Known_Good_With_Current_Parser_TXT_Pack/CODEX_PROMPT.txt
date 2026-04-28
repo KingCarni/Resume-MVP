@@ -1,0 +1,27 @@
+Apply this as a file-level rollback/merge pack for JOB-141.
+
+Replace the target files with the provided full file contents:
+
+- src/app/api/analyze/route.ts
+- src/lib/resumeProfiles/structuredResume.ts
+- src/components/ResumeMvp/index.tsx
+- src/lib/resumeParser/parseExperience.ts
+
+Important notes:
+- Do not refactor behavior while applying.
+- The analyze route is intentionally restored from the old working repo and includes a file-level eslint disable for @typescript-eslint/no-explicit-any only.
+- parseExperience.ts is intentionally kept from current 2.0 because the old commit did not contain this file and current parser index/quality modules import it.
+
+After applying, run:
+
+npm run validate:resume-parser
+npm run validate:resume-parser:corpus -- C:\projects\resume-parser-fixtures-pdf-100
+npx tsc --noEmit
+npm run lint -- src/app/api/analyze/route.ts src/lib/resumeProfiles/structuredResume.ts src/components/ResumeMvp/index.tsx src/lib/resumeParser/parseExperience.ts
+
+Manual acceptance:
+- ATest.docx should look like the old working preview behavior.
+- OG Resume.pdf should look like the old working preview behavior.
+
+If preview is restored and checks pass, commit as:
+Revert JOB-141 preview integration to known-good path
