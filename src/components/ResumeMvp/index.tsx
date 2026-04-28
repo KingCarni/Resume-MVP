@@ -1577,7 +1577,7 @@ function buildResumeHtml(args: {
   <div class="page">
     <div class="side">
       ${sidebarPhotoHtml}
-      <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+      <h1 class="name">${profile.fullName ? safe(profile.fullName) : ""}</h1>
       <div class="title">${safe(profile.titleLine || "")}</div>
 
       <div class="contact">
@@ -1679,7 +1679,7 @@ function buildResumeHtml(args: {
     <div class="top ${activeLayoutId === "profile-panel" ? "profile-panel-top" : ""}">
       <div class="top-main">
         <div class="top-copy">
-          <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
+          <h1 class="name">${profile.fullName ? safe(profile.fullName) : ""}</h1>
           <div class="title">${safe(profile.titleLine || "")}</div>
 
           <div class="contact">

@@ -236,6 +236,8 @@ function isAllowedStructuredExpertiseItem(value: unknown) {
   if (!item) return false;
   if (item.length < 2 || item.length > 64) return false;
   if (/^(linkedin|github|portfolio|email|e-mail|phone|mobile|summary|profile|contact)$/i.test(item)) return false;
+  if (/^(?:and|or|to|from|with|using|including|supporting|contributing|lowering|improving|reducing|increasing)\b/i.test(item)) return false;
+  if (/[.!?]$/.test(item)) return false;
   if (/\b(?:gmail|hotmail|outlook|yahoo)\.com\b/i.test(item)) return false;
   if (looksLikeContactOrReferenceLine(item)) return false;
   if (looksLikeSkillOrMetaHeader(item)) return false;
@@ -293,16 +295,38 @@ function looksLikeBadStructuredLocationLine(value: unknown) {
   return false;
 }
 
+function looksLikeLikelyStructuredPersonName(value: unknown) {
+  const line = cleanString(value);
+  if (!line || line.length < 4 || line.length > 80) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikeSkillOrMetaHeader(line)) return false;
+  if (looksLikeStructuredExperienceBoundary(line)) return false;
+  if (looksLikeStructuredAchievementOrSentence(line)) return false;
+  if (containsStructuredDateRange(line)) return false;
+  if (/^(?:your name|name|job experience|professional experience|summary|profile|skills)$/i.test(line)) return false;
+  if (/\b(?:engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|quality|support|administrator|consultant|intern|university|college|school|certificate|certification|microsoft|azure)\b/i.test(line)) return false;
+
+  const withoutSuffix = line.replace(/,\s*(?:MASc|M\.?A\.?Sc\.?|MSc|PhD|MBA|BSc|BA|BS|PMP|CPA)\.?$/i, "").trim();
+  const words = withoutSuffix.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) return false;
+
+  return words.every((word) => /^[A-Z][A-Za-z'.-]+$/.test(word) || /^[A-Z]{2,}$/.test(word));
+}
+
 function sanitizeStructuredProfile(profileInput: Record<string, unknown>): StructuredResumeProfile {
   const fullName = cleanString(profileInput.fullName);
   const locationLine = cleanString(profileInput.locationLine);
   const email = cleanString(profileInput.email);
   const portfolio = cleanString(profileInput.portfolio);
 
+  const fullNameIsBad = looksLikeBadStructuredProfileName(fullName) || (!!fullName && !looksLikeLikelyStructuredPersonName(fullName));
+  const locationLooksLikeName = looksLikeLikelyStructuredPersonName(locationLine);
+  const resolvedFullName = fullName && !fullNameIsBad ? fullName : locationLooksLikeName ? locationLine : "";
+
   return {
-    fullName: looksLikeBadStructuredProfileName(fullName) ? "" : fullName,
+    fullName: resolvedFullName,
     titleLine: cleanString(profileInput.titleLine),
-    locationLine: looksLikeBadStructuredLocationLine(locationLine) ? "" : locationLine,
+    locationLine: locationLooksLikeName || looksLikeBadStructuredLocationLine(locationLine) ? "" : locationLine,
     email,
     phone: cleanString(profileInput.phone),
     linkedin: cleanString(profileInput.linkedin),

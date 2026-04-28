@@ -912,6 +912,8 @@ function looksLikeAllowedPreviewSkillItem(input: unknown) {
   if (containsPreviewDateRange(item)) return false;
   if (/\b(?:19|20)\d{2}\b/.test(item)) return false;
   if (/^(?:linkedin|github|portfolio|email|e-mail|phone|mobile|summary|profile|contact)$/i.test(item)) return false;
+  if (/^(?:and|or|to|from|with|using|including|supporting|contributing|lowering|improving|reducing|increasing)\b/i.test(item)) return false;
+  if (/[.!?]$/.test(item)) return false;
   if (/\b(?:gmail|hotmail|outlook|yahoo)\.com\b/i.test(item)) return false;
   if (/^(?:job experience|professional experience|experience|education|certifications?|summary|profile)$/i.test(item)) return false;
 
@@ -1226,6 +1228,8 @@ function looksLikeStrictPreviewExpertiseItem(input: unknown) {
   if (containsPreviewDateRange(item)) return false;
   if (/\b(?:19|20)\d{2}\b/.test(item)) return false;
   if (/^(?:linkedin|github|portfolio|email|e-mail|phone|mobile|summary|profile|contact)$/i.test(item)) return false;
+  if (/^(?:and|or|to|from|with|using|including|supporting|contributing|lowering|improving|reducing|increasing)\b/i.test(item)) return false;
+  if (/[.!?]$/.test(item)) return false;
   if (/\b(?:gmail|hotmail|outlook|yahoo)\.com\b/i.test(item)) return false;
   if (/\b(?:main contributor|release owner|production stability|hotfixes|subscription conversion|monthly revenue|daily active users|customer-facing|patient-facing|technical hiring|standups|sprint planning|retrospectives|requirements|stakeholders?|therapy outcomes)\b/i.test(item)) return false;
   if (/\b(?:increased|reduced|improved|built|designed|implemented|owned|served|led|drove|integrated|applied|gathered|worked|collaborated|maintained|developed|created|hosted|delegated|coordinated|reviewed|prepared|piloted|supported|architected|optimized|resolved|delivered)\b/i.test(item)) return false;
@@ -1278,11 +1282,15 @@ function sanitizePreviewProfileForResponse(profile: any) {
   const portfolio = cleanPreviewText(profile?.portfolio);
   const email = cleanPreviewText(profile?.email);
 
+  const fullNameIsBad = looksLikeBadPreviewProfileName(fullName) || (!!fullName && !looksLikeLikelyPreviewPersonName(fullName));
+  const locationLooksLikeName = looksLikeLikelyPreviewPersonName(locationLine);
+  const resolvedFullName = fullName && !fullNameIsBad ? fullName : locationLooksLikeName ? locationLine : "";
+
   return {
     ...profile,
-    fullName: looksLikeBadPreviewProfileName(fullName) ? "" : fullName,
+    fullName: resolvedFullName,
     titleLine: cleanPreviewText(profile?.titleLine),
-    locationLine: looksLikeBadPreviewLocationLine(locationLine) ? "" : locationLine,
+    locationLine: locationLooksLikeName || looksLikeBadPreviewLocationLine(locationLine) ? "" : locationLine,
     email,
     phone: cleanPreviewText(profile?.phone),
     linkedin: cleanPreviewText(profile?.linkedin),
@@ -1326,6 +1334,54 @@ function sanitizeExperienceJobsForResponse(jobs: any[]) {
 
 function hasPreviewRoleKeyword(value: unknown) {
   return /\b(engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|qa|quality|support|administrator|consultant|intern)\b/i.test(cleanPreviewText(value));
+}
+
+function looksLikeLikelyPreviewPersonName(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line || line.length < 4 || line.length > 80) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikePreviewSkillCategoryLine(line)) return false;
+  if (looksLikePreviewExperienceBoundary(line)) return false;
+  if (looksLikePreviewAchievementOrSentence(line)) return false;
+  if (containsPreviewDateRange(line)) return false;
+  if (/^(?:your name|name|job experience|professional experience|summary|profile|skills)$/i.test(line)) return false;
+  if (/\b(?:engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|quality|support|administrator|consultant|intern|university|college|school|certificate|certification|microsoft|azure)\b/i.test(line)) return false;
+
+  const withoutSuffix = line.replace(/,\s*(?:MASc|M\.?A\.?Sc\.?|MSc|PhD|MBA|BSc|BA|BS|PMP|CPA)\.?$/i, "").trim();
+  const words = withoutSuffix.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) return false;
+
+  return words.every((word) => /^[A-Z][A-Za-z'.-]+$/.test(word) || /^[A-Z]{2,}$/.test(word));
+}
+
+function looksLikeStandalonePreviewCompanyLine(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line || line.length < 2 || line.length > 90) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikePreviewNoiseLine(line)) return false;
+  if (looksLikePreviewSkillCategoryLine(line)) return false;
+  if (looksLikePreviewExperienceBoundary(line)) return false;
+  if (looksLikePreviewSkillList(line)) return false;
+  if (looksLikePreviewAchievementOrSentence(line)) return false;
+  if (containsPreviewDateRange(line)) return false;
+  if (/^[•●◦▪▫·*\-]/.test(line)) return false;
+  if (/^(?:company|role|title|dates)$/i.test(line)) return false;
+  return /[A-Za-z]/.test(line);
+}
+
+function looksLikeStandalonePreviewTitleLine(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line || line.length < 2 || line.length > 120) return false;
+  if (!hasPreviewRoleKeyword(line)) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikePreviewNoiseLine(line)) return false;
+  if (looksLikePreviewSkillCategoryLine(line)) return false;
+  if (looksLikePreviewExperienceBoundary(line)) return false;
+  if (looksLikePreviewSkillList(line)) return false;
+  if (looksLikePreviewAchievementOrSentence(line)) return false;
+  if (containsPreviewDateRange(line)) return false;
+  if (/^[•●◦▪▫·*\-]/.test(line)) return false;
+  return true;
 }
 
 function extractPreviewDateRangeToken(lineRaw: string) {
@@ -1379,8 +1435,14 @@ function parsePreviewDatedJobHeaderLine(lineRaw: string) {
   if (beforeDate.includes("|")) {
     const parts = beforeDate.split(/\s*\|\s*/).map((part) => cleanPreviewText(part)).filter(Boolean);
     if (parts.length >= 2) {
-      title = parts[0];
-      company = parts.slice(1).join(" | ");
+      const roleIndex = parts.findIndex((part) => hasPreviewRoleKeyword(part));
+      if (roleIndex > 0) {
+        company = parts.slice(0, roleIndex).join(" | ");
+        title = parts[roleIndex];
+      } else {
+        title = parts[0];
+        company = parts.slice(1).join(" | ");
+      }
     }
   } else if (beforeDate.includes(",")) {
     const parts = beforeDate.split(/\s*,\s*/).map((part) => cleanPreviewText(part)).filter(Boolean);
@@ -1445,11 +1507,14 @@ function parsePreviewPipeJobHeaderLine(lineRaw: string) {
   const beforeDate = parts.slice(0, datePartIndex);
   if (beforeDate.length < 2) return null;
 
-  const title = beforeDate[0];
-  const company = beforeDate.slice(1).join(" | ");
+  const roleIndex = beforeDate.findIndex((part) => hasPreviewRoleKeyword(part));
+  const title = roleIndex >= 0 ? beforeDate[roleIndex] : beforeDate[0];
+  const company = roleIndex > 0
+    ? beforeDate.slice(0, roleIndex).join(" | ")
+    : beforeDate.slice(1).join(" | ");
   if (!title || !company) return null;
   if (looksLikePreviewNoiseLine(title) || looksLikePreviewNoiseLine(company)) return null;
-  if (!/\b(engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|qa|quality|support|administrator|consultant|intern)\b/i.test(title)) return null;
+  if (!hasPreviewRoleKeyword(title)) return null;
 
   return { company, title, dates };
 }
@@ -1583,6 +1648,23 @@ function buildExperienceJobsForPreviewFromText(experienceText: string) {
     if (/^(education|education & certifications|certifications?|certificates|projects)\b/i.test(cleanPreviewText(line)) && jobs.length > 0) break;
     if (looksLikePreviewSkillCategoryLine(line)) continue;
     if (looksLikePreviewExperienceBoundary(line) && jobs.length > 0 && !/^(professional experience|work experience|job experience|employment history|career history)$/i.test(cleanPreviewText(line))) break;
+
+    const nextLine = cleanPreviewText(lines[i + 1]);
+    const nextTwoLine = cleanPreviewText(lines[i + 2]);
+    if (looksLikeStandalonePreviewCompanyLine(line) && looksLikeStandalonePreviewTitleLine(nextLine) && looksLikeDateRangeLine(nextTwoLine)) {
+      pushCurrent();
+      current = {
+        id: `job_${jobs.length + 1}`,
+        company: line,
+        title: nextLine,
+        dates: nextTwoLine,
+        location: "",
+        bullets: [],
+      };
+      pendingHeader = null;
+      i += 2;
+      continue;
+    }
 
     const datedHeader = parsePreviewDatedJobHeaderLine(line);
     if (datedHeader) {
@@ -3212,6 +3294,16 @@ export async function POST(req: Request) {
         pdfInfo,
         parserDiagnostics: buildResumeParserDebug(parserCompatibility),
         structuredPreviewReturned: !!parserStructuredPreview,
+        previewSourceDebug: {
+          parserJobsCount: parserJobs.length,
+          textPreviewJobsCount: textPreviewJobs.length,
+          finalResponseJobsCount: responseExperienceJobs.length,
+          parserJobHeaders: parserJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
+          textJobHeaders: textPreviewJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
+          finalJobHeaders: responseExperienceJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
+          structuredProfile: responseStructuredPreview?.profile ?? null,
+          structuredExpertiseItems: responseStructuredPreview?.expertiseItems ?? [],
+        },
         rawText: resumeText,
         normalizedText: normalizeResumeText(resumeText),
         atsPrimaryResumeRole: ats?.detectedResumeRole?.roleKey ?? null,
