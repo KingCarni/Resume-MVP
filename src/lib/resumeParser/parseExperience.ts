@@ -1,24 +1,32 @@
-// TARGET PATH: src/lib/resumeParser/parseExperience.ts
-// JOB-139 Pass 5 — smoke fixture regression fix
 import { classifyBullet, collectLooseBullets, isBulletLine } from "./classifyBullets";
-import type { DetectedResumeSection, ParsedResumeBullet, ParsedResumeExperience, ParsedResumePosition, ResumeFieldConfidence } from "./types";
+import type {
+  DetectedResumeSection,
+  ParsedResumeBullet,
+  ParsedResumeExperience,
+  ParsedResumePosition,
+  ResumeFieldConfidence,
+} from "./types";
 
 const MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
 const YEAR = "(?:19|20)\\d{2}";
 const DATE_TOKEN = `(?:${MONTH}\\s+${YEAR}|\\d{1,2}\\/${YEAR}|${YEAR}|present|current|now)`;
 const DATE_RANGE_RE = new RegExp(`\\b(${DATE_TOKEN})\\s*(?:-|to|through|thru)\\s*(${DATE_TOKEN})\\b`, "i");
 
-const SECTION_NOISE_RE = /^(contact|profile|summary|professional summary|career summary|snapshot|career snapshot|overview|experience|work experience|professional experience|employment history|work history|career history|work story|career story|selected work|selected experience|highlights|skills|technical skills|toolbox|toolkit|tools|education|learning|projects|certifications)\b/i;
-const ROLE_HINT_RE = /\b(manager|engineer|developer|analyst|tester|auditor|specialist|coordinator|intern|lead|director|designer|administrator|consultant|associate|representative|host|server|volunteer|producer|writer|scrum master)\b/i;
+const SECTION_NOISE_RE =
+  /^(contact|profile|summary|professional summary|career summary|snapshot|career snapshot|overview|experience|job experience|work experience|professional experience|employment history|work history|career history|work story|career story|selected work|selected experience|highlights|skills|technical skills|toolbox|toolkit|tools|education|learning|projects|certifications)\b/i;
+const ROLE_HINT_RE =
+  /\b(manager|engineer|developer|analyst|tester|auditor|specialist|coordinator|intern|lead|director|designer|administrator|consultant|associate|representative|host|server|volunteer|producer|writer|scrum master)\b/i;
 const CONTACT_OR_URL_RE = /(?:@|https?:\/\/|www\.|linkedin\.com|github\.com|\b\d{3}[-.)\s]\d{3})/i;
 const DEGREE_RE = /\b(b\.?s\.?c?|bachelor|associate degree|diploma|certificate|college|university|school|polytechnic)\b/i;
 const TABLE_LABEL_RE = /^(?:role|title|job title|position|company|employer|organization|dates?|date range|duration|responsibilities?|achievements?)\b\s*:?\s*$/i;
-const DIRECT_BULLET_RE = /^[\s\t]*[•◦‣▪*-]\s+/;
+const DIRECT_BULLET_RE = /^[\s\t]*[â€¢â—¦â€£ï‚§â–ª*-]\s+/;
+const SKILL_CATEGORY_LINE_RE =
+  /^(?:languages?\s*&\s*frameworks?|ai\s*-\s*augmented development|systems?\s*&\s*a\s*rchitecture|systems?\s*&\s*architecture|tooling\s*&\s*delivery|engineering practices|areas of expertise|technical skills|core skills)\s*:/i;
 
 function normalizeParserLine(line: string) {
   return String(line || "")
-    .replace(/\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00ef\u201a\u00b7|\u00ef\u201a\u00a7|\u00e2\u2014\u008f|\u00e2\u2014\u00a6|\u00e2\u2013\u00aa|\u00c2\u00b7/g, "•")
-    .replace(/\u00e2\u20ac\u201c|\u00e2\u20ac\u201d|\u00e2\u20ac\u2015|\u00e2\u20ac\u2014|[–—]/g, "-")
+    .replace(/\u00e2\u20ac\u00a2|\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00ef\u201a\u00b7|\u00ef\u201a\u00a7|\u00e2\u2014\u008f|\u00e2\u2014\u00a6|\u00e2\u2013\u00aa|\u00c2\u00b7/g, "â€¢")
+    .replace(/\u00e2\u20ac\u201c|\u00e2\u20ac\u201d|\u00e2\u20ac\u2015|\u00e2\u20ac\u2014|[â€“â€”]/g, "-")
     .replace(/\u00e2\u20ac\u0153|\u00e2\u20ac\u009d/g, '"')
     .replace(/\u00e2\u20ac\u02dc|\u00e2\u20ac\u2122/g, "'");
 }
@@ -39,7 +47,7 @@ function isDirectBulletLine(line: string) {
 }
 
 function normalizeDirectBulletLine(line: string) {
-  return normalizeParserLine(line).replace(DIRECT_BULLET_RE, "• ").trim();
+  return normalizeParserLine(line).replace(DIRECT_BULLET_RE, "â€¢ ").trim();
 }
 
 export function extractDateRange(line: string) {
@@ -76,6 +84,7 @@ function isBadHeaderLine(line: string) {
   if (!trimmed) return true;
   if (isTableLabelOnlyLine(line)) return true;
   if (SECTION_NOISE_RE.test(trimmed)) return true;
+  if (SKILL_CATEGORY_LINE_RE.test(trimmed)) return true;
   if (CONTACT_OR_URL_RE.test(trimmed)) return true;
   if (DEGREE_RE.test(trimmed)) return true;
   if (/^(figma|notion|jira|confluence|sql|excel|github|documentation)(?:,|$)/i.test(trimmed)) return true;
@@ -112,6 +121,7 @@ function isPossibleCompanyLine(line: string) {
   if (isBadHeaderLine(trimmed)) return false;
   if (looksLikeNarrativeLine(trimmed)) return false;
   if (extractDateRange(trimmed)) return false;
+  if (/:/.test(trimmed) && trimmed.split(",").length >= 3) return false;
   return true;
 }
 
@@ -126,9 +136,15 @@ function titleConfidence(title?: string): ResumeFieldConfidence {
 function companyConfidence(company?: string): ResumeFieldConfidence {
   if (!company) return "very_unlikely";
   if (CONTACT_OR_URL_RE.test(company) || DEGREE_RE.test(company)) return "very_unlikely";
-  if (/\b(inc|llc|ltd|corp|company|studio|studios|games|systems|solutions|restaurant|hotel|inn|school|university|labs|digital|works|health|media|interactive|cloud)\b/i.test(company)) return "confident";
+  if (/\b(inc|llc|ltd|corp|company|studio|studios|games|systems|solutions|restaurant|hotel|inn|school|university|labs|digital|works|health|media|interactive|cloud)\b/i.test(company)) {
+    return "confident";
+  }
   if (company.length >= 3) return "probable";
   return "unlikely";
+}
+
+function normalizeHeaderValue(value?: string) {
+  return value ? cleanLine(value).replace(/\s*â€¢\s*/g, " - ").trim() : value;
 }
 
 function parseTechDecoratedInlineHeader(rawLine: string) {
@@ -138,10 +154,10 @@ function parseTechDecoratedInlineHeader(rawLine: string) {
 
   const withoutDate = line
     .replace(dateRange.raw, "")
-    .replace(/\s*[|,•-]\s*$/g, "")
+    .replace(/\s*[|,â€¢-]\s*$/g, "")
     .trim();
 
-  const beforeSkillList = withoutDate.split(/\s*•\s*/)[0]?.trim() || "";
+  const beforeSkillList = withoutDate.split(/\s*â€¢\s*/)[0]?.trim() || "";
   if (!beforeSkillList || !beforeSkillList.includes(",")) return null;
 
   const parts = beforeSkillList.split(/\s*,\s*/).map((part) => cleanLine(part)).filter(Boolean);
@@ -154,8 +170,8 @@ function parseTechDecoratedInlineHeader(rawLine: string) {
   if (!ROLE_HINT_RE.test(title)) return null;
 
   return {
-    company,
-    title,
+    company: normalizeHeaderValue(company),
+    title: normalizeHeaderValue(title),
     location: undefined as string | undefined,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
@@ -175,7 +191,7 @@ function parseHeaderParts(rawHeaderLines: string[]) {
     ? joined.replace(dateRange.raw, "").replace(/\s*[\-|]\s*$/g, "").replace(/\s*\|\s*$/g, "").trim()
     : joined;
   const parts = withoutDate
-    .replace(/\s+[–—]\s+/g, " - ")
+    .replace(/\s+[â€“â€”]\s+/g, " - ")
     .split(/\s+\|\s+|\s+-\s+/)
     .map((part) => cleanLine(part).trim())
     .filter(Boolean);
@@ -214,9 +230,9 @@ function parseHeaderParts(rawHeaderLines: string[]) {
   }
 
   return {
-    title,
-    company,
-    location,
+    title: normalizeHeaderValue(title),
+    company: normalizeHeaderValue(company),
+    location: normalizeHeaderValue(location),
     startDate: dateRange?.startDate,
     endDate: dateRange?.endDate,
     isCurrent: !!dateRange?.isCurrent,
@@ -232,7 +248,7 @@ function splitDescriptionIntoBullets(description: string): ParsedResumeBullet[] 
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length >= 35)
     .slice(0, 4)
-    .map((sentence) => classifyBullet(`• ${sentence.replace(/[.!?]$/, "")}`));
+    .map((sentence) => classifyBullet(`â€¢ ${sentence.replace(/[.!?]$/, "")}`));
 }
 
 function finalizePosition(position: ParsedResumePosition): ParsedResumePosition {
@@ -269,6 +285,18 @@ function shouldAttachAsDescription(line: string) {
   if (SECTION_NOISE_RE.test(trimmed)) return false;
   if (isLikelyPositionHeader(trimmed)) return false;
   return trimmed.length >= 15;
+}
+
+function shouldAttachToPreviousBullet(position: ParsedResumePosition | null, line: string) {
+  if (!position || position.bullets.length === 0) return false;
+  const trimmed = cleanLine(line);
+  if (!trimmed) return false;
+  if (isBadHeaderLine(trimmed) || extractDateRange(trimmed)) return false;
+  if (isLikelyPositionHeader(trimmed)) return false;
+  if (/^[a-z(~\d]/.test(trimmed)) return true;
+  if (/^[A-Z]{2,6}\s*-\s*[a-z]/.test(trimmed)) return true;
+  if (trimmed.length <= 110 && !ROLE_HINT_RE.test(trimmed)) return true;
+  return false;
 }
 
 function isUsablePosition(position: ParsedResumePosition) {
@@ -315,18 +343,28 @@ function parseExperienceLines(lines: string[]) {
     const rawLine = lines[index];
     if (isTableLabelOnlyLine(rawLine)) continue;
     const line = cleanLine(rawLine);
-    if (!line || SECTION_NOISE_RE.test(line)) continue;
+    if (!line || SECTION_NOISE_RE.test(line) || SKILL_CATEGORY_LINE_RE.test(line)) continue;
 
     if (isBulletLine(line) || isDirectBulletLine(line)) {
       flushPendingHeader();
       const bulletLine = isDirectBulletLine(line) ? normalizeDirectBulletLine(line) : line;
       if (current) {
-        const activePosition = current as ParsedResumePosition;
-        activePosition.bullets.push(classifyBullet(bulletLine));
+        const activeCurrent = current as unknown as ParsedResumePosition;
+        activeCurrent.bullets.push(classifyBullet(bulletLine));
       } else {
         unattachedBulletLines.push(bulletLine);
       }
       continue;
+    }
+
+    if (shouldAttachToPreviousBullet(current, line)) {
+      const activeCurrent = current as unknown as ParsedResumePosition | null;
+      if (!activeCurrent) continue;
+      const lastBullet = activeCurrent.bullets[activeCurrent.bullets.length - 1];
+      if (lastBullet) {
+        lastBullet.text = `${lastBullet.text} ${line}`.replace(/\s+/g, " ").trim();
+        continue;
+      }
     }
 
     if (isDateOnlyLine(line) && pendingHeader.length) {
@@ -334,7 +372,7 @@ function parseExperienceLines(lines: string[]) {
       continue;
     }
 
-    const activeCurrent = current as ParsedResumePosition | null;
+    const activeCurrent = current as unknown as ParsedResumePosition | null;
 
     if (isDateOnlyLine(line) && activeCurrent && !activeCurrent.startDate && !activeCurrent.endDate) {
       const range = extractDateRange(line);
@@ -347,8 +385,26 @@ function parseExperienceLines(lines: string[]) {
       }
     }
 
+    if (activeCurrent && !activeCurrent.company && extractDateRange(line) && !ROLE_HINT_RE.test(line)) {
+      const range = extractDateRange(line);
+      const company = cleanLine(line.replace(range?.raw || "", "").replace(/[|,-]+$/g, "").trim());
+      if (company && isPossibleCompanyLine(company)) {
+        activeCurrent.company = normalizeHeaderValue(company);
+        activeCurrent.companyConfidence = companyConfidence(activeCurrent.company);
+        activeCurrent.startDate = range?.startDate;
+        activeCurrent.endDate = range?.endDate;
+        activeCurrent.isCurrent = !!range?.isCurrent;
+        activeCurrent.rawHeaderLines = [...activeCurrent.rawHeaderLines, cleanLine(line)].filter(Boolean);
+        continue;
+      }
+    }
+
     if (isLikelyPositionHeader(line)) {
-      flushPendingHeader();
+      if (pendingHeader.length === 1 && !extractDateRange(pendingHeader[0])) {
+        pendingHeader = [];
+      } else {
+        flushPendingHeader();
+      }
       startNewPosition([line]);
       continue;
     }
@@ -369,7 +425,7 @@ function parseExperienceLines(lines: string[]) {
     }
 
     if (activeCurrent && !activeCurrent.company && isPossibleCompanyLine(line) && !ROLE_HINT_RE.test(line)) {
-      activeCurrent.company = line;
+      activeCurrent.company = normalizeHeaderValue(line);
       activeCurrent.companyConfidence = companyConfidence(line);
       activeCurrent.rawHeaderLines = [...activeCurrent.rawHeaderLines, cleanLine(line)].filter(Boolean);
       continue;

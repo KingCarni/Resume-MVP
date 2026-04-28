@@ -22,6 +22,7 @@ const SECTION_ALIASES: Array<{ kind: ResumeSectionKind; aliases: string[] }> = [
     kind: "experience",
     aliases: [
       "experience",
+      "job experience",
       "work experience",
       "professional experience",
       "employment history",
@@ -79,6 +80,26 @@ const SECTION_ALIASES: Array<{ kind: ResumeSectionKind; aliases: string[] }> = [
 ];
 
 const CONTACT_HINT_RE = /(?:@|https?:\/\/|www\.|linkedin\.com|github\.com|\b\d{3}[-.)\s]\d{3})/i;
+const NAME_HINT_RE = /^[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,3}(?:,\s*[A-Za-z.]{2,10})?$/;
+
+function isContactLikeLine(line: string) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) return false;
+  if (CONTACT_HINT_RE.test(trimmed)) return true;
+  if (NAME_HINT_RE.test(trimmed)) return true;
+  if (/^[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,3}\s+[A-Z][A-Za-z][A-Za-z /&+-]{2,40}$/.test(trimmed)) return true;
+  if (/\b(?:remote|canada|usa|united states)\b/i.test(trimmed) || /,\s*[A-Z]{2}\b/.test(trimmed)) return true;
+  return false;
+}
+
+function isSummaryLikeLine(line: string) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) return false;
+  if (CONTACT_HINT_RE.test(trimmed)) return false;
+  if (trimmed.length >= 60) return true;
+  if (/[.!?]/.test(trimmed) && trimmed.length >= 24) return true;
+  return false;
+}
 
 function normalizeHeading(line: string) {
   return String(line || "")
@@ -112,6 +133,9 @@ export function classifySectionHeading(line: string): { kind: ResumeSectionKind;
   for (const group of SECTION_ALIASES) {
     for (const alias of group.aliases) {
       if (normalized.includes(alias) && normalized.length <= alias.length + 18) {
+        return { kind: group.kind, confidence: "probable" };
+      }
+      if (normalized.startsWith(`${alias} `) && /^[A-Z][A-Z &/+-]{2,40}\b/.test(String(line || "").trim())) {
         return { kind: group.kind, confidence: "probable" };
       }
     }
@@ -148,14 +172,36 @@ export function detectResumeSections(lines: string[]): DetectedResumeSection[] {
   const sections: DetectedResumeSection[] = [];
 
   if (headings[0].index > 0) {
-    sections.push({
-      kind: "contact",
-      heading: "Contact",
-      startLine: 0,
-      endLine: headings[0].index - 1,
-      lines: lines.slice(0, headings[0].index),
-      confidence: "probable",
-    });
+    const preambleLines = lines.slice(0, headings[0].index);
+    const summaryStart = preambleLines.findIndex((line, index) => index > 0 && isSummaryLikeLine(line) && !isContactLikeLine(line));
+
+    if (summaryStart > 0) {
+      sections.push({
+        kind: "contact",
+        heading: "Contact",
+        startLine: 0,
+        endLine: summaryStart - 1,
+        lines: preambleLines.slice(0, summaryStart),
+        confidence: "probable",
+      });
+      sections.push({
+        kind: "summary",
+        heading: "Summary",
+        startLine: summaryStart,
+        endLine: headings[0].index - 1,
+        lines: preambleLines.slice(summaryStart),
+        confidence: "probable",
+      });
+    } else {
+      sections.push({
+        kind: "contact",
+        heading: "Contact",
+        startLine: 0,
+        endLine: headings[0].index - 1,
+        lines: preambleLines,
+        confidence: "probable",
+      });
+    }
   }
 
   headings.forEach((heading, idx) => {

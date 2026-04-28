@@ -12,7 +12,7 @@ const TOOL_HINTS = [
   "github", "git", "jenkins", "docker", "kubernetes", "aws", "azure", "gcp", "excel", "zendesk", "salesforce", "figma", "notion", "confluence",
 ];
 
-const RAW_BULLET_RE = /^(?:[\s\t]*(?:[â€¢â—ï‚§â–ªâ–«â—¦â€£âƒ*Â·â€§âˆ™â—¾â—½â– â–¡â—†â—‡â–ºâ–¸â–¹âž¤âžœâ†’â€ºÂ»âœ“âœ”â˜‘âœ…]|\-)+\s+)/;
+const RAW_BULLET_RE = /^(?:[\s\t]*(?:[•●▪◦‣·*Ã¢â‚¬Â¢Ã¢â€”ÂÃ¯â€šÂ§Ã¢â€“ÂªÃ¢â€“Â«Ã¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’Ã‚Â·Ã¢â‚¬Â§Ã¢Ë†â„¢Ã¢â€”Â¾Ã¢â€”Â½Ã¢â€“Â Ã¢â€“Â¡Ã¢â€”â€ Ã¢â€”â€¡Ã¢â€“ÂºÃ¢â€“Â¸Ã¢â€“Â¹Ã¢Å¾Â¤Ã¢Å¾Å“Ã¢â€ â€™Ã¢â‚¬ÂºÃ‚Â»Ã¢Å“â€œÃ¢Å“â€Ã¢Ëœâ€˜Ã¢Å“â€¦]|\-)+\s+)/;
 
 function findActionVerb(text: string) {
   const normalized = normalizeForLooseCompare(text);
@@ -62,7 +62,7 @@ export function classifyBullet(rawText: string): ParsedResumeBullet {
 
 export function isBulletLine(line: string) {
   const trimmed = String(line || "").trim();
-  return trimmed.startsWith("â€¢ ") || RAW_BULLET_RE.test(trimmed);
+  return trimmed.startsWith("• ") || trimmed.startsWith("Ã¢â‚¬Â¢ ") || RAW_BULLET_RE.test(trimmed);
 }
 
 export function collectLooseBullets(lines: string[]) {

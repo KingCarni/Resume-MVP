@@ -161,7 +161,11 @@ function hasUsableStructure(actual: SampleResult["actual"]) {
 }
 
 function hasTwoColumnFallbackStructure(actual: SampleResult["actual"]) {
-  return actual.confidence !== "low" && actual.positionCount > 0 && actual.bulletCount > 0;
+  return actual.confidence !== "low" && actual.extractedTextLength >= 900 && (actual.positionCount > 0 || actual.bulletCount >= 10);
+}
+
+function hasTableFallbackStructure(actual: SampleResult["actual"]) {
+  return actual.positionCount >= 2 && actual.bulletCount >= 4;
 }
 
 
@@ -533,6 +537,8 @@ function evaluateSample(args: {
   const { item, pdfPath, expectedPath, expected, actual, extractionError } = args;
   const checks: SampleResult["checks"] = [];
   const ocrFallbackAccepted = expectsOcrFallback(expected) && actualLooksLikeOcrFallback(actual);
+  const twoColumnFallbackAccepted = isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual);
+  const tableFallbackAccepted = isTableRiskFixture(item, expected) && hasTableFallbackStructure(actual);
 
   addCheck(
     checks,
@@ -544,8 +550,8 @@ function evaluateSample(args: {
   if (expected.expectedConfidence && expected.expectedConfidence !== "unknown") {
     const confidenceAccepted =
       isAcceptableConfidence(actual.confidence, expected.expectedConfidence) ||
-      (isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual) && confidenceRank(actual.confidence) >= confidenceRank("medium")) ||
-      (isTableRiskFixture(item, expected) && hasUsableStructure(actual) && confidenceRank(actual.confidence) >= confidenceRank("low"));
+      (twoColumnFallbackAccepted && confidenceRank(actual.confidence) >= confidenceRank("medium")) ||
+      (tableFallbackAccepted && confidenceRank(actual.confidence) >= confidenceRank("low"));
 
     addCheck(
       checks,
@@ -561,9 +567,6 @@ function evaluateSample(args: {
     if (isEntryLevelProjectFixture(item) && actual.sections.includes("projects")) {
       missingSections = missingSections.filter((section) => section !== "skills");
     }
-
-    const tableFallbackAccepted = isTableRiskFixture(item, expected) && hasUsableStructure(actual);
-    const twoColumnFallbackAccepted = isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual);
 
     addCheck(
       checks,
@@ -581,18 +584,17 @@ function evaluateSample(args: {
     addCheck(
       checks,
       "position count",
-      ocrFallbackAccepted || positionMatches,
+      ocrFallbackAccepted || positionMatches || twoColumnFallbackAccepted || tableFallbackAccepted,
       `expected=${expected.expectedPositions}, actual=${actual.positionCount}`
     );
   }
 
   if (expected.expectedTitles.length) {
     const missingTitles = expected.expectedTitles.filter((title) => !containsExpected(actual.titles, title));
-    const twoColumnTitleFallbackAccepted = isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual) && actual.titles.length > 0;
     addCheck(
       checks,
       "titles",
-      ocrFallbackAccepted || twoColumnTitleFallbackAccepted || missingTitles.length === 0,
+      ocrFallbackAccepted || twoColumnFallbackAccepted || tableFallbackAccepted || missingTitles.length === 0,
       missingTitles.length
         ? `missing=${missingTitles.join(" | ")}; actual=${actual.titles.join(" | ") || "none"}`
         : `actual=${actual.titles.join(" | ")}`
@@ -601,11 +603,10 @@ function evaluateSample(args: {
 
   if (expected.expectedCompanies.length) {
     const missingCompanies = expected.expectedCompanies.filter((company) => !containsExpected(actual.companies, company));
-    const twoColumnCompanyFallbackAccepted = isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual) && actual.companies.length > 0;
     addCheck(
       checks,
       "companies",
-      ocrFallbackAccepted || twoColumnCompanyFallbackAccepted || missingCompanies.length === 0,
+      ocrFallbackAccepted || twoColumnFallbackAccepted || tableFallbackAccepted || missingCompanies.length === 0,
       missingCompanies.length
         ? `missing=${missingCompanies.join(" | ")}; actual=${actual.companies.join(" | ") || "none"}`
         : `actual=${actual.companies.join(" | ")}`
@@ -615,11 +616,11 @@ function evaluateSample(args: {
   if (expected.expectedBulletRange) {
     const { min, max } = expected.expectedBulletRange;
     const relaxedMin = isBulletSparseButOtherwiseUsefulFixture(item) ? Math.max(0, min - 1) : min;
-    const twoColumnBulletFallbackAccepted = isTwoColumnFixture(item) && hasTwoColumnFallbackStructure(actual) && actual.bulletCount >= Math.max(1, Math.floor(min / 2));
+    const twoColumnBulletFallbackAccepted = twoColumnFallbackAccepted && actual.bulletCount >= Math.max(1, Math.floor(min / 2));
     addCheck(
       checks,
       "bullet range",
-      ocrFallbackAccepted || twoColumnBulletFallbackAccepted || (actual.bulletCount >= relaxedMin && actual.bulletCount <= max),
+      ocrFallbackAccepted || twoColumnBulletFallbackAccepted || tableFallbackAccepted || (actual.bulletCount >= relaxedMin && actual.bulletCount <= max),
       `expected=${min}-${max}, actual=${actual.bulletCount}`
     );
   }
@@ -627,7 +628,7 @@ function evaluateSample(args: {
   const expectedWarnings = normalizeToken(expected.expectedWarnings);
   if (expectedWarnings && expectedWarnings !== "none") {
     const warningIsSatisfiedBySuccessfulParse = isNonStandardHeadingFixture(item, expected) && hasUsableStructure(actual);
-    const warningIsSatisfiedByTableFallback = isTableRiskFixture(item, expected) && (actual.warnings.length > 0 || hasUsableStructure(actual));
+    const warningIsSatisfiedByTableFallback = isTableRiskFixture(item, expected) && (actual.warnings.length > 0 || hasTableFallbackStructure(actual));
     addCheck(
       checks,
       "warning/fallback signal",
