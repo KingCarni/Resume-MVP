@@ -1156,17 +1156,31 @@ function buildStructuredPreviewSnapshot(args: {
     : [];
 
   const experienceSlice = extractExperienceSection(parserCompatibility?.resumeText || "");
+  const explicitPreviewJobs = buildExperienceJobsFromExplicitResumeLines(experienceSlice.experienceText || parserCompatibility?.resumeText || "");
   const textPreviewJobs = buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || parserCompatibility?.resumeText || "");
 
   const documentSections = normalizePreviewJobSections(documentJobs);
   const parserSections = normalizePreviewJobSections(parserJobs);
+  const explicitSections = normalizePreviewJobSections(explicitPreviewJobs);
   const textSections = normalizePreviewJobSections(textPreviewJobs);
 
   const sections = selectBestPreviewJobSections([
+    { name: "explicit", jobs: explicitSections },
     { name: "text", jobs: textSections },
     { name: "document", jobs: documentSections },
     { name: "parser", jobs: parserSections },
   ]);
+
+  const recoveredProfile = derivePreviewProfileFromResumeText(parserCompatibility?.resumeText || "", {
+    fullName: contact?.name,
+    titleLine: firstPosition?.title,
+    locationLine: contact?.location,
+    email: contact?.email,
+    phone: contact?.phone,
+    linkedin,
+    portfolio,
+    summary: document?.summary?.rawText,
+  });
 
   const educationItems = document?.education?.entries?.length
     ? uniqueCleanPreviewItems(document.education.entries.map((entry) => entry.rawText), 12)
@@ -1178,14 +1192,14 @@ function buildStructuredPreviewSnapshot(args: {
     targetPosition: cleanPreviewText(args.targetPosition),
     template: "modern",
     profile: {
-      fullName: cleanPreviewText(contact?.name),
-      titleLine: cleanPreviewText(firstPosition?.title),
-      locationLine: cleanPreviewText(contact?.location),
-      email: cleanPreviewText(contact?.email),
-      phone: cleanPreviewText(contact?.phone),
-      linkedin,
-      portfolio,
-      summary: cleanPreviewText(document?.summary?.rawText),
+      fullName: recoveredProfile.fullName,
+      titleLine: recoveredProfile.titleLine,
+      locationLine: recoveredProfile.locationLine,
+      email: recoveredProfile.email,
+      phone: recoveredProfile.phone,
+      linkedin: recoveredProfile.linkedin,
+      portfolio: recoveredProfile.portfolio,
+      summary: recoveredProfile.summary,
     },
     sections,
     educationItems,
@@ -1542,9 +1556,10 @@ function normalizePreviewJobSections(jobsIn: Array<any>) {
       if (!bullets.length && !company && !title) return null;
       if (looksLikePreviewNoiseLine(company) && !title && !bullets.length) return null;
       if (looksLikePreviewNoiseLine(title) && !company && !bullets.length) return null;
+      const hasEmploymentSignal = sectionHasPreviewEmploymentSignal(section);
       if (looksLikePreviewSkillCategoryLine(company) || looksLikePreviewSkillCategoryLine(title)) return null;
       if (looksLikePreviewExperienceBoundary(company) || looksLikePreviewExperienceBoundary(title)) return null;
-      if (looksLikePreviewSkillList(company) || looksLikePreviewSkillList(title)) return null;
+      if ((looksLikePreviewSkillList(company) || looksLikePreviewSkillList(title)) && !hasEmploymentSignal) return null;
       if (shouldDropPreviewSection(section)) return null;
 
       return section;
@@ -1605,6 +1620,222 @@ function selectBestPreviewJobSections(sources: Array<{ name: string; jobs: Array
   });
 
   return candidates[0].sections;
+}
+
+
+function isLikelyPreviewPersonName(value: unknown) {
+  const line = cleanPreviewText(value);
+  if (!line) return false;
+  if (line.length < 4 || line.length > 70) return false;
+  if (looksLikeContactOrReferenceLine(line)) return false;
+  if (looksLikePreviewExperienceBoundary(line)) return false;
+  if (looksLikePreviewSkillCategoryLine(line)) return false;
+  if (looksLikePreviewAchievementOrSentence(line)) return false;
+  if (/[.!?]$/.test(line)) return false;
+  if (/^(?:linkedin|github|portfolio|email|phone|summary|profile|contact|areas of expertise)$/i.test(line)) return false;
+  if (/\b(?:engineer|developer|designer|producer|manager|analyst|specialist|coordinator|lead|director|tester|qa|quality|support|administrator|consultant|intern)\b/i.test(line)) return false;
+
+  const withoutCredential = line.replace(/,\s*(?:masc|msc|mba|phd|bsc|ba|b\.sc\.?|m\.sc\.?)\.?$/i, "");
+  const parts = withoutCredential.split(/\s+/).filter(Boolean);
+  if (parts.length < 2 || parts.length > 4) return false;
+  return parts.every((part) => /^[A-Z][A-Za-z'’-]*(?:-[A-Z][A-Za-z'’-]*)?$/.test(part) || /^[A-Z]{2,}$/.test(part));
+}
+
+function splitHeaderNameAndTitle(lineRaw: string) {
+  const line = cleanPreviewText(lineRaw);
+  if (!line) return null;
+  if (looksLikeContactOrReferenceLine(line)) return null;
+  if (looksLikeBadPreviewProfileName(line)) return null;
+
+  const roleStart = line.search(/\b(?:sr\.?|senior|jr\.?|junior|principal|staff|lead|qa|quality|software|web|frontend|front-end|backend|back-end|full-stack|full stack|game|product|project|program|devops|data|biomedical|test|automation)\b/i);
+  if (roleStart <= 2) return null;
+
+  const possibleName = cleanPreviewText(line.slice(0, roleStart));
+  const possibleTitle = cleanPreviewText(line.slice(roleStart));
+  if (!possibleName || !possibleTitle) return null;
+  if (!hasPreviewRoleKeyword(possibleTitle)) return null;
+  if (!isLikelyPreviewPersonName(possibleName)) return null;
+
+  return { fullName: possibleName, titleLine: possibleTitle };
+}
+
+function derivePreviewProfileFromResumeText(resumeTextRaw: string, existingProfile?: Record<string, unknown> | null) {
+  const lines = normalizeResumeText(resumeTextRaw)
+    .split("\n")
+    .map((line) => cleanPreviewText(line))
+    .filter(Boolean)
+    .slice(0, 18);
+
+  const existing = existingProfile || {};
+  const joined = lines.join(" \n ");
+  const email = cleanPreviewText(existing.email) || joined.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+  const phone = cleanPreviewText(existing.phone) || joined.match(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/)?.[0] || "";
+  const linkedin = cleanPreviewText(existing.linkedin) || joined.match(/https?:\/\/(?:www\.)?linkedin\.com\/[^\s]+|linkedin\.com\/[^\s]+|\bLinkedIn\b/i)?.[0] || "";
+
+  let fullName = cleanPreviewText(existing.fullName);
+  let titleLine = cleanPreviewText(existing.titleLine);
+  let locationLine = cleanPreviewText(existing.locationLine);
+  let summary = cleanPreviewText(existing.summary);
+
+  if (!fullName || looksLikeBadPreviewProfileName(fullName)) {
+    fullName = "";
+    for (const line of lines) {
+      const split = splitHeaderNameAndTitle(line);
+      if (split) {
+        fullName = split.fullName;
+        if (!titleLine || looksLikeBadPreviewProfileName(titleLine)) titleLine = split.titleLine;
+        break;
+      }
+      if (isLikelyPreviewPersonName(line)) {
+        fullName = line;
+        break;
+      }
+    }
+  }
+
+  if (!titleLine || looksLikeBadPreviewProfileName(titleLine)) {
+    titleLine = "";
+    for (const line of lines) {
+      if (line === fullName) continue;
+      if (looksLikeContactOrReferenceLine(line)) continue;
+      if (looksLikeBadPreviewProfileName(line)) continue;
+      if (hasPreviewRoleKeyword(line) && line.length <= 90) {
+        titleLine = line;
+        break;
+      }
+    }
+  }
+
+  if (!summary) {
+    const sloganIndex = lines.findIndex((line) => /intricate|unorthodox|moldable/i.test(line));
+    const summaryCandidate = lines.find((line, index) => {
+      if (sloganIndex >= 0 && index <= sloganIndex) return false;
+      if (line === fullName || line === titleLine) return false;
+      if (looksLikeContactOrReferenceLine(line)) return false;
+      if (looksLikePreviewExperienceBoundary(line) || looksLikePreviewSkillCategoryLine(line)) return false;
+      return line.split(/\s+/).length >= 8 && /[.!?]$/.test(line);
+    });
+    summary = summaryCandidate || "";
+  }
+
+  if (looksLikeBadPreviewLocationLine(locationLine)) locationLine = "";
+
+  return { fullName, titleLine, locationLine, email, phone, linkedin, portfolio: cleanPreviewText(existing.portfolio), summary };
+}
+
+function parseExplicitPreviewJobHeaderLine(lineRaw: string) {
+  const line = cleanPreviewText(lineRaw);
+  if (!line || looksLikePreviewNoiseLine(line)) return null;
+  if (looksLikeContactOrReferenceLine(line)) return null;
+  if (looksLikePreviewSkillCategoryLine(line)) return null;
+  if (/^[•●◦▪▫·*]\s+/.test(line)) return null;
+
+  const date = extractPreviewDateRangeToken(line);
+  if (!date) return null;
+
+  const beforeDate = cleanPreviewText(line.slice(0, date.index).replace(/[|,•\-–—]+\s*$/g, ""));
+  if (!beforeDate) return null;
+
+  let company = "";
+  let title = "";
+
+  if (beforeDate.includes("|")) {
+    const parts = beforeDate.split(/\s*\|\s*/).map((part) => cleanPreviewText(part)).filter(Boolean);
+    if (parts.length >= 2) {
+      const first = parts[0];
+      const second = parts[1];
+      if (hasPreviewRoleKeyword(first) && !hasPreviewRoleKeyword(second)) {
+        title = first;
+        company = parts.slice(1).join(" | ");
+      } else if (!hasPreviewRoleKeyword(first) && hasPreviewRoleKeyword(second)) {
+        company = first;
+        title = parts.slice(1).join(" | ");
+      } else {
+        title = first;
+        company = parts.slice(1).join(" | ");
+      }
+    }
+  } else {
+    const dash = beforeDate.match(/^(.{2,100}?)\s+(?:-|–|—)\s+(.{2,140})$/);
+    if (dash) {
+      const left = cleanPreviewText(dash[1]);
+      const right = cleanPreviewText(dash[2]);
+      if (hasPreviewRoleKeyword(left) && !hasPreviewRoleKeyword(right)) {
+        title = left;
+        company = right;
+      } else {
+        company = left;
+        title = right;
+      }
+    }
+  }
+
+  company = cleanPreviewText(company);
+  title = cleanPreviewText(title);
+  if (!company || !title || !hasPreviewRoleKeyword(title)) return null;
+  if (looksLikePreviewSkillList(company) || looksLikePreviewSkillList(title)) return null;
+  if (looksLikePreviewBrokenJobHeader({ company, title, dates: date.dates, location: "", bullets: [] })) return null;
+
+  return { company, title, dates: date.dates };
+}
+
+function buildExperienceJobsFromExplicitResumeLines(experienceText: string) {
+  const lines = normalizeResumeText(experienceText)
+    .split("\n")
+    .map((line) => cleanPreviewText(line))
+    .filter(Boolean);
+
+  const jobs: Array<{ id: string; company: string; title: string; dates: string; location: string; bullets: string[] }> = [];
+  let current: { id: string; company: string; title: string; dates: string; location: string; bullets: string[] } | null = null;
+
+  const pushCurrent = () => {
+    if (!current) return;
+    const section = {
+      ...current,
+      bullets: uniqueCleanPreviewItems(current.bullets, 40)
+        .map((bullet) => cleanPreviewBullet(bullet))
+        .filter((bullet) => bullet.length >= 10)
+        .filter((bullet) => !looksLikePreviewBulletNoise(bullet))
+        .filter((bullet) => !looksLikePreviewSkillList(bullet)),
+    };
+    if ((section.company || section.title || section.bullets.length) && !shouldDropPreviewSection(section)) {
+      jobs.push(section);
+    }
+    current = null;
+  };
+
+  for (const line of lines) {
+    if (/^(?:professional experience|work experience|job experience|employment history|career history)$/i.test(line)) continue;
+    if (/^(?:education|education & certifications|certifications?|certificates|projects|references)\b/i.test(line)) break;
+    if (/^early career\b/i.test(line)) continue;
+
+    const header = parseExplicitPreviewJobHeaderLine(line);
+    if (header) {
+      pushCurrent();
+      current = {
+        id: `position_${jobs.length + 1}`,
+        company: header.company,
+        title: header.title,
+        dates: header.dates,
+        location: "",
+        bullets: [],
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    if (looksLikeContactOrReferenceLine(line)) continue;
+    if (looksLikePreviewSkillCategoryLine(line)) continue;
+    if (/^tools\s*:/i.test(line)) continue;
+
+    const bullet = cleanPreviewBullet(line);
+    if (!bullet || bullet.length < 10) continue;
+    if (looksLikePreviewSkillList(bullet)) continue;
+    current.bullets.push(bullet);
+  }
+
+  pushCurrent();
+  return jobs;
 }
 
 function buildExperienceJobsForPreviewFromText(experienceText: string) {
@@ -2860,10 +3091,10 @@ export async function POST(req: Request) {
     const normalizeJobs = (jobsIn: any[]) =>
       (Array.isArray(jobsIn) ? jobsIn : [])
         .map((j, index) => {
-          const bullets = mergeWrappedBulletLines(
-            uniqueCleanPreviewItems(Array.isArray(j?.bullets) ? j.bullets : [], 40)
-              .filter((bullet) => !looksLikePreviewBulletNoise(bullet))
-          );
+          const bullets = uniqueCleanPreviewItems(Array.isArray(j?.bullets) ? j.bullets : [], 40)
+            .map((bullet) => cleanPreviewBullet(bullet))
+            .filter((bullet) => !looksLikePreviewBulletNoise(bullet))
+            .filter((bullet) => !looksLikePreviewSkillList(bullet));
           const company = cleanPreviewText(j?.company);
           const title = cleanPreviewText(j?.title);
 
@@ -2886,14 +3117,23 @@ export async function POST(req: Request) {
         : mergeWrappedBulletLines(uniqueCleanPreviewItems(parserCompatibility?.bullets || [], 80))
     );
 
+    const explicitPreviewJobs = normalizeJobs(buildExperienceJobsFromExplicitResumeLines(experienceSlice.experienceText || bulletSourceText));
     const textPreviewJobs = normalizeJobs(buildExperienceJobsForPreviewFromText(experienceSlice.experienceText || bulletSourceText));
+    const parserPreviewJobs = normalizePreviewJobSections(parserJobs);
     const selectedPreviewJobs = selectBestPreviewJobSections([
+      { name: "explicit", jobs: explicitPreviewJobs },
       { name: "text", jobs: textPreviewJobs },
       { name: "parser", jobs: parserJobs },
     ]);
+    const selectedPreviewDatedCount = selectedPreviewJobs.filter((job) => !!cleanPreviewText(job?.dates)).length;
+    const parserPreviewDatedCount = parserPreviewJobs.filter((job) => !!cleanPreviewText(job?.dates)).length;
+    const shouldPreferParserPreview =
+      parserPreviewJobs.length > selectedPreviewJobs.length &&
+      parserPreviewDatedCount >= selectedPreviewDatedCount + 2;
+    const resolvedPreviewJobs = shouldPreferParserPreview ? parserPreviewJobs : selectedPreviewJobs;
 
-    if (selectedPreviewJobs.length) {
-      experienceJobs = selectedPreviewJobs;
+    if (resolvedPreviewJobs.length) {
+      experienceJobs = resolvedPreviewJobs;
       const selectedFlat = flattenFromJobs(experienceJobs);
       const selectedBullets = filterBadBullets(selectedFlat.outBullets);
       if (selectedBullets.length) {
@@ -3206,7 +3446,24 @@ export async function POST(req: Request) {
     });
 
     const responseExperienceJobs = sanitizeExperienceJobsForResponse(experienceJobs);
-    const responseStructuredPreviewBase = sanitizeStructuredPreviewSnapshotForResponse(parserStructuredPreview);
+    const recoveredResponseProfile = derivePreviewProfileFromResumeText(resumeText, parserStructuredPreview?.profile || null);
+    const responseStructuredPreviewBaseRaw = sanitizeStructuredPreviewSnapshotForResponse(parserStructuredPreview);
+    const responseStructuredPreviewBase = responseStructuredPreviewBaseRaw
+      ? {
+          ...responseStructuredPreviewBaseRaw,
+          profile: sanitizePreviewProfileForResponse({
+            ...responseStructuredPreviewBaseRaw.profile,
+            fullName: responseStructuredPreviewBaseRaw.profile.fullName || recoveredResponseProfile.fullName,
+            titleLine: responseStructuredPreviewBaseRaw.profile.titleLine || recoveredResponseProfile.titleLine,
+            locationLine: responseStructuredPreviewBaseRaw.profile.locationLine || recoveredResponseProfile.locationLine,
+            email: responseStructuredPreviewBaseRaw.profile.email || recoveredResponseProfile.email,
+            phone: responseStructuredPreviewBaseRaw.profile.phone || recoveredResponseProfile.phone,
+            linkedin: responseStructuredPreviewBaseRaw.profile.linkedin || recoveredResponseProfile.linkedin,
+            portfolio: responseStructuredPreviewBaseRaw.profile.portfolio || recoveredResponseProfile.portfolio,
+            summary: responseStructuredPreviewBaseRaw.profile.summary || recoveredResponseProfile.summary,
+          }),
+        }
+      : null;
     const responseStructuredPreview = responseStructuredPreviewBase
       ? {
           ...responseStructuredPreviewBase,
@@ -3217,16 +3474,9 @@ export async function POST(req: Request) {
             version: 1 as const,
             targetPosition: cleanPreviewText(targetPosition),
             template: "modern",
-            profile: {
-              fullName: "",
+            profile: derivePreviewProfileFromResumeText(resumeText, {
               titleLine: responseExperienceJobs[0]?.title || "",
-              locationLine: "",
-              email: "",
-              phone: "",
-              linkedin: "",
-              portfolio: "",
-              summary: "",
-            },
+            }),
             sections: responseExperienceJobs,
             educationItems: [] as string[],
             expertiseItems: [] as string[],
@@ -3296,11 +3546,14 @@ export async function POST(req: Request) {
         structuredPreviewReturned: !!parserStructuredPreview,
         previewSourceDebug: {
           parserJobsCount: parserJobs.length,
+          explicitPreviewJobsCount: explicitPreviewJobs.length,
           textPreviewJobsCount: textPreviewJobs.length,
           finalResponseJobsCount: responseExperienceJobs.length,
           parserJobHeaders: parserJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
+          explicitJobHeaders: explicitPreviewJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
           textJobHeaders: textPreviewJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
           finalJobHeaders: responseExperienceJobs.slice(0, 12).map((job) => [job.company, job.title, job.dates].filter(Boolean).join(" | ")),
+          finalJobBulletCounts: responseExperienceJobs.slice(0, 12).map((job) => Array.isArray(job.bullets) ? job.bullets.length : 0),
           structuredProfile: responseStructuredPreview?.profile ?? null,
           structuredExpertiseItems: responseStructuredPreview?.expertiseItems ?? [],
         },
