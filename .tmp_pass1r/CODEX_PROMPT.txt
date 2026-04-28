@@ -1,0 +1,19 @@
+Apply JOB-141 Pass 1R.
+
+Replace these files from the TXT pack:
+- src/app/api/analyze/route.ts
+- src/lib/resumeProfiles/structuredResume.ts
+- src/components/ResumeMvp/index.tsx
+
+Intent:
+Preserve the Pass 1Q ATest.docx fixes, while correcting OG Resume.pdf where the final response dropped from 7 parser-detected jobs to 3 final jobs.
+
+After applying, run:
+- npm run validate:resume-parser
+- npm run validate:resume-parser:corpus -- C:\projects\resume-parser-fixtures-pdf-100
+- npx tsc --noEmit
+- npm run lint -- src/app/api/analyze/route.ts src/lib/resumeProfiles/structuredResume.ts src/components/ResumeMvp/index.tsx
+
+Manual acceptance:
+- ATest.docx remains passing.
+- OG Resume.pdf preserves all real dated jobs and does not reintroduce contact/skill/sentence leaks or bogus extra rows.

@@ -1,0 +1,12 @@
+JOB-141 Pass 1R — OG Dated Job Preservation Rescue
+
+Files included:
+- src/app/api/analyze/route.ts.txt
+- src/lib/resumeProfiles/structuredResume.ts.txt
+- src/components/ResumeMvp/index.tsx.txt
+- IMPLEMENTATION_NOTES.txt
+- CODEX_PROMPT.txt
+- MANIFEST.txt
+
+Primary intent:
+Keep the Pass 1Q ATest.docx win, while fixing OG Resume.pdf where parser/debug shows 7 jobs found but final response cuts down to 3.

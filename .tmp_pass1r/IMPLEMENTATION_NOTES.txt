@@ -1,0 +1,54 @@
+JOB-141 Pass 1R — OG Dated Job Preservation Rescue
+
+Context:
+Pass 1Q fixed ATest.docx acceptance, but OG Resume.pdf still failed real job preservation. The debug payload showed:
+- parserJobsCount: 7
+- finalResponseJobsCount: 3
+- the three surviving jobs came from a smaller text-derived/normalized set
+
+Root cause targeted here:
+OG Resume.pdf uses a common PDF text layout:
+
+Company, Title • Tech Stack
+Date Range
+• bullet
+• bullet
+
+The previous explicit-line cutover only handled dated headers on the same line, so these separated company/title + next-line date headers were missed. The selector could then prefer or sanitize down to a smaller job set.
+
+Changes:
+1. Added parsing for undated comma headers followed by a date line:
+   - Prodigy Education, Software Engineer • C#, TypeScript • Unity
+   - Feb 2025 - Jan 2026
+
+2. Strips tech stack from the visible title when it is separated by bullet/pipe delimiters:
+   - Software Engineer • C#, TypeScript • Unity -> Software Engineer
+
+3. Uses wrapped-line merging in the explicit parser path so PDF line wraps do not become fake separate bullets.
+
+4. Adds a conservative parser-preservation rule:
+   If parser output has materially more complete dated jobs than non-parser candidates, keep parser sections instead of letting a smaller text-derived source win.
+
+Files changed:
+- src/app/api/analyze/route.ts
+
+Files included unchanged from 1Q for safe replacement consistency:
+- src/lib/resumeProfiles/structuredResume.ts
+- src/components/ResumeMvp/index.tsx
+
+Suggested validation:
+- npm run validate:resume-parser
+- npm run validate:resume-parser:corpus -- C:\projects\resume-parser-fixtures-pdf-100
+- npx tsc --noEmit
+- npm run lint -- src/app/api/analyze/route.ts src/lib/resumeProfiles/structuredResume.ts src/components/ResumeMvp/index.tsx
+
+Manual retest:
+- ATest.docx should remain fully passing.
+- OG Resume.pdf should preserve all dated jobs, including Gatarn Games, Imagine Communications, McMaster Children’s Hospital, Viral Staging, and Evertz.
+
+If OG still fails, capture debug.previewSourceDebug again, especially:
+- parserJobHeaders
+- explicitJobHeaders
+- textJobHeaders
+- finalJobHeaders
+- finalJobBulletCounts
