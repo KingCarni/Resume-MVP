@@ -86,7 +86,9 @@ type ResumeProfileHydrationItem = {
   rawText?: string | null;
   sourceDocumentId?: string | null;
   sourceDocument?: ResumeDocumentHydrationItem | null;
+  normalizedSkills?: string[];
   normalizedTitles?: string[];
+  keywords?: string[];
 };
 
 type WorkflowChecklistItem = {
@@ -625,20 +627,29 @@ function openHtmlPreviewInNewWindow(title: string, html: string) {
   }, 60000);
 }
 
-function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+function HtmlDocPreview({ html, footer, loading }: { html: string; footer?: React.ReactNode; loading?: boolean }) {
   return (
     <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div id="resume-output" className="text-sm font-extrabold text-black/80 dark:text-slate-100/85">Document Preview (HTML)</div>
+        {loading ? (
+          <div className="text-xs font-extrabold text-black/60 dark:text-slate-100/70">Loading saved resume…</div>
+        ) : null}
       </div>
 
       <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
-        <iframe
-          title="resume-preview"
-          className="block h-[1180px] w-full min-w-0 border-0"
-          sandbox="allow-same-origin"
-          srcDoc={html || "<!doctype html><html><body></body></html>"}
-        />
+        {loading && !html.trim() ? (
+          <div className="flex h-[1180px] w-full min-w-0 items-center justify-center text-sm font-semibold text-black/60 dark:text-slate-100/70">
+            Restoring your saved resume…
+          </div>
+        ) : (
+          <iframe
+            title="resume-preview"
+            className="block h-[1180px] w-full min-w-0 border-0"
+            sandbox="allow-same-origin"
+            srcDoc={html || "<!doctype html><html><body></body></html>"}
+          />
+        )}
       </div>
 
       {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
@@ -3213,6 +3224,18 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProfileSyncSignatureRef = useRef("");
   const latestResumeHydratedRef = useRef(false);
+  const [savedResumeRestored, setSavedResumeRestored] = useState(false);
+  const [hydratingSavedResume, setHydratingSavedResume] = useState(false);
+  // Guards for saved-resume hydration: only the newest request may apply state,
+  // nothing may be synced back before hydration has settled, and the first
+  // post-hydration signature is seeded so a plain visit never triggers a write.
+  const hydrationRequestRef = useRef(0);
+  // Match metadata of the restored profile. Edits made without a fresh analysis
+  // are merged into it instead of narrowing what is already saved.
+  const restoredProfileMetaRef = useRef<{ skills: string[]; titles: string[]; keywords: string[] } | null>(null);
+  const [hydrationSettled, setHydrationSettled] = useState(false);
+  const syncRequestRef = useRef(0);
+  const syncSignatureSeedPendingRef = useRef(false);
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const [latestResumeMeta, setLatestResumeMeta] = useState<{ title: string; createdAt: string } | null>(null);
@@ -3344,6 +3367,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       if (status !== "authenticated") return null;
       if (!options?.force && latestResumeHydratedRef.current) return null;
 
+      const requestId = ++hydrationRequestRef.current;
+      const isStaleRequest = () => hydrationRequestRef.current !== requestId;
+
       const preferredProfileId = String(options?.preferredProfileId || "").trim();
 
       if (preferredProfileId) {
@@ -3366,6 +3392,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
             const htmlText = String(preferredDocument?.html || "").trim()
               ? htmlToPlainText(String(preferredDocument?.html || ""))
               : "";
+            if (isStaleRequest()) return null;
             const structuredApplied = applyStructuredSnapshot(preferredDocument?.structuredData || null);
             const structuredText = structuredApplied && preferredDocument?.structuredData
               ? structuredSnapshotToResumeText(preferredDocument.structuredData)
@@ -3379,6 +3406,15 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
             if (preferredText || structuredApplied) {
               latestResumeHydratedRef.current = true;
+              if (structuredApplied) {
+                setSavedResumeRestored(true);
+                syncSignatureSeedPendingRef.current = true;
+              }
+              restoredProfileMetaRef.current = {
+                skills: Array.isArray(matchedProfile?.normalizedSkills) ? matchedProfile.normalizedSkills : [],
+                titles: Array.isArray(matchedProfile?.normalizedTitles) ? matchedProfile.normalizedTitles : [],
+                keywords: Array.isArray(matchedProfile?.keywords) ? matchedProfile.keywords : [],
+              };
               if (preferredText) {
                 setResumeText(preferredText);
               }
@@ -3425,6 +3461,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
         const latest = payload.item;
         const nextText = String(latest.text || "").trim();
+        if (isStaleRequest()) return null;
         const structuredApplied = applyStructuredSnapshot(latest.structuredData || null);
         const structuredText = structuredApplied && latest.structuredData
           ? structuredSnapshotToResumeText(latest.structuredData)
@@ -3442,6 +3479,10 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         if (!preferredText && !structuredApplied) return null;
 
         latestResumeHydratedRef.current = true;
+        if (structuredApplied) {
+          setSavedResumeRestored(true);
+          syncSignatureSeedPendingRef.current = true;
+        }
 
         if (preferredText) {
           setResumeText(preferredText);
@@ -3476,7 +3517,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
   useEffect(() => {
     if (status !== "authenticated" || latestResumeHydratedRef.current) return;
-    if (file || resumeText.trim() || analysis) return;
+    // Content is already in the editor, so there is nothing to restore and
+    // saving must not stay blocked.
+    if (file || resumeText.trim() || analysis) {
+      setHydrationSettled(true);
+      return;
+    }
 
     let cancelled = false;
 
@@ -3487,8 +3533,14 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
         return String(searchParams.get("resumeProfileId") || stored).trim();
       })();
 
-      const hydrated = await hydrateLatestSavedResume({ preferredProfileId });
-      if (!hydrated || cancelled) return;
+      setHydratingSavedResume(true);
+      try {
+        const hydrated = await hydrateLatestSavedResume({ preferredProfileId });
+        if (!hydrated || cancelled) return;
+      } finally {
+        setHydrationSettled(true);
+        setHydratingSavedResume(false);
+      }
     }
 
     void hydrateLatestResume();
@@ -5798,12 +5850,15 @@ if (typeof planIndex === "number") {
       profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
     ).trim();
 
+    const savedMeta = analysis ? null : restoredProfileMetaRef.current;
+
     const nextTitles = uniqueTerms(
       [
         profile.titleLine,
         targetPosition,
         analysis?.ats?.detectedResumeRole?.roleName,
         analysis?.ats?.targetRole?.roleName,
+        ...(savedMeta?.titles ?? []),
       ]
         .map((value) => String(value || "").trim())
         .filter(Boolean)
@@ -5812,6 +5867,7 @@ if (typeof planIndex === "number") {
     const nextKeywords = uniqueTerms([
       ...((analysis?.presentKeywords ?? []) as string[]),
       ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...(savedMeta?.keywords ?? []),
       ...editorExpertiseItems,
       ...editorMetaGames,
       ...editorMetaMetrics,
@@ -5820,6 +5876,7 @@ if (typeof planIndex === "number") {
     const nextSkills = uniqueTerms([
       ...((analysis?.presentKeywords ?? []) as string[]),
       ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...(savedMeta?.skills ?? []),
       ...editorExpertiseItems,
     ]).slice(0, 60);
 
@@ -5831,6 +5888,7 @@ if (typeof planIndex === "number") {
       skills: nextSkills,
       titles: nextTitles,
       keywords: nextKeywords,
+      structured: structuredResumeSnapshot,
     });
   }, [
     resumeText,
@@ -5844,7 +5902,17 @@ if (typeof planIndex === "number") {
     editorMetaGames,
     editorMetaMetrics,
     resumeTemplate,
+    structuredResumeSnapshot,
   ]);
+
+  // Seed the sync signature with the restored state so simply opening the
+  // compiler never writes back; the next real edit changes it and saves.
+  useEffect(() => {
+    if (!syncSignatureSeedPendingRef.current) return;
+    if (!resumeProfileSyncSignature) return;
+    syncSignatureSeedPendingRef.current = false;
+    lastProfileSyncSignatureRef.current = resumeProfileSyncSignature;
+  }, [resumeProfileSyncSignature]);
 
   useEffect(() => {
     setSelectedBulletIdx((prev) => {
@@ -5855,7 +5923,9 @@ if (typeof planIndex === "number") {
 
 
 const resumeHtml = useMemo(() => {
-    if (!analysis || !liveBulletRows.length) return "";
+    // A restored resume has no in-memory analysis, but its editor state is
+    // complete, so the preview must still compile from it.
+    if ((!analysis && !savedResumeRestored) || !liveBulletRows.length) return "";
     return buildResumeHtml({
       template: resumeTemplate,
       profile,
@@ -5878,6 +5948,7 @@ const resumeHtml = useMemo(() => {
     });
   }, [
     analysis,
+    savedResumeRestored,
     liveBulletRows.length,
     resumeTemplate,
     profile,
@@ -5938,7 +6009,9 @@ const resumeHtml = useMemo(() => {
 
 
 const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean }) => {
-  if (status !== "authenticated" || !analysis) return null;
+  if (status !== "authenticated") return null;
+  if (!analysis && !savedResumeRestored) return null;
+  if (!hydrationSettled && !latestResumeHydratedRef.current) return null;
   const forceSync = Boolean(options?.force);
 
   setProfileSyncSaving(true);
@@ -5965,12 +6038,15 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
 
   const nextSummary = String(profile.summary || analysis?.autoResumeProfile?.title || "").trim();
 
+  const savedMeta = analysis ? null : restoredProfileMetaRef.current;
+
   const nextTitles = uniqueTerms(
     [
       profile.titleLine,
       analysis?.ats?.detectedResumeRole?.roleName,
       analysis?.ats?.targetRole?.roleName,
       targetPosition,
+      ...(savedMeta?.titles ?? []),
     ]
       .map((value) => String(value || "").trim())
       .filter(Boolean)
@@ -5979,6 +6055,7 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
   const nextKeywords = uniqueTerms([
     ...((analysis?.presentKeywords ?? []) as string[]),
     ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...(savedMeta?.keywords ?? []),
     ...editorExpertiseItems,
     ...editorMetaGames,
     ...editorMetaMetrics,
@@ -5987,6 +6064,7 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
   const nextSkills = uniqueTerms([
     ...((analysis?.presentKeywords ?? []) as string[]),
     ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...(savedMeta?.skills ?? []),
     ...editorExpertiseItems,
   ]).slice(0, 60);
 
@@ -5996,6 +6074,8 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
     setProfileSyncSaving(false);
     return activeResumeProfileId || null;
   }
+
+  const syncRequestId = ++syncRequestRef.current;
 
   try {
     const response = await fetch("/api/resume-profiles/sync", {
@@ -6019,6 +6099,10 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
     const payload = await parseApiResponse(response);
     if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
 
+    // A newer save started while this one was in flight: do not let the older
+    // response record its signature over the newer edits.
+    if (syncRequestRef.current !== syncRequestId) return null;
+
     lastProfileSyncSignatureRef.current = signature;
 
     const syncedProfileId = String(payload?.item?.id || "").trim();
@@ -6036,6 +6120,8 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
 }, [
   status,
   analysis,
+  savedResumeRestored,
+  hydrationSettled,
   searchParamsKey,
   applyPackBundle,
   resumeText,
@@ -6095,7 +6181,8 @@ const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean })
   }, [syncResumeProfileDraft, router, analysis, searchParamsKey, applyPackBundle, loadNewestResumeProfileId]);
 
 useEffect(() => {
-  if (status !== "authenticated" || !analysis || !atsScoreInitialized) return;
+  if (status !== "authenticated") return;
+  if (analysis ? !atsScoreInitialized : !savedResumeRestored) return;
 
   if (profileSyncTimeoutRef.current) {
     clearTimeout(profileSyncTimeoutRef.current);
@@ -6111,7 +6198,7 @@ useEffect(() => {
       profileSyncTimeoutRef.current = null;
     }
   };
-}, [status, analysis, atsScoreInitialized, syncResumeProfileDraft]);
+}, [status, analysis, atsScoreInitialized, savedResumeRestored, syncResumeProfileDraft]);
 
   const handleRefreshAtsScore = useCallback(async () => {
     setError(null);
@@ -6716,6 +6803,7 @@ useEffect(() => {
         <section className="min-w-0">
           <HtmlDocPreview
             html={liveResumeHtml}
+            loading={hydratingSavedResume}
             footer={
               isSetupMode ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -7344,7 +7432,7 @@ useEffect(() => {
       </section>
 
       {/* ✅ BULLETS PANEL */}
-      {analysis && liveBulletRows.length ? (
+      {(analysis || savedResumeRestored) && liveBulletRows.length ? (
         <section id="bullets-panel" className="col-span-full mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>

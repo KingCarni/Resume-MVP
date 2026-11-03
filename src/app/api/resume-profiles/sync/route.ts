@@ -87,21 +87,34 @@ export async function POST(request: NextRequest) {
   const structuredDataValue: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput = structuredData
     ? (structuredData as Prisma.InputJsonValue)
     : Prisma.JsonNull;
-  const existingProfile = await prisma.resumeProfile.findFirst({
-    where: profileId ? { userId, id: profileId } : { userId },
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      summary: true,
-      sourceDocumentId: true,
-      normalizedSkills: true,
-      normalizedTitles: true,
-      keywords: true,
-      yearsExperience: true,
-      seniority: true,
-    },
-  });
+  const profileSelect = {
+    id: true,
+    title: true,
+    summary: true,
+    sourceDocumentId: true,
+    normalizedSkills: true,
+    normalizedTitles: true,
+    keywords: true,
+    yearsExperience: true,
+    seniority: true,
+  } as const;
+
+  const requestedProfile = profileId
+    ? await prisma.resumeProfile.findFirst({
+        where: { userId, id: profileId },
+        select: profileSelect,
+      })
+    : null;
+
+  // A stale or foreign profile id must never create a second profile for a user
+  // who already has one; fall back to their most recently updated profile.
+  const existingProfile =
+    requestedProfile ??
+    (await prisma.resumeProfile.findFirst({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      select: profileSelect,
+    }));
 
   const existingSourceDocument = existingProfile?.sourceDocumentId
     ? await prisma.document.findFirst({
