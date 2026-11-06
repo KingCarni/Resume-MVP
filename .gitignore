@@ -44,3 +44,8 @@ next-env.d.ts
 
 .vercel
 .env*.local
+# Local AI/QA scratch packs - never commit these
+/.codex-temp/
+/.tmp_job141_rollback/
+/.tmp_pass1r/
+/job90-check.diff

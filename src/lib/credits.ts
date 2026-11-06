@@ -89,7 +89,7 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
 
   if (!absCost) {
     const balance = await getCreditBalance(userId);
-    return { ok: true as const, balance };
+    return { ok: true as const, balance, alreadyApplied: false as const };
   }
 
   // Best-effort idempotency: if a ledger entry already exists for this ref, do nothing.
@@ -97,7 +97,7 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
     const existing = await findExistingLedgerByRef({ userId, ref: refKey, deltaSign: "neg" });
     if (existing) {
       const balance = await getCreditBalance(userId);
-      return { ok: true as const, balance };
+      return { ok: true as const, balance, alreadyApplied: true as const };
     }
   }
 
@@ -110,7 +110,7 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
     const balance = agg._sum.delta ?? 0;
 
     if (balance < absCost) {
-      return { ok: false as const, balance };
+      return { ok: false as const, balance, alreadyApplied: false as const };
     }
 
     // Write ledger + event
@@ -138,7 +138,7 @@ export async function chargeCredits(args: ChargeCreditsArgs) {
       },
     });
 
-    return { ok: true as const, balance: balance - absCost };
+    return { ok: true as const, balance: balance - absCost, alreadyApplied: false as const };
   });
 
   return result;

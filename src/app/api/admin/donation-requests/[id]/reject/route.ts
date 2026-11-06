@@ -1,14 +1,13 @@
-// src/app/api/admin/donation-requests/[id]/reject/route.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { rejectDonationRequest } from "@/lib/donations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ADMIN_EMAILS = ["gitajob.com@gmail.com"]; // allowlist
+const ADMIN_EMAILS = ["gitajob.com@gmail.com"];
 
 function jsonOk(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
@@ -35,7 +34,7 @@ function normalizeText(s: unknown, max = 2000) {
 
 export async function POST(
   req: NextRequest,
-  ctx: { params: Promise<{ id: string }> } // ✅ Next expects Promise here
+  ctx: { params: Promise<{ id: string }> },
 ) {
   const session = await getServerSession(authOptions);
   if (!session) return jsonOk({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -53,37 +52,23 @@ export async function POST(
   }
 
   const reviewNote = normalizeText(body?.reviewNote, 2000);
+  const adminEmail = String(session.user?.email ?? "").trim().toLowerCase();
 
-  const existing = await prisma.donationRequest.findUnique({
-    where: { id: requestId },
-    select: { id: true, status: true },
+  const result = await rejectDonationRequest({
+    requestId,
+    adminEmail,
+    reviewNote,
   });
 
-  if (!existing) return jsonOk({ ok: false, error: "Not found" }, { status: 404 });
-  if (existing.status !== "pending") {
-    return jsonOk(
-      { ok: false, error: `Cannot reject a request in status '${existing.status}'` },
-      { status: 409 }
-    );
+  if (!result.ok) {
+    if (result.code === "NOT_FOUND") return jsonOk({ ok: false, error: result.message }, { status: 404 });
+    if (result.code === "PARTIAL_SIDE_EFFECTS") return jsonOk({ ok: false, error: result.message }, { status: 409 });
+    return jsonOk({ ok: false, error: result.message }, { status: 409 });
   }
 
-  const updated = await prisma.donationRequest.update({
-    where: { id: requestId },
-    data: {
-      status: "rejected",
-      reviewNote: reviewNote || null,
-    },
-    select: {
-      id: true,
-      userId: true,
-      requestedCredits: true,
-      reason: true,
-      status: true,
-      reviewNote: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+  return jsonOk({
+    ok: true,
+    alreadyProcessed: result.alreadyProcessed,
+    request: result.request,
   });
-
-  return jsonOk({ ok: true, request: updated });
 }

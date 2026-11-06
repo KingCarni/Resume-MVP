@@ -7,14 +7,14 @@
 --------------------------------------------- */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #07111f;
+  --foreground: #e6eef8;
 }
 
 /* When user explicitly chooses Dark (html.dark) */
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #07111f;
+  --foreground: #e6eef8;
 }
 
 /* When theme is set to "system":
@@ -23,15 +23,15 @@
    - .dark above still wins when applied */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #07111f;
+    --foreground: #e6eef8;
   }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -47,7 +47,7 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
 }
 /* Make common "muted" label text readable in light mode */
 .text-black\/70 { color: rgb(17 24 39 / 0.80) !important; } /* slate-900 @ 80% */
@@ -57,15 +57,54 @@ body {
 .dark .text-black\/70 { color: rgb(229 231 235 / 0.85) !important; } /* gray-200 */
 .dark .text-black\/60 { color: rgb(229 231 235 / 0.75) !important; } /* gray-200 */
 /* Default readable text */
-body {
-  color: #111827; /* dark gray instead of pure black */
-}
-
-/* Dark mode readable text */
-.dark body {
-  color: #e5e7eb;
-}
-
 input, textarea, select {
   color: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display), var(--font-body), Arial, Helvetica, sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.16), transparent 32%),
+    radial-gradient(circle at 78% 12%, rgba(59, 130, 246, 0.18), transparent 24%),
+    linear-gradient(180deg, #08111f 0%, #091423 42%, #050b15 100%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+  background-size: 100% 72px, 72px 100%;
+  mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32), transparent 88%);
+}
+
+.shell-wrap {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.shell-panel {
+  @apply rounded-[2rem] border border-white/10 bg-slate-950/70 shadow-[0_28px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl;
+}
+
+.shell-nav-link {
+  @apply rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold tracking-[0.18em] text-slate-200 uppercase transition hover:border-cyan-400/40 hover:bg-cyan-400/10 hover:text-cyan-100;
+}
+
+.shell-primary-btn {
+  @apply inline-flex items-center justify-center rounded-full bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300;
+}
+
+.shell-secondary-btn {
+  @apply inline-flex items-center justify-center rounded-full border border-white/12 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/40 hover:bg-cyan-400/10;
 }

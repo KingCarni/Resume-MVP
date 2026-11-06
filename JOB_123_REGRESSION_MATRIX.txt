@@ -1,0 +1,105 @@
+Git-a-Job - JOB-123 Regression Matrix
+
+Purpose
+Confirm the jobs -> resume -> cover letter flow is stable enough to ship without hidden breakage.
+
+Core success loop
+1. User selects or creates a resume profile
+2. User browses /jobs
+3. User opens /jobs/[id]
+4. User understands fit + likely gaps
+5. User launches Tailor Resume / Generate Cover Letter / Tailor Both
+6. User completes a paid or free downstream action without stale context
+
+Test matrix
+
+A. Jobs feed
+- Loads with signed-in user and valid resume profile
+- Loads with no selected resume profile and shows safe guidance
+- Sort = match
+- Sort = newest
+- Sort = salary
+- Search text filter
+- Remote filter
+- Location filter
+- Seniority filter
+- Min salary filter
+- Pagination next/prev
+- Hidden jobs excluded
+- Saved jobs reflect state
+
+B. Job detail
+- Open from feed card
+- Open from saved jobs
+- Match panel renders
+- Likely gaps renders
+- Saved state consistent with feed
+- Home / header actions stable
+- Buy Credits CTA works
+
+C. Handoffs
+- Tailor Resume from job detail
+- Generate Cover Letter from job detail
+- Tailor Both / Apply Pack from job detail
+- Tailor Resume from saved jobs
+- Generate Cover Letter from saved jobs
+- Prefilled job description arrives correctly
+- resumeProfileId preserved when available
+- jobId preserved when available
+- company/title metadata preserved where supported
+
+D. Resume flow
+- Job Board handoff prefill copy is correct
+- Job flow auto-fills saved profile data where available
+- Upload area shows Current: User Profile when using synced profile
+- Credit-pack checklist only appears in credit-pack flow
+- Non-credit-pack flow does not force checklist
+- Finalize Resume CTA wording correct
+
+E. Cover letter flow
+- Direct Generate Cover Letter remains 5 credits
+- Apply Pack remains 8 credits only when bundle=apply-pack
+- Using synced resume profile messaging appears
+- No false No file chosen browser-native text
+- Template + length selectors readable
+
+F. Template / style system
+- Resume template layout selector changes structure only
+- Resume color scheme selector changes palette only
+- Cover letter layout selector changes structure only
+- Cover letter color scheme selector changes palette only
+- Legacy saved template values still open safely
+- New layouts render without broken spacing or missing sections
+
+G. Export / render parity
+- Resume preview vs PDF basic parity
+- Cover letter preview vs PDF basic parity
+- Fonts loaded before capture
+- Images loaded before capture
+- No obvious clipping on 1-page sample
+- No obvious clipping on 2-page sample
+- No obvious clipping on dense senior sample
+
+H. Regression content sets
+- Sparse junior resume
+- Dense senior QA resume
+- Resume with photo
+- Resume without photo
+- Long name + long email
+- Lots of bullet points
+- Minimal education
+- Heavy metrics
+
+I. Safety checks
+- No stale Apply Pack state leaks into non-bundle routes
+- No stale selected job leaks into new manual flow
+- No duplicate/false credit pricing labels
+- No parser/profile fallback text contradicts actual loaded state
+
+Ship criteria
+- No blocker in core loop
+- No incorrect credit charge in tested flows
+- No broken job handoff context
+- No preview/export break on representative samples
+- No template selector mislabeling
+- Remaining issues documented and non-blocking

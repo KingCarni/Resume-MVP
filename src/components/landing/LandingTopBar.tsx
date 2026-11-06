@@ -1,114 +1,44 @@
-// src/components/landing/LandingTopBar.tsx
 "use client";
 
 import Link from "next/link";
-import React from "react";
+
+import AppHeader from "@/components/layout/AppHeader";
 
 type Props = {
   isAuthed: boolean;
   credits: number;
-  signOutHref: string; // keep server-generated /api/auth/signout?... so callbackUrl is correct
+  signOutHref: string;
 };
 
-export default function LandingTopBar({
-  isAuthed,
-  credits,
-  signOutHref,
-}: Props) {
-  // Logged out: keep marketing-style header (simple)
-  if (!isAuthed) {
-    return (
-      <div className="mx-auto max-w-6xl px-6 pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <Link
-            href="/"
-            className="text-xl font-black tracking-tight text-black transition-opacity hover:opacity-80"
-          >
-            Git-a-Job
-          </Link>
+export default function LandingTopBar({ isAuthed, credits, signOutHref }: Props) {
+  const menuItems = isAuthed
+    ? [
+        { href: "/jobs/saved", label: "Saved Jobs" },
+        { href: "/donate", label: "Donate" },
+        { href: signOutHref, label: "Sign Out" },
+      ]
+    : [
+        { href: "/jobs", label: "Browse Jobs" },
+        { href: "/resume", label: "Start Free" },
+        { href: "/donate", label: "Donate" },
+      ];
 
-          <Link
-            href="/resume"
-            className="rounded-xl bg-black px-4 py-2 text-sm font-black text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:bg-neutral-800 hover:shadow-lg"
-          >
-            Sign in
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Logged in: app-style nav + credits + actions, plus Sign Out on the left
   return (
-    <div className="mx-auto max-w-6xl px-6 pt-6">
-      <div className="flex items-center justify-between gap-4">
-        {/* Left */}
-        <Link
-          href={signOutHref}
-          className="rounded-xl border border-white/40 bg-white/25 px-4 py-2 text-sm font-black text-black shadow-sm backdrop-blur transition-all duration-200 hover:bg-white/35 hover:scale-[1.02]"
-        >
-          Sign Out
+    <AppHeader menuItems={menuItems}>
+      {isAuthed ? (
+        <>
+          <div className="inline-flex min-h-[44px] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100">
+            Credits: {credits}
+          </div>
+          <Link href="/buy-credits" className="shell-primary-btn">
+            Buy Credits
+          </Link>
+        </>
+      ) : (
+        <Link href="/buy-credits" className="shell-primary-btn">
+          Buy Credits
         </Link>
-
-        {/* Center + Right */}
-        <div className="flex flex-1 items-center justify-between gap-4">
-          {/* App nav (pill buttons) */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/resume"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
-              Resume
-            </Link>
-            <Link
-              href="/cover-letter"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
-              Cover Letter
-            </Link>
-            <Link
-              href="/account"
-              className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
-              Account
-            </Link>
-          </div>
-
-          {/* Credits + actions */}
-          <div className="flex items-center gap-2">
-            <div className="rounded-full bg-black px-4 py-2 text-xs font-black text-white shadow-md">
-              Credits: {credits}
-            </div>
-
-            {/* Reload */}
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              aria-label="Reload credits"
-              title="Reload"
-              className="rounded-full bg-black px-3 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-neutral-800"
-            >
-              ↻
-            </button>
-
-            <Link
-              href="/buy-credits"
-              className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-emerald-800"
-            >
-              Buy Credits
-            </Link>
-
-            <a
-              href="https://git-a-job.com/donate"
-              className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-black text-white shadow-md transition-transform hover:scale-[1.02] hover:bg-emerald-800"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Donate
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </AppHeader>
   );
 }

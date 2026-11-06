@@ -7,21 +7,8 @@ export default function Page() {
   return (
     <DashboardShell
       title="Buy Credits"
-      subtitle="Purchase credits to power AI rewrites and premium features."
-      topRight={
-        <div className="flex items-center gap-2">
-          <CreditsPill />
-
-          <a
-            href="https://git-a-job.com/donate"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black hover:bg-emerald-700"
-          >
-            Donate
-          </a>
-        </div>
-      }
+      subtitle="Purchase credits to power AI rewrites, jobs tailoring, and premium features."
+      topRight={<CreditsPill />}
     >
       <div className="text-black dark:text-white">
         <BuyCreditsButton />

@@ -5,6 +5,11 @@ import { buildRewriteBulletPayload } from "@/lib/rewritePayload";
 import { upload } from "@vercel/blob/client";
 import type { PutBlobResult } from "@vercel/blob";
 import { useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { trackJobEvent } from "@/lib/analytics/jobs";
+import { hasStructuredResumeBullets, sanitizeStructuredResumeSnapshot, structuredSnapshotToAnalyzeText, structuredSnapshotToResumeText, type ResumeSourceMeta, type StructuredResumeSnapshot } from "@/lib/resumeProfiles/structuredResume";
+import { buildResumeTemplateSelection, getRecommendedColorSchemeForLayout, isLegacyResumeTemplateId, resolveLegacyResumeTemplateSelection, RESUME_COLOR_SCHEME_OPTIONS, RESUME_LAYOUT_CATEGORY_LABELS, RESUME_LAYOUT_CATEGORY_ORDER, RESUME_LAYOUT_OPTIONS, type ResumeTemplateId } from "@/lib/templates/resumeTemplates";
+import { COLOR_SCHEMES, type ColorSchemeId } from "@/lib/templates/colorSchemes";
 
 /** ---------------- Types ---------------- */
 
@@ -27,9 +32,9 @@ type TruthRisk = {
 };
 
 type RewritePlanItem = {
-  originalBullet?: any;
-  suggestedKeywords?: any;
-  rewrittenBullet?: any;
+  originalBullet?: string;
+  suggestedKeywords?: string[];
+  rewrittenBullet?: string;
 
   needsMoreInfo?: boolean;
   notes?: string[];
@@ -41,62 +46,58 @@ type RewritePlanItem = {
   jobId?: string; // server-provided mapping
 };
 
-type ResumeTemplateId =
-  | "modern"
-  | "classic"
-  | "minimal"
-  | "executive"
-  | "compact"
-  | "sidebar"
-  | "serif"
-  | "ats"
-  | "arcade"
-  | "neon"
-  | "terminal"
-  | "blueprint"
-  | "monochrome"
-  | "noir"
-  | "paper"
-  | "ink"
-  | "corporate"
-  | "contrast"
-  | "minimalist"
-  | "grid"
-  | "retro"
-  | "pastel"
-  | "aura"
-  | "lavender"
-  | "sunset"
-  | "forest"
-  | "ocean"
-  | "sand"
-  | "royal"
-  | "gold"
-  | "bubblegum"
-  | "limepop"
-  | "citrus"
-  | "electric"
-  | "confetti"
-  | "rainbow"
-  | "sunny"
-  | "watermelon"
-  | "grape"
-  | "tropical"
-  | "mint"
-  | "sky"
-  | "coral"
-  | "flamingo"
-  | "popart"
-  | "arcade2"
-  | "hologram"
-  | "galaxy"
-  | "synthwave"
-  | "lava"
-  | "lemonade"
-  | "cottoncandy"
-  | "sprinkles"
-  | "comic"
-  | "playground";
+type LatestResumePayload = {
+  ok?: boolean;
+  item?: {
+    id: string;
+    title: string | null;
+    template: string | null;
+    text: string | null;
+    html: string | null;
+    structuredData?: StructuredResumeSnapshot | null;
+    sourceFileName?: string | null;
+    sourceMimeType?: string | null;
+    sourceFileExtension?: string | null;
+    sourceKind?: string | null;
+    createdAt: string;
+  } | null;
+  error?: string;
+};
+
+
+type ResumeDocumentHydrationItem = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  text?: string | null;
+  html?: string | null;
+  structuredData?: StructuredResumeSnapshot | null;
+  sourceFileName?: string | null;
+  sourceMimeType?: string | null;
+  sourceFileExtension?: string | null;
+  sourceKind?: string | null;
+};
+
+type ResumeProfileHydrationItem = {
+  id: string;
+  title?: string | null;
+  summary?: string | null;
+  updatedAt?: string | null;
+  rawText?: string | null;
+  sourceDocumentId?: string | null;
+  sourceDocument?: ResumeDocumentHydrationItem | null;
+  normalizedSkills?: string[];
+  normalizedTitles?: string[];
+  keywords?: string[];
+};
+
+type WorkflowChecklistItem = {
+  id: string;
+  label: string;
+  done: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+};
 
 type ResumeProfile = {
   fullName: string;
@@ -130,6 +131,17 @@ type ExperienceJobFromApi = {
   bullets: string[];
   rawHeader?: string;
 };
+
+function inferExtension(fileName: string, mimeType?: string | null) {
+  const fromName = String(fileName || "").trim().split(".").pop() || "";
+  if (fromName && fromName !== fileName) return fromName.toLowerCase();
+  const lowerMime = String(mimeType || "").toLowerCase();
+  if (lowerMime.includes("pdf")) return "pdf";
+  if (lowerMime.includes("wordprocessingml")) return "docx";
+  if (lowerMime == "application/msword") return "doc";
+  if (lowerMime.includes("plain")) return "txt";
+  return "";
+}
 
 type AnalyzeAtsPayload = {
   detectedResumeRole?: {
@@ -187,14 +199,44 @@ type AnalyzeAtsPayload = {
   } | null;
 };
 
+type ApplyPackBundle = {
+  bundle?: string;
+  jobId?: string;
+  resumeProfileId?: string;
+  nextStep?: string;
+  createdAt?: string;
+  sourceSlug?: string;
+  bundleSessionId?: string;
+  job?: {
+    id?: string;
+    title?: string;
+    company?: string;
+    location?: string | null;
+    remoteType?: string;
+    seniority?: string;
+    employmentType?: string;
+    applyUrl?: string | null;
+    sourceUrl?: string | null;
+    description?: string;
+    requirementsText?: string | null;
+    responsibilitiesText?: string | null;
+    postedAt?: string | null;
+    jobContextText?: string;
+  };
+};
+
 type AnalyzeResponse = {
   ok: boolean;
   error?: string;
   matchScore?: number;
   missingKeywords?: string[];
-  bullets?: any[];
+  presentKeywords?: string[];
+  bullets?: unknown[];
   rewritePlan?: RewritePlanItem[];
-  debug?: any;
+  debug?: {
+    rawText?: string | null;
+    normalizedText?: string | null;
+  } | null;
   ats?: AnalyzeAtsPayload;
 
   metaBlocks?: {
@@ -205,6 +247,10 @@ type AnalyzeResponse = {
 
   experienceJobs?: ExperienceJobFromApi[];
   bulletJobIds?: string[];
+  autoResumeProfile?: {
+    id?: string | null;
+    title?: string | null;
+  } | null;
 };
 
 /** ---------------- Credits cost labels ---------------- */
@@ -213,9 +259,12 @@ type AnalyzeResponse = {
  * Keep them aligned with server charging (api routes / lib/credits).
  */
 const CREDIT_COSTS = {
-  analyze: 3, // matches /api/analyze COST_ANALYZE
+  analyze: 5, // matches /api/analyze COST_TAILOR_RESUME in standard job-aware mode
   rewriteBullet: 1, // set to whatever /api/rewrite-bullet charges
 } as const;
+
+const REWRITE_FIRST_ATTEMPT_TIMEOUT_MS = 25_000;
+const REWRITE_RETRY_TIMEOUT_MS = 15_000;
 
 /** ---------------- Helpers ---------------- */
 
@@ -244,31 +293,36 @@ function looksLikeHtmlInput(s: string) {
   return /<\s*(html|head|body|div|span|ul|li|style|script)\b/i.test(t);
 }
 
-function bulletToText(b: any): string {
+function bulletToText(b: unknown): string {
   if (typeof b === "string") return b;
   if (b && typeof b === "object") {
-    const v = b.text ?? b.value ?? b.bullet ?? b.originalBullet ?? b.content;
+    const record = b as Record<string, unknown>;
+    const v = record.text ?? record.value ?? record.bullet ?? record.originalBullet ?? record.content;
     if (typeof v === "string") return v;
     return String(v ?? "");
   }
   return String(b ?? "");
 }
 
-function planItemToText(item: any): string {
+function planItemToText(item: unknown): string {
   if (!item) return "";
-  const raw = item.originalBullet ?? item.bullet ?? item.original ?? item.text ?? item;
-  return bulletToText(raw).trim();
+  if (item && typeof item === "object") {
+    const record = item as Record<string, unknown>;
+    const raw = record.originalBullet ?? record.bullet ?? record.original ?? record.text ?? item;
+    return bulletToText(raw).trim();
+  }
+  return bulletToText(item).trim();
 }
 
-function keywordsToArray(k: any): string[] {
+function keywordsToArray(k: unknown): string[] {
   if (Array.isArray(k)) return k.map((x) => String(x).trim()).filter(Boolean);
   if (typeof k === "string")
     return k
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-  if (k && typeof k === "object" && Array.isArray((k as any).keywords)) {
-    return (k as any).keywords.map((x: any) => String(x).trim()).filter(Boolean);
+  if (k && typeof k === "object" && Array.isArray((k as { keywords?: unknown }).keywords)) {
+    return (k as { keywords?: unknown[] }).keywords?.map((x: unknown) => String(x).trim()).filter(Boolean) || [];
   }
   return [];
 }
@@ -282,6 +336,65 @@ function csvToArray(s: string): string[] {
 
 function normalizeForMatch(s: string) {
   return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function inferTargetPositionFromJobContext(jobContext: string) {
+  const text = String(jobContext || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+
+  const ignoredPrefixes = /^(location|remote\s*type|remote|seniority|salary|company|posted|apply|source|about|overview|role\s*overview|description|requirements|responsibilities|what\s+you\s+will\s+do)\s*[:\-]/i;
+  const explicitTitlePrefixes = /^(job\s*title|title|position|role)\s*[:\-]\s*/i;
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  for (const rawLine of lines) {
+    if (!rawLine || ignoredPrefixes.test(rawLine)) continue;
+    if (/^https?:\/\//i.test(rawLine)) continue;
+
+    let candidate = rawLine.replace(/^#+\s*/, "").replace(/^[-•*]\s*/, "").trim();
+    candidate = candidate.replace(explicitTitlePrefixes, "").trim();
+
+    const atMatch = candidate.match(/^(.+?)\s+at\s+.+$/i);
+    if (atMatch?.[1]) candidate = atMatch[1].trim();
+
+    const separators = [" | ", " — ", " – ", " - "];
+    for (const separator of separators) {
+      if (candidate.includes(separator)) {
+        const first = candidate.split(separator)[0]?.trim() || "";
+        if (first) {
+          candidate = first;
+          break;
+        }
+      }
+    }
+
+    candidate = candidate
+      .replace(/\s*\([^)]*(remote|hybrid|onsite|full[-\s]?time|part[-\s]?time)[^)]*\)\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const wordCount = candidate.split(/\s+/).filter(Boolean).length;
+    if (
+      candidate.length >= 3 &&
+      candidate.length <= 90 &&
+      wordCount <= 10 &&
+      /[a-z]/i.test(candidate) &&
+      !ignoredPrefixes.test(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return fallback;
 }
 
 function findInjectedTerms(text: string, terms: string[]) {
@@ -453,8 +566,8 @@ function Chip({ text, muted }: { text: string; muted?: boolean }) {
       className={[
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-extrabold",
         muted
-          ? "border-black/10 bg-black/5 text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
-          : "border-black/10 bg-black/10 text-black/90 dark:border-white/10 dark:bg-white/10 dark:text-black/90",
+          ? "border-black/10 bg-black/5 text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
+          : "border-black/10 bg-black/10 text-black/90 dark:border-white/10 dark:bg-white/10 dark:text-slate-100/90",
       ].join(" ")}
     >
       {text}
@@ -514,20 +627,29 @@ function openHtmlPreviewInNewWindow(title: string, html: string) {
   }, 60000);
 }
 
-function HtmlDocPreview({ html, footer }: { html: string; footer?: React.ReactNode }) {
+function HtmlDocPreview({ html, footer, loading, emptyNote }: { html: string; footer?: React.ReactNode; loading?: boolean; emptyNote?: string }) {
   return (
     <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-extrabold text-black/80 dark:text-black/85">Document Preview (HTML)</div>
+        <div id="resume-output" className="text-sm font-extrabold text-black/80 dark:text-slate-100/85">Document Preview (HTML)</div>
+        {loading ? (
+          <div className="text-xs font-extrabold text-black/60 dark:text-slate-100/70">Loading saved resume…</div>
+        ) : null}
       </div>
 
       <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
-        <iframe
-          title="resume-preview"
-          className="block h-[1180px] w-full min-w-0 border-0"
-          sandbox="allow-same-origin"
-          srcDoc={html || "<!doctype html><html><body></body></html>"}
-        />
+        {!html.trim() && (loading || emptyNote) ? (
+          <div className="flex h-[1180px] w-full min-w-0 items-center justify-center px-6 text-center text-sm font-semibold text-black/60 dark:text-slate-100/70">
+            {loading ? "Restoring your saved resume…" : emptyNote}
+          </div>
+        ) : (
+          <iframe
+            title="resume-preview"
+            className="block h-[1180px] w-full min-w-0 border-0"
+            sandbox="allow-same-origin"
+            srcDoc={html || "<!doctype html><html><body></body></html>"}
+          />
+        )}
       </div>
 
       {footer ? <div className="mt-3 flex flex-wrap items-center gap-2">{footer}</div> : null}
@@ -889,7 +1011,7 @@ ${headerContactChipsCss()}
 `.trim();
 }
 
-function templateStylesResume(template: ResumeTemplateId) {
+function templateStylesResume(template: ResumeTemplateId): string {
   return `
 ${templateStyles(template)}
 
@@ -922,7 +1044,25 @@ ${templateStyles(template)}
  * - Lowercase variables matching cover letter generator
  * - .page uses --pagebg
  */
-function templateStyles(template: ResumeTemplateId) {
+function templateStyles(template: ResumeTemplateId): string {
+  const directColorScheme = COLOR_SCHEMES[template as ColorSchemeId];
+
+  if (directColorScheme) {
+    if (template === "ats") {
+      return `
+${mkThemeCss(directColorScheme.theme)}
+.page{ border: none; }
+.top{ border-bottom: 1px solid #111; }
+.chip{ border: none; background: transparent; box-shadow: none; padding: 0; }
+.meta, .box{ border: none; padding: 0; background: transparent; box-shadow:none; }
+.h{ color: #111; letter-spacing: 0; }
+${printLockCss()}
+`.trim();
+    }
+
+    return mkThemeCss(directColorScheme.theme);
+  }
+
   const classicCss = `
 :root{
   --ink:#111;
@@ -1062,60 +1202,6 @@ ${headerContactChipsCss()}
 ${printLockCss()}
 `.trim();
 
-  if (template === "modern") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0f172a",
-      muted: "rgba(15,23,42,.72)",
-      line: "rgba(15,23,42,.14)",
-      accent: "#2563eb",
-      accent2: "#10b981",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(37,99,235,.06)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 16,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "minimal") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.70)",
-      line: "rgba(17,24,39,.14)",
-      accent: "#111827",
-      accent2: "#111827",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(17,24,39,.04)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 14,
-      shadow: "0 14px 40px rgba(2,6,23,.06)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "executive") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.72)",
-      line: "rgba(17,24,39,.16)",
-      accent: "#7c3aed",
-      accent2: "#111827",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(124,58,237,.06)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 18,
-      shadow: "0 22px 60px rgba(2,6,23,.10)",
-      borderStyle: "solid",
-    });
-  }
-
   if (template === "compact") {
     return `
 ${classicCss}
@@ -1123,36 +1209,6 @@ ${classicCss}
 .name { font-size: 24px; }
 li { margin: 4px 0; }
 .job { margin-top: 8px; padding-top: 8px; }
-${printLockCss()}
-`.trim();
-  }
-
-  if (template === "serif") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.72)",
-      line: "rgba(17,24,39,.16)",
-      accent: "#0f172a",
-      accent2: "#0f172a",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(15,23,42,.04)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 16,
-      shadow: "0 18px 48px rgba(2,6,23,.08)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "ats") {
-    return `
-${classicCss}
-.page{ border: none; }
-.top{ border-bottom: 1px solid #111; }
-.chip{ border: none; background: transparent; box-shadow: none; padding: 0; }
-.meta, .box{ border: none; padding: 0; background: transparent; }
-.h{ color: #111; letter-spacing: 0; }
 ${printLockCss()}
 `.trim();
   }
@@ -1255,879 +1311,24 @@ ${printLockCss()}
 @media print{
   body{ padding: 0 !important; background: var(--bodybg) !important; }
   .page{ background: var(--pagebg) !important; }
-  .jobmetaRight{ white-space: normal; }
+  .main, .side{ box-shadow:none !important; }
 }
 `.trim();
   }
 
-  if (template === "arcade") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.74)",
-      line: "rgba(11,18,32,.18)",
-      accent: "#a855f7",
-      accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(168,85,247,.10), rgba(34,197,94,.08))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 18,
-      shadow: "0 22px 60px rgba(2,6,23,.10)",
-      borderStyle: "dashed",
-      headerAfterGrid: true,
-    });
-  }
+  const legacyLayoutFallbackSchemes: Partial<Record<ResumeTemplateId, ColorSchemeId>> = {
+    sidebarright: "modern",
+    gridblueprint: "blueprint",
+    profilepanel: "minimal",
+    timelineprofessional: "classic",
+    corporatepolishedlayout: "corporate",
+    technicalgridlayout: "terminal",
+  };
 
-  if (template === "neon") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#e5e7eb",
-      muted: "rgba(229,231,235,.78)",
-      line: "rgba(229,231,235,.18)",
-      accent: "#22d3ee",
-      accent2: "#f472b6",
-      bodyBg: "#05060a",
-      pageBg: "#05060a",
-      headerBg: "linear-gradient(135deg, rgba(34,211,238,.10), rgba(244,114,182,.10))",
-      cardBg: "rgba(255,255,255,.06)",
-      radius: 18,
-      shadow: "0 22px 60px rgba(0,0,0,.40)",
-      borderStyle: "solid",
-    });
+  const fallbackSchemeId = legacyLayoutFallbackSchemes[template];
+  if (fallbackSchemeId) {
+    return mkThemeCss(COLOR_SCHEMES[fallbackSchemeId].theme);
   }
-
-  if (template === "terminal") {
-    return mkThemeCss({
-      font: "mono",
-      ink: "#d1fae5",
-      muted: "rgba(209,250,229,.76)",
-      line: "rgba(209,250,229,.18)",
-      accent: "#34d399",
-      accent2: "#22c55e",
-      bodyBg: "#06120b",
-      pageBg: "#06120b",
-      headerBg: "rgba(52,211,153,.07)",
-      cardBg: "rgba(255,255,255,.04)",
-      radius: 14,
-      shadow: "0 22px 60px rgba(0,0,0,.20)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "blueprint") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.72)",
-      line: "rgba(11,18,32,.16)",
-      accent: "#2563eb",
-      accent2: "#0ea5e9",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg:
-        "repeating-linear-gradient(45deg, rgba(37,99,235,.05), rgba(37,99,235,.05) 8px, rgba(14,165,233,.04) 8px, rgba(14,165,233,.04) 16px)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 16,
-      shadow: "0 20px 55px rgba(2,6,23,.08)",
-      borderStyle: "dashed",
-    });
-  }
-
-  if (template === "monochrome") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.72)",
-      line: "rgba(17,24,39,.18)",
-      accent: "#111827",
-      accent2: "#374151",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(17,24,39,.04)",
-      cardBg: "rgba(255,255,255,.94)",
-      radius: 18,
-      shadow: "0 18px 48px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "noir") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#f9fafb",
-      muted: "rgba(249,250,251,.76)",
-      line: "rgba(249,250,251,.16)",
-      accent: "#fbbf24",
-      accent2: "#f472b6",
-      bodyBg: "#0a0a0b",
-      pageBg: "#0a0a0b",
-      headerBg: "linear-gradient(135deg, rgba(251,191,36,.10), rgba(244,114,182,.08))",
-      cardBg: "rgba(255,255,255,.06)",
-      radius: 18,
-      shadow: "0 22px 60px rgba(0,0,0,.45)",
-    });
-  }
-
-  if (template === "paper") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#1f2937",
-      muted: "rgba(31,41,55,.70)",
-      line: "rgba(31,41,55,.16)",
-      accent: "#b45309",
-      accent2: "#92400e",
-      bodyBg: "#fff7ed",
-      pageBg: "#fff7ed",
-      headerBg: "rgba(180,83,9,.06)",
-      cardBg: "rgba(255,255,255,.85)",
-      radius: 18,
-      shadow: "0 18px 50px rgba(2,6,23,.10)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "ink") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#0f172a",
-      muted: "rgba(15,23,42,.72)",
-      line: "rgba(15,23,42,.20)",
-      accent: "#0f172a",
-      accent2: "#0f172a",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(15,23,42,.03)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 18,
-      shadow: "0 12px 36px rgba(2,6,23,.06)",
-      borderStyle: "dashed",
-    });
-  }
-
-  if (template === "corporate") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0f172a",
-      muted: "rgba(15,23,42,.72)",
-      line: "rgba(15,23,42,.16)",
-      accent: "#0ea5e9",
-      accent2: "#2563eb",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(14,165,233,.06)",
-      cardBg: "rgba(255,255,255,.94)",
-      radius: 16,
-      shadow: "0 18px 48px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "contrast") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#000000",
-      muted: "rgba(0,0,0,.72)",
-      line: "rgba(0,0,0,.22)",
-      accent: "#000000",
-      accent2: "#111827",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(0,0,0,.04)",
-      cardBg: "rgba(255,255,255,.96)",
-      radius: 14,
-      shadow: "0 10px 28px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "minimalist") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.70)",
-      line: "rgba(17,24,39,.12)",
-      accent: "#22c55e",
-      accent2: "#16a34a",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "rgba(34,197,94,.06)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 22,
-      shadow: "0 16px 44px rgba(2,6,23,.06)",
-    });
-  }
-
-  if (template === "grid") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.72)",
-      line: "rgba(37,99,235,.20)",
-      accent: "#2563eb",
-      accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg:
-        "linear-gradient(135deg, rgba(37,99,235,.07), rgba(34,197,94,.05)), repeating-linear-gradient(0deg, rgba(37,99,235,.06), rgba(37,99,235,.06) 1px, transparent 1px, transparent 16px), repeating-linear-gradient(90deg, rgba(37,99,235,.06), rgba(37,99,235,.06) 1px, transparent 1px, transparent 16px)",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 16,
-      shadow: "0 18px 52px rgba(2,6,23,.08)",
-      borderStyle: "dashed",
-    });
-  }
-
-  if (template === "retro") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#1f2937",
-      muted: "rgba(31,41,55,.72)",
-      line: "rgba(31,41,55,.16)",
-      accent: "#f97316",
-      accent2: "#f59e0b",
-      bodyBg: "#fff7ed",
-      pageBg: "#fff7ed",
-      headerBg: "linear-gradient(135deg, rgba(249,115,22,.10), rgba(245,158,11,.10))",
-      cardBg: "rgba(255,255,255,.86)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.10)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "pastel") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.70)",
-      line: "rgba(17,24,39,.12)",
-      accent: "#a78bfa",
-      accent2: "#34d399",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.14), rgba(52,211,153,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "aura") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.70)",
-      line: "rgba(11,18,32,.14)",
-      accent: "#10b981",
-      accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(16,185,129,.14), rgba(34,197,94,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-      borderStyle: "solid",
-    });
-  }
-
-  if (template === "lavender") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0f172a",
-      muted: "rgba(15,23,42,.70)",
-      line: "rgba(15,23,42,.14)",
-      accent: "#a78bfa",
-      accent2: "#7c3aed",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.16), rgba(124,58,237,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "sunset") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.70)",
-      line: "rgba(17,24,39,.14)",
-      accent: "#fb7185",
-      accent2: "#f59e0b",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.14), rgba(245,158,11,.12))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "forest") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.70)",
-      line: "rgba(11,18,32,.14)",
-      accent: "#16a34a",
-      accent2: "#22c55e",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(22,163,74,.14), rgba(34,197,94,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "ocean") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.70)",
-      line: "rgba(11,18,32,.14)",
-      accent: "#0ea5e9",
-      accent2: "#2563eb",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(14,165,233,.14), rgba(37,99,235,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "sand") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#1f2937",
-      muted: "rgba(31,41,55,.70)",
-      line: "rgba(31,41,55,.16)",
-      accent: "#d97706",
-      accent2: "#b45309",
-      bodyBg: "#fffbeb",
-      pageBg: "#fffbeb",
-      headerBg: "linear-gradient(135deg, rgba(217,119,6,.12), rgba(180,83,9,.08))",
-      cardBg: "rgba(255,255,255,.86)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.10)",
-    });
-  }
-
-  if (template === "royal") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1220",
-      muted: "rgba(11,18,32,.70)",
-      line: "rgba(11,18,32,.14)",
-      accent: "#2563eb",
-      accent2: "#7c3aed",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(37,99,235,.14), rgba(124,58,237,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 18px 50px rgba(2,6,23,.08)",
-    });
-  }
-
-  if (template === "gold") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#111827",
-      muted: "rgba(17,24,39,.72)",
-      line: "rgba(17,24,39,.16)",
-      accent: "#f59e0b",
-      accent2: "#fbbf24",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(245,158,11,.12), rgba(251,191,36,.10))",
-      cardBg: "rgba(255,255,255,.92)",
-      radius: 20,
-      shadow: "0 22px 60px rgba(2,6,23,.10)",
-      borderStyle: "solid",
-    });
-  }
-  // ---------- FUN / BRIGHT THEMES (NEW x25) ----------
-  if (template === "bubblegum") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b1220",
-      muted: "#6b2a3a",
-      line: "#ffd1dc",
-      accent: "#ff3ea5",
-      accent2: "#8b5cf6",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(255,62,165,.18), rgba(255,255,255,0)), #fff5fb",
-      pageBg: "#fff5fb",
-      headerBg: "linear-gradient(135deg, rgba(255,62,165,.20), rgba(139,92,246,.12))",
-      cardBg: "#ffffff",
-      radius: 20,
-      shadow: "0 18px 55px rgba(43,18,32,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "limepop") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1f17",
-      muted: "#255c45",
-      line: "#c9f7d6",
-      accent: "#22c55e",
-      accent2: "#84cc16",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(34,197,94,.18), rgba(255,255,255,0)), #f3fff7",
-      pageBg: "#f3fff7",
-      headerBg: "linear-gradient(135deg, rgba(34,197,94,.18), rgba(132,204,22,.12))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(11,31,23,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "citrus") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b1b12",
-      muted: "#6b3f2a",
-      line: "#ffe4c7",
-      accent: "#f97316",
-      accent2: "#f59e0b",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.18), rgba(255,255,255,0)), #fff8ed",
-      pageBg: "#fff8ed",
-      headerBg: "linear-gradient(135deg, rgba(249,115,22,.20), rgba(245,158,11,.12))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(43,27,18,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "electric") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1020",
-      muted: "#2a3558",
-      line: "#dde3ff",
-      accent: "#00e5ff",
-      accent2: "#7c3aed",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(0,229,255,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(124,58,237,.12), rgba(255,255,255,0)), #f7fbff",
-      pageBg: "#eef7ff",
-      headerBg: "linear-gradient(135deg, rgba(0,229,255,.18), rgba(124,58,237,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 20px 60px rgba(11,16,32,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "confetti") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "#4b5563",
-      line: "#e5e7eb",
-      accent: "#fb7185",
-      accent2: "#60a5fa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(96,165,250,.14), rgba(255,255,255,0)), #fff7fb",
-      pageBg: "#fff7fb",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(96,165,250,.12))",
-      cardBg: "#ffffff",
-      radius: 22,
-      shadow: "0 18px 55px rgba(17,24,39,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "rainbow") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "#475569",
-      line: "#e5e7eb",
-      accent: "#ef4444",
-      accent2: "#3b82f6",
-      bodyBg:
-        "radial-gradient(900px 520px at 15% 10%, rgba(239,68,68,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 20%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), #ffffff",
-      pageBg: "#ffffff",
-      headerBg:
-        "linear-gradient(135deg, rgba(239,68,68,.16), rgba(245,158,11,.12), rgba(34,197,94,.10), rgba(59,130,246,.14), rgba(124,58,237,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(17,24,39,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "sunny") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#1f2937",
-      muted: "#52607a",
-      line: "#fff2b3",
-      accent: "#facc15",
-      accent2: "#f97316",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
-      pageBg: "#fffdf0",
-      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(249,115,22,.10))",
-      cardBg: "#ffffff",
-      radius: 20,
-      shadow: "0 18px 55px rgba(31,41,55,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "watermelon") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b1220",
-      muted: "#6b2a3a",
-      line: "#ffd3d8",
-      accent: "#fb7185",
-      accent2: "#22c55e",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,197,94,.10), rgba(255,255,255,0)), #fff6f7",
-      pageBg: "#fff6f7",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(34,197,94,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(43,18,32,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "grape") {
-    return mkThemeCss({
-      font: "serif",
-      ink: "#1f1b2e",
-      muted: "#5b4f78",
-      line: "#e8defa",
-      accent: "#7c3aed",
-      accent2: "#a78bfa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), #fbf8ff",
-      pageBg: "#fbf8ff",
-      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(167,139,250,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 16px 48px rgba(31,27,46,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "tropical") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#061a2a",
-      muted: "#21506f",
-      line: "#cfe7ff",
-      accent: "#06b6d4",
-      accent2: "#fb7185",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(6,182,212,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.12), rgba(255,255,255,0)), #f4fbff",
-      pageBg: "#f4fbff",
-      headerBg: "linear-gradient(135deg, rgba(6,182,212,.16), rgba(251,113,133,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 20px 60px rgba(6,26,42,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "mint") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1324",
-      muted: "#44546a",
-      line: "#c6f6e6",
-      accent: "#14b8a6",
-      accent2: "#22c55e",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(20,184,166,.16), rgba(255,255,255,0)), #f0fffb",
-      pageBg: "#f0fffb",
-      headerBg: "linear-gradient(135deg, rgba(20,184,166,.18), rgba(34,197,94,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 16px 45px rgba(11,19,36,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "sky") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#061a2a",
-      muted: "#21506f",
-      line: "#cfe7ff",
-      accent: "#3b82f6",
-      accent2: "#0ea5e9",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.16), rgba(255,255,255,0)), #f4fbff",
-      pageBg: "#f4fbff",
-      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(14,165,233,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 20px 60px rgba(6,26,42,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "coral") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b1b12",
-      muted: "#6b3f2a",
-      line: "#ffe4d6",
-      accent: "#fb7185",
-      accent2: "#f97316",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(251,113,133,.16), rgba(255,255,255,0)), #fff7f5",
-      pageBg: "#fff7f5",
-      headerBg: "linear-gradient(135deg, rgba(251,113,133,.18), rgba(249,115,22,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(43,27,18,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "flamingo") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b1220",
-      muted: "#6b2a3a",
-      line: "#ffd3ea",
-      accent: "#ec4899",
-      accent2: "#fb7185",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(236,72,153,.18), rgba(255,255,255,0)), #fff5fb",
-      pageBg: "#fff5fb",
-      headerBg: "linear-gradient(135deg, rgba(236,72,153,.18), rgba(251,113,133,.10))",
-      cardBg: "#ffffff",
-      radius: 20,
-      shadow: "0 18px 55px rgba(43,18,32,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "popart") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b0f18",
-      muted: "#111827",
-      line: "#0b0f18",
-      accent: "#f97316",
-      accent2: "#3b82f6",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(59,130,246,.12), rgba(255,255,255,0)), #ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(249,115,22,.16), rgba(59,130,246,.12))",
-      cardBg: "#ffffff",
-      borderStyle: "solid",
-      radius: 10,
-      shadow: "0 12px 30px rgba(0,0,0,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "arcade2") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#120a2a",
-      muted: "#3b2a66",
-      line: "#e7d7ff",
-      accent: "#7c3aed",
-      accent2: "#06b6d4",
-      bodyBg:
-        "radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,.14), rgba(255,255,255,0)), radial-gradient(1000px 600px at 90% 20%, rgba(6,182,212,.12), rgba(255,255,255,0)), #fbf7ff",
-      pageBg: "#fbf7ff",
-      headerBg: "linear-gradient(135deg, rgba(124,58,237,.18), rgba(6,182,212,.12))",
-      cardBg: "linear-gradient(180deg, rgba(124,58,237,.05), rgba(255,255,255,0))",
-      radius: 20,
-      shadow: "0 16px 45px rgba(18,10,42,.12)",
-      headerAfterGrid: true,
-      hasChips: true,
-    });
-  }
-
-  if (template === "hologram") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1020",
-      muted: "#2a3558",
-      line: "#dde3ff",
-      accent: "#22d3ee",
-      accent2: "#a78bfa",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(34,211,238,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(167,139,250,.14), rgba(255,255,255,0)), #f7fbff",
-      pageBg: "#f2f6ff",
-      headerBg: "linear-gradient(135deg, rgba(34,211,238,.16), rgba(167,139,250,.12))",
-      cardBg: "rgba(255,255,255,.92)",
-      borderStyle: "solid",
-      radius: 22,
-      shadow: "0 22px 70px rgba(11,16,32,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "galaxy") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b1020",
-      muted: "#2a3558",
-      line: "#dbeafe",
-      accent: "#a78bfa",
-      accent2: "#22d3ee",
-      bodyBg:
-        "radial-gradient(900px 520px at 25% 10%, rgba(167,139,250,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(34,211,238,.12), rgba(255,255,255,0)), #f7f9ff",
-      pageBg: "#f4f4ff",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(34,211,238,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 20px 60px rgba(11,16,32,.12)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "synthwave") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#140a2a",
-muted: "#3b2a66",
-      line: "#f5d0fe",
-      accent: "#ff00e5",
-      accent2: "#00e5ff",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(255,0,229,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(0,229,255,.12), rgba(255,255,255,0)), #fff5ff",
-      pageBg: "#fff5ff",
-      headerBg: "linear-gradient(135deg, rgba(255,0,229,.18), rgba(0,229,255,.10))",
-      cardBg: "#ffffff",
-      radius: 20,
-      shadow: "0 18px 55px rgba(20,10,42,.12)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "lava") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#2b120f",
-      muted: "#6b2a24",
-      line: "#ffd1c7",
-      accent: "#ef4444",
-      accent2: "#f97316",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(239,68,68,.16), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(249,115,22,.12), rgba(255,255,255,0)), #fff6f5",
-      pageBg: "#fff6f5",
-      headerBg: "linear-gradient(135deg, rgba(239,68,68,.16), rgba(249,115,22,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(43,18,15,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "lemonade") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#1f2937",
-      muted: "#52607a",
-      line: "#fff2b3",
-      accent: "#facc15",
-      accent2: "#fb7185",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(250,204,21,.18), rgba(255,255,255,0)), #fffdf0",
-      pageBg: "#fffdf0",
-      headerBg: "linear-gradient(135deg, rgba(250,204,21,.18), rgba(251,113,133,.10))",
-      cardBg: "#ffffff",
-      radius: 20,
-      shadow: "0 18px 55px rgba(31,41,55,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "cottoncandy") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#1f2937",
-      muted: "#52607a",
-      line: "#ffd7f5",
-      accent: "#a78bfa",
-      accent2: "#fb7185",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(167,139,250,.18), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(251,113,133,.14), rgba(255,255,255,0)), #fff7fd",
-      pageBg: "#fff7fd",
-      headerBg: "linear-gradient(135deg, rgba(167,139,250,.18), rgba(251,113,133,.10))",
-      cardBg: "#ffffff",
-      radius: 22,
-      shadow: "0 18px 55px rgba(31,41,55,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "sprinkles") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "#4b5563",
-      line: "#e5e7eb",
-      accent: "#60a5fa",
-      accent2: "#f97316",
-      bodyBg:
-        "radial-gradient(900px 520px at 15% 10%, rgba(96,165,250,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 50% 15%, rgba(34,197,94,.12), rgba(255,255,255,0)), radial-gradient(900px 520px at 85% 10%, rgba(249,115,22,.14), rgba(255,255,255,0)), #fff",
-      pageBg: "#ffffff",
-      headerBg:
-        "linear-gradient(135deg, rgba(96,165,250,.16), rgba(34,197,94,.12), rgba(249,115,22,.12))",
-      cardBg: "#ffffff",
-      radius: 22,
-      shadow: "0 18px 55px rgba(17,24,39,.08)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "comic") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#0b0f18",
-      muted: "#111827",
-      line: "#0b0f18",
-      accent: "#facc15",
-      accent2: "#3b82f6",
-      bodyBg: "#ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(250,204,21,.20), rgba(59,130,246,.12))",
-      cardBg: "#ffffff",
-      borderStyle: "solid",
-      radius: 10,
-      shadow: "0 12px 30px rgba(0,0,0,.10)",
-      hasChips: true,
-    });
-  }
-
-  if (template === "playground") {
-    return mkThemeCss({
-      font: "sans",
-      ink: "#111827",
-      muted: "#475569",
-      line: "#e5e7eb",
-      accent: "#3b82f6",
-      accent2: "#ef4444",
-      bodyBg:
-        "radial-gradient(900px 520px at 20% 10%, rgba(59,130,246,.14), rgba(255,255,255,0)), radial-gradient(900px 520px at 80% 20%, rgba(239,68,68,.12), rgba(255,255,255,0)), #ffffff",
-      pageBg: "#ffffff",
-      headerBg: "linear-gradient(135deg, rgba(59,130,246,.16), rgba(239,68,68,.10))",
-      cardBg: "#ffffff",
-      radius: 18,
-      shadow: "0 18px 55px rgba(17,24,39,.08)",
-      hasChips: true,
-    });
-  }
-  if (template === "classic") return classicCss;
 
   return classicCss;
 }
@@ -2213,30 +1414,11 @@ function buildResumeHtml(args: {
     profile.portfolio?.trim() ? safe(profile.portfolio) : "",
   ].filter(Boolean);
 
-  const hasBar =
-    template === "modern" ||
-    template === "arcade" ||
-    template === "neon" ||
-    template === "blueprint" ||
-    template === "monochrome" ||
-    template === "noir" ||
-    template === "paper" ||
-    template === "ink" ||
-    template === "corporate" ||
-    template === "contrast" ||
-    template === "minimalist" ||
-    template === "grid" ||
-    template === "retro" ||
-    template === "pastel" ||
-    template === "aura" ||
-    template === "lavender" ||
-    template === "sunset" ||
-    template === "forest" ||
-    template === "ocean" ||
-    template === "sand" ||
-    template === "royal" ||
-    template === "gold" ||
-    template === "terminal";
+  const resolvedTemplate = resolveLegacyResumeTemplateSelection(template);
+  const activeLayoutId = resolvedTemplate.layoutId;
+  const activeCapabilities = resolvedTemplate.layout.capabilities;
+  const activeColorSchemeTheme = resolvedTemplate.colorScheme.theme;
+  const hasBar = activeCapabilities.usesHeaderBar;
 
   // ✅ Meta blocks: if only one exists, it fills the whole row (no blank placeholder box)
   const visibleGames = showShippedBlock ? metaGames : [];
@@ -2338,7 +1520,53 @@ function buildResumeHtml(args: {
     .filter(Boolean)
     .join("");
 
-  if (template === "sidebar") {
+  const jobsHtmlTimeline = sections
+    .map((sec) => {
+      const list = (bulletsBySection[sec.id] || []).map((x: string) => String(x ?? "").trim()).filter(Boolean);
+      const company = safe(sec.company || "Company");
+      const role = safe(sec.title || "Role");
+      const metaLeft = [sec.dates?.trim() ? safe(sec.dates) : "", sec.location?.trim() ? safe(sec.location) : ""]
+        .filter(Boolean)
+        .join(" • ");
+      const bulletsHtml =
+        list.length > 0
+          ? `<ul>${list.map((b: string) => `<li>${safe(b)}</li>`).join("")}</ul>`
+          : `<div class="summary">No bullets added yet.</div>`;
+
+      return `
+        <div class="job timeline-job">
+          <div class="timeline-meta">${metaLeft || "Experience"}</div>
+          <div class="timeline-body">
+            <div class="jobtitle"><span class="jobcompany">${company}</span> — ${role}</div>
+            ${bulletsHtml}
+          </div>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+  const useRailLayout = ["grid-blueprint", "technical-grid", "profile-panel"].includes(activeLayoutId);
+  const useTimelineLayout = activeLayoutId === "timeline";
+  const useCorporateLayout = activeLayoutId === "corporate-polished";
+  const useSidebarLayout = activeLayoutId === "sidebar" || activeLayoutId === "sidebar-right";
+  const useCompactLayout = activeLayoutId === "compact";
+  const useExecutiveLayout = activeLayoutId === "executive";
+
+  const layoutCss = `
+    ${useSidebarLayout ? `.page{ width:8.5in; min-height:11in; margin:0 auto; padding:18px 22px; display:grid; grid-template-columns:2.7fr 5.3fr; gap:16px; background:var(--pagebg); border-radius:var(--radius); } .side{ border:1px var(--borderstyle) solid var(--line); border-radius:16px; padding:14px 14px; background:var(--headerbg); box-shadow:var(--shadow); } .main{ border:1px var(--borderstyle) solid var(--line); border-radius:16px; padding:14px 16px; background:var(--cardbg); box-shadow:0 18px 50px rgba(2,6,23,.06); } .side .name{ margin:0; font-size:26px; letter-spacing:-.2px; } .side .title{ margin-top:6px; color:var(--muted); font-size:13px; font-weight:700; } .side .contact{ margin-top:10px; display:grid; gap:8px; } .side .chip{ display:inline-flex; align-items:center; gap:8px; border:1px var(--borderstyle) solid var(--line); border-radius:999px; padding:6px 10px; background:var(--cardbg); } .side .section{ margin-top:12px; } .side .h{ font-weight:800; text-transform:uppercase; letter-spacing:.14em; font-size:12px; margin:0 0 8px 0; } .side .summary{ font-size:12.5px; color:var(--muted); line-height:1.5; } .side .meta{ display:grid; gap:10px; } .side .meta.two,.side .meta.one{ grid-template-columns:1fr; } .side .box{ border:1px var(--borderstyle) solid var(--line); border-radius:14px; padding:10px; background:var(--cardbg); box-shadow:var(--shadow); } .side .boxtitle{ font-weight:800; margin-bottom:6px; } .side .small{ font-size:12px; color:var(--muted); line-height:1.45; } .main .job{ margin-top:12px; } .main .jobhead{ display:flex; justify-content:space-between; gap:10px; padding-bottom:6px; border-bottom:1px var(--borderstyle) solid var(--line); margin-bottom:8px; flex-wrap:wrap; align-items:baseline; } .main .jobtitle{ font-weight:800; min-width:240px; } .main .jobmetaRight{ color:var(--muted); font-size:11px; font-weight:700; margin-left:auto; text-align:right; white-space:nowrap; } .main ul{ margin:0; padding-left:18px; } .main li{ margin:0 0 6px 0; } @media print{ body{ padding:0 !important; background:var(--bodybg) !important; } .page{ background:var(--pagebg) !important; } .main,.side{ box-shadow:none !important; } }` : ""}
+    ${activeLayoutId === "sidebar-right" ? `.page{ grid-template-columns: 5.3fr 2.7fr; } .main{ order:1; } .side{ order:2; }` : ""}
+    ${useCompactLayout ? `.page{ padding:14px 18px; } .name{ font-size:24px; } li{ margin:4px 0; } .job{ margin-top:8px; padding-top:8px; } .section{ margin-top:12px; } .top{ padding-bottom:10px; }` : ""}
+    ${useExecutiveLayout ? `.page{ padding:28px 32px; } .top{ padding-bottom:18px; border-bottom:2px solid var(--line); margin-bottom:18px; } .name{ font-size:34px; letter-spacing:-.03em; } .title{ font-size:15px; margin-top:8px; } .contact{ gap:8px; } .section{ margin-top:18px; } .h{ font-size:11px; letter-spacing:.18em; margin-bottom:10px; } .summary{ font-size:13px; line-height:1.6; } .job{ margin-top:14px; padding-top:12px; } .jobhead{ padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:10px; } .box{ border-radius:12px; box-shadow:none; }` : ""}
+    ${useRailLayout ? `.content.rail-layout{ display:grid; grid-template-columns:${activeLayoutId === "profile-panel" ? "320px 1fr" : "minmax(240px,.8fr) 1.2fr"}; gap:18px; align-items:start; } .rail-column,.main-column{ display:grid; gap:16px; } .rail-layout .section{ margin:0; }` : ""}
+    ${activeLayoutId === "grid-blueprint" ? `.rail-layout .box, .rail-layout .section{ border-style:dashed; } .rail-layout .main-column .section:first-child{ background:var(--headerbg); padding:12px; border:1px dashed var(--line); box-shadow:var(--shadow); } .rail-layout .main-column .section:first-child .h{ color:var(--accent); }` : ""}
+    ${activeLayoutId === "technical-grid" ? `.rail-layout .box, .rail-layout .section{ border-style:dashed; } .rail-layout .jobhead{ align-items:flex-start; } .rail-layout ul{ margin-left:16px; } .rail-layout .jobtitle,.rail-layout .jobcompany{ color:var(--accent); }` : ""}
+    ${activeLayoutId === "profile-panel" ? `.top.profile-panel-top{ border-bottom:none; padding-bottom:0; } .profile-summary-card{ border:1px solid var(--line); background:var(--headerbg); padding:14px; border-radius:var(--radius); box-shadow:var(--shadow); } .profile-summary-card .summary{ margin-top:8px; } .profile-summary-card .h{ color:var(--accent); }` : ""}
+    ${useTimelineLayout ? `.timeline-layout .job.timeline-job{ display:grid; grid-template-columns:160px 1fr; gap:16px; border-top:1px solid var(--line); padding-top:12px; } .timeline-layout .timeline-meta{ color:var(--accent); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; } .timeline-layout .timeline-body ul{ margin-top:8px; }` : ""}
+    ${useCorporateLayout ? `.top{ background:var(--headerbg); border:1px solid var(--line); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); margin-bottom:18px; } .content.corporate-layout{ display:grid; gap:18px; } .corporate-layout .section{ border:1px solid var(--line); padding:14px; background:var(--cardbg); border-radius:var(--radius); box-shadow:var(--shadow); } .corporate-layout .h{ border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:12px; color:var(--accent); } .corporate-layout .jobhead{ padding-bottom:8px; border-bottom:1px solid var(--line); margin-bottom:10px; }` : ""}
+  `;
+
+  if (activeLayoutId === "sidebar" || activeLayoutId === "sidebar-right") {
     const sidebarContact = contactBits.map((c) => `<div class="chip">${c}</div>`).join("");
 
     return `<!doctype html>
@@ -2348,7 +1576,8 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStylesResume(template)}
+    ${templateStylesResume(resolvedTemplate.colorSchemeId as ResumeTemplateId)}
+    ${layoutCss}
   </style>
 </head>
 <body>
@@ -2383,7 +1612,7 @@ function buildResumeHtml(args: {
 </html>`;
   }
 
-  const useChips = template !== "ats" && template !== "terminal";
+  const useChips = activeCapabilities.usesChips && activeColorSchemeTheme.font !== "mono";
 
   const topContact = contactBits
     .map((c) => (useChips ? `<div class="chip">${c}</div>` : `<div>${c}</div>`))
@@ -2402,6 +1631,34 @@ function buildResumeHtml(args: {
          <div class="summary">${safe(profile.summary || "")}</div>
        </div>`;
 
+  const experienceHtml = `
+      <div class="section experience-section">
+        <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Experience</div>
+        ${(useTimelineLayout ? jobsHtmlTimeline : jobsHtml) || `<div class="summary">No experience sections yet.</div>`}
+      </div>`;
+
+  const contentHtml = useRailLayout
+    ? `
+      <div class="content rail-layout">
+        <div class="rail-column">
+          ${activeLayoutId === "profile-panel" ? `<div class="profile-summary-card"><div class="h">Profile</div><div class="summary">${safe(profile.summary || "")}</div></div>` : summaryBlock}
+          ${metaHtml}
+          ${educationHtml}
+          ${expertiseHtml}
+        </div>
+        <div class="main-column">
+          ${experienceHtml}
+        </div>
+      </div>`
+    : `
+      <div class="content ${useTimelineLayout ? "timeline-layout" : useCorporateLayout ? "corporate-layout" : ""}">
+        ${summaryBlock}
+        ${metaHtml}
+        ${educationHtml}
+        ${expertiseHtml}
+        ${experienceHtml}
+      </div>`;
+
   return `<!doctype html>
 <html>
 <head>
@@ -2409,11 +1666,11 @@ function buildResumeHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Resume - ${safe(profile.fullName || "Updated")}</title>
   <style>
-    ${templateStylesResume(template)}
+    ${templateStylesResume(resolvedTemplate.colorSchemeId as ResumeTemplateId)}
+    ${layoutCss}
     ${
-      template === "terminal"
+      resolvedTemplate.colorSchemeId === "terminal" || activeColorSchemeTheme.font === "mono"
         ? `
-/* ✅ Terminal contact layout parity (no chips, simple stacked lines) */
 .top .contact{
   margin-top: 10px !important;
   display: grid !important;
@@ -2426,7 +1683,7 @@ function buildResumeHtml(args: {
 </head>
 <body>
   <div class="page">
-    <div class="top">
+    <div class="top ${activeLayoutId === "profile-panel" ? "profile-panel-top" : ""}">
       <div class="top-main">
         <div class="top-copy">
           <h1 class="name">${safe(profile.fullName || "Your Name")}</h1>
@@ -2436,24 +1693,14 @@ function buildResumeHtml(args: {
             ${topContact}
           </div>
 
-          ${inlineSummary}
+          ${activeLayoutId === "profile-panel" ? "" : inlineSummary}
         </div>
 
         ${standardPhotoHtml}
       </div>
     </div>
 
-    <div class="content">
-      ${summaryBlock}
-      ${metaHtml}
-      ${educationHtml}
-      ${expertiseHtml}
-
-      <div class="section">
-        <div class="h">${hasBar ? `<span class="bar"></span>` : ""}Experience</div>
-        ${jobsHtml || `<div class="summary">No experience sections yet.</div>`}
-      </div>
-    </div>
+    ${contentHtml}
   </div>
 </body>
 </html>`;
@@ -2496,20 +1743,47 @@ function sanitizeMetaLines(lines: string[]) {
   const bad = [
     /max-width\s*:/i,
     /!important/i,
-    /{|\}/,
+    /\{|\}/,
     /;\s*$/,
     /^\s*\./,
     /^\s*#/,
     /^\s*@/,
     /^\s*[a-z-]+\s*:\s*[^;]+;?/i,
   ];
-  return (lines || [])
-    .map((x) => String(x ?? "").trim())
-    .filter(Boolean)
-    .filter((x) => !bad.some((re) => re.test(x)))
-    .slice(0, 24);
-}
 
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
+
+  const cleaned: string[] = [];
+  for (const raw of lines || []) {
+    const trimmed = String(raw ?? "").replace(/\s+/g, " ").trim();
+    if (!trimmed) continue;
+    if (bad.some((re) => re.test(trimmed))) continue;
+
+    const normalized = trimmed
+      .replace(/^(?:🎮\s*)?games shipped\s*:\s*/i, "")
+      .replace(/^key metrics\s*:\s*/i, "")
+      .trim();
+
+    if (!normalized) continue;
+
+    const parts = normalized
+      .split(/\s*[•|]\s*|\s*,\s*(?=[A-Z0-9])/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+    const candidates = parts.length > 1 ? parts : [normalized];
+    for (const candidate of candidates) {
+      const value = candidate.trim();
+      if (!value) continue;
+      if (value.length > 90) continue;
+      if (/[.!?].+[.!?]/.test(value)) continue;
+      if (actionVerbRe.test(value)) continue;
+      cleaned.push(value);
+    }
+  }
+
+  return Array.from(new Set(cleaned)).slice(0, 24);
+}
 
 function parseEducationLines(input: string) {
   const text = String(input ?? "")
@@ -2525,49 +1799,33 @@ function parseEducationLines(input: string) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const schoolRe =
-    /\b(university|college|institute|polytechnic|academy|school)\b/i;
-
-  const degreeRe =
-    /\b(bachelor|master|doctorate|phd|mba|masc|msc|beng|b\.eng|bsc|b\.sc|ba|b\.a|bs|m\.sc|m\.a|ms|ma|associate|diploma)\b/i;
-
-  const certRe =
-    /\b(certification|certifications|certificate|certified|license|licence|az-900|aws|gcp|azure|microsoft|google cloud|scrum|pmp)\b/i;
-
-  const headingRe =
-    /^\s*(education|education & certifications|education and certifications|certifications|training)\s*:?\s*$/i;
-
-  const stopRe =
-    /^\s*(experience|work experience|professional experience|employment|projects|skills|technical skills|areas of expertise|summary|profile|highlights)\s*:?\s*$/i;
+  const schoolRe = /\b(university|college|institute|polytechnic|academy|school)\b/i;
+  const degreeRe = /\b(bachelor|master|doctorate|phd|mba|masc|msc|beng|b\.eng|bsc|b\.sc|ba|b\.a|bs|m\.sc|m\.a|ms|ma|associate|diploma)\b/i;
+  const certRe = /\b(certification|certifications|certificate|certified|license|licence|az-900|aws|gcp|azure|microsoft certified|google cloud|scrum|pmp|istqb)\b/i;
+  const headingRe = /^\s*(education|education & certifications|education and certifications|certifications|training)\s*:?\s*$/i;
+  const stopRe = /^\s*(experience|work experience|professional experience|employment|projects|skills|technical skills|areas of expertise|summary|profile|highlights)\s*:?\s*$/i;
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
 
   const out: string[] = [];
   let inEducationSection = false;
 
   for (const raw of lines) {
-    const line = raw
-      .replace(/\(link to thesis\)/gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
+    const line = raw.replace(/\(link to thesis\)/gi, "").replace(/\s+/g, " ").trim();
     if (!line) continue;
 
     if (headingRe.test(line)) {
       inEducationSection = true;
       continue;
     }
-
     if (inEducationSection && stopRe.test(line)) {
       inEducationSection = false;
       continue;
     }
 
-    const looksEducational =
-      schoolRe.test(line) ||
-      degreeRe.test(line) ||
-      certRe.test(line) ||
-      (inEducationSection && line.length >= 4 && line.length <= 160);
-
+    const looksEducational = schoolRe.test(line) || degreeRe.test(line) || certRe.test(line);
     if (!looksEducational) continue;
+    if (actionVerbRe.test(line)) continue;
+    if (line.length > 160) continue;
 
     if (!out.some((x) => x.toLowerCase() === line.toLowerCase())) {
       out.push(line);
@@ -3540,10 +2798,14 @@ function buildDisplayedAtsKeywords(args: {
     ...baseMatchedAll.filter((term) => expertiseSet.has(cleanupAtsKeyword(term))),
   ]).slice(0, 16);
 
-  const missingKeywords = uniqueTerms([
-    ...jdExplicitToolDomainBoost,
-    ...primaryMissing,
-  ]).filter((term) => {
+  const missingKeywords = curateDisplayedMissingKeywords({
+    terms: uniqueTerms([
+      ...jdExplicitToolDomainBoost,
+      ...primaryMissing,
+    ]),
+    jobText,
+    dominantFamily,
+  }).filter((term) => {
     const key = cleanupAtsKeyword(term);
     return !ignoredSet.has(key) && !expertiseSet.has(key);
   }).slice(0, 16);
@@ -3552,9 +2814,13 @@ function buildDisplayedAtsKeywords(args: {
     .filter((term) => !expertiseSet.has(cleanupAtsKeyword(term)) || true)
     .slice(0, 16);
 
-  const backendMissingFallback = primaryMissingAll.filter((term) => {
-    const key = cleanupAtsKeyword(term);
-    return !ignoredSet.has(key) && !expertiseSet.has(key);
+  const backendMissingFallback = curateDisplayedMissingKeywords({
+    terms: primaryMissingAll.filter((term) => {
+      const key = cleanupAtsKeyword(term);
+      return !ignoredSet.has(key) && !expertiseSet.has(key);
+    }),
+    jobText,
+    dominantFamily,
   }).slice(0, 16);
 
   return {
@@ -3567,6 +2833,65 @@ function computeDisplayedKeywordCoverage(matchedKeywords: string[], missingKeywo
   const total = matchedKeywords.length + missingKeywords.length;
   if (!total) return 0;
   return matchedKeywords.length / total;
+}
+
+
+const ATS_TESTING_VARIANT_NOISE = [
+  /\bgame testing\b/i,
+  /\bgameplay testing\b/i,
+  /\bquest testing\b/i,
+  /\bmission testing\b/i,
+  /\blevel testing\b/i,
+  /\bprogression testing\b/i,
+  /\bsanity testing\b/i,
+  /\bsmoke testing\b/i,
+  /\bfunctional testing\b/i,
+  /\bregression testing\b/i,
+  /\brelease readiness\b/i,
+  /\bbug prevention\b/i,
+  /\bdefect detection\b/i,
+  /\bdefect containment\b/i,
+];
+
+function isAtsTestingVariantNoise(term: string) {
+  const clean = cleanupAtsKeyword(term);
+  return ATS_TESTING_VARIANT_NOISE.some((pattern) => pattern.test(clean));
+}
+
+function curateDisplayedMissingKeywords(args: {
+  terms: string[];
+  jobText: string;
+  dominantFamily: AtsRoleFamily;
+}) {
+  const jobText = String(args.jobText ?? "").trim();
+  const dominantFamily = args.dominantFamily;
+  const maxTestingVariants = dominantFamily === "qa" ? 2 : 1;
+  const nonTestingTerms: string[] = [];
+  const explicitTestingTerms: string[] = [];
+
+  for (const term of uniqueTerms(args.terms)) {
+    if (!isAtsTestingVariantNoise(term)) {
+      nonTestingTerms.push(term);
+      continue;
+    }
+
+    if (!jobText) continue;
+
+    const evidence = evaluateJobTermEvidence(jobText, term, "methods", dominantFamily);
+
+    // Avoid blasting users with generated role-bank variants like Game Testing, Mission Testing,
+    // Smoke Testing, etc. Only show specific testing gaps when that exact phrase appears in
+    // the job posting, then cap them hard. General words like "testing" should not unlock a
+    // dozen inferred testing variants.
+    if (!evidence.exactVariant) continue;
+
+    explicitTestingTerms.push(term);
+  }
+
+  return uniqueTerms([
+    ...nonTestingTerms,
+    ...explicitTestingTerms.slice(0, maxTestingVariants),
+  ]);
 }
 
 function atsRoleDisplayLabel(ats?: AnalyzeAtsPayload, fallbackTargetPosition = "") {
@@ -3701,6 +3026,80 @@ function RewriteDiff({
 }
 
 
+
+function looksLikePersonName(value: string) {
+  const cleaned = value.trim();
+  if (!cleaned) return false;
+  if (cleaned.length > 60) return false;
+  if (/[@]|https?:\/\//i.test(cleaned)) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return false;
+  return words.every((word) => /^[A-Za-z][A-Za-z'’.-]*$/.test(word));
+}
+
+function deriveProfileFromResumeText(args: {
+  resumeText: string;
+  fallbackTitle?: string | null;
+  fallbackSummary?: string | null;
+  normalizedTitles?: string[];
+}) {
+  const lines = String(args.resumeText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 18);
+
+  const joined = lines.join(" \n ");
+  const emailMatch = joined.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const phoneMatch = joined.match(/(?:\+?\d[\d\s().-]{7,}\d)/);
+  const linkedinMatch = joined.match(/https?:\/\/(?:www\.)?linkedin\.com\/[^\s]+/i);
+  const websiteMatch = joined.match(/https?:\/\/(?!www\.)[^\s]+/i);
+
+  let fullName = "";
+  let titleLine = "";
+  let locationLine = "";
+
+  const nameIndex = lines.findIndex(looksLikePersonName);
+  if (nameIndex >= 0) {
+    fullName = lines[nameIndex];
+  }
+
+  const fallbackTitle = String(args.fallbackTitle || "").trim();
+  const normalizedTitle = Array.isArray(args.normalizedTitles) && args.normalizedTitles.length
+    ? String(args.normalizedTitles[0] || "").trim()
+    : "";
+
+  const titleCandidate = lines.find((line, index) => {
+    if (index === nameIndex) return false;
+    if (emailMatch && line.includes(emailMatch[0])) return false;
+    if (phoneMatch && line.includes(phoneMatch[0])) return false;
+    if (linkedinMatch && line.includes(linkedinMatch[0])) return false;
+    if (/linkedin|portfolio|website/i.test(line)) return false;
+    return line.length <= 90;
+  });
+  titleLine = fallbackTitle || normalizedTitle || titleCandidate || "";
+
+  const locationCandidate = lines.find((line) => {
+    if (fullName && line === fullName) return false;
+    if (titleLine && line === titleLine) return false;
+    if (emailMatch && line.includes(emailMatch[0])) return false;
+    if (phoneMatch && line.includes(phoneMatch[0])) return false;
+    return /,/.test(line) && line.length <= 80;
+  });
+  locationLine = locationCandidate || "";
+
+  return {
+    fullName,
+    titleLine,
+    locationLine,
+    email: emailMatch?.[0] || "",
+    phone: phoneMatch?.[0] || "",
+    linkedin: linkedinMatch?.[0] || "",
+    portfolio: websiteMatch?.[0] && websiteMatch[0] !== linkedinMatch?.[0] ? websiteMatch[0] : "",
+    summary: String(args.fallbackSummary || "").trim(),
+  };
+}
+
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -3712,66 +3111,14 @@ function fileToDataUrl(file: File) {
 
 /** ---------------- Component ---------------- */
 
-const TEMPLATE_OPTIONS: Array<{ id: ResumeTemplateId; label: string }> = [
-  { id: "modern", label: "Modern (clean)" },
-  { id: "classic", label: "Classic (standard)" },
-  { id: "minimal", label: "Minimal (serif-lite)" },
-  { id: "executive", label: "Executive (premium)" },
-  { id: "compact", label: "Compact (dense)" },
-  { id: "sidebar", label: "Sidebar (2-column)" },
-  { id: "serif", label: "Serif (traditional)" },
-  { id: "ats", label: "ATS (plain)" },
-  { id: "arcade", label: "Arcade (fun)" },
-  { id: "neon", label: "Neon (cyber)" },
-  { id: "terminal", label: "Terminal (dev)" },
-  { id: "blueprint", label: "Blueprint (tech)" },
-  { id: "monochrome", label: "Monochrome (sleek)" },
-  { id: "noir", label: "Noir (moody)" },
-  { id: "paper", label: "Paper (warm serif)" },
-  { id: "ink", label: "Ink (dashed editorial)" },
-  { id: "corporate", label: "Corporate (polished)" },
-  { id: "contrast", label: "High Contrast (bold)" },
-  { id: "minimalist", label: "Minimalist (soft)" },
-  { id: "grid", label: "Grid (blueprint+)" },
-  { id: "retro", label: "Retro (sunburst)" },
-  { id: "pastel", label: "Pastel (gentle)" },
-  { id: "aura", label: "Aura (teal/green)" },
-  { id: "lavender", label: "Lavender (calm)" },
-  { id: "sunset", label: "Sunset (pink/orange)" },
-  { id: "forest", label: "Forest (green)" },
-  { id: "ocean", label: "Ocean (blue)" },
-  { id: "sand", label: "Sand (golden)" },
-  { id: "royal", label: "Royal (blue/purple)" },
-  { id: "gold", label: "Gold (premium)" },
-  { id: "bubblegum", label: "Bubblegum (pink pop)" },
-  { id: "limepop", label: "Lime Pop (bright green)" },
-  { id: "citrus", label: "Citrus (orange/lemon)" },
-  { id: "electric", label: "Electric (cyan/purple)" },
-  { id: "confetti", label: "Confetti (party)" },
-  { id: "rainbow", label: "Rainbow (bold)" },
-  { id: "sunny", label: "Sunny (yellow)" },
-  { id: "watermelon", label: "Watermelon (pink/green)" },
-  { id: "grape", label: "Grape (purple)" },
-  { id: "tropical", label: "Tropical (teal/coral)" },
-  { id: "mint", label: "Mint (fresh)" },
-  { id: "sky", label: "Sky (bright blue)" },
-  { id: "coral", label: "Coral (warm)" },
-  { id: "flamingo", label: "Flamingo (hot pink)" },
-  { id: "popart", label: "Pop Art (comic)" },
-  { id: "arcade2", label: "Arcade+ (extra fun)" },
-  { id: "hologram", label: "Hologram (iridescent)" },
-  { id: "galaxy", label: "Galaxy (space neon)" },
-  { id: "synthwave", label: "Synthwave (80s)" },
-  { id: "lava", label: "Lava (red/orange)" },
-  { id: "lemonade", label: "Lemonade (summer)" },
-  { id: "cottoncandy", label: "Cotton Candy (pastel pop)" },
-  { id: "sprinkles", label: "Sprinkles (cute)" },
-  { id: "comic", label: "Comic (ink + color)" },
-  { id: "playground", label: "Playground (primary)" },
-];
+type ResumeMvpProps = {
+  mode?: "standard" | "setup";
+};
 
-export default function ResumeMvp() {
+export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
+  const isSetupMode = mode === "setup";
   const { status } = useSession();
+  const router = useRouter();
 
   // ✅ Credits UI state
   const [creditsBalance, setCreditsBalance] = useState<number | null>(null);
@@ -3803,8 +3150,11 @@ export default function ResumeMvp() {
   }, [status, refreshCredits]);
 
   const [resumeText, setResumeText] = useState("");
+  const [preserveStructuredDuringAnalyze, setPreserveStructuredDuringAnalyze] = useState(false);
   const [jobText, setJobText] = useState("");
   const [targetPosition, setTargetPosition] = useState("");
+  const [applyPackBundle, setApplyPackBundle] = useState<ApplyPackBundle | null>(null);
+  const [jobTextOverrideMode, setJobTextOverrideMode] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resumeBlobUrl, setResumeBlobUrl] = useState<string>("");
@@ -3825,6 +3175,7 @@ export default function ResumeMvp() {
   const [showDebugJson, setShowDebugJson] = useState(false);
   const [logNetworkDebug, setLogNetworkDebug] = useState(true);
   const [showRewriteScorecard, setShowRewriteScorecard] = useState(true);
+  const [rewriteProofByRow, setRewriteProofByRow] = useState<Record<string, Partial<RewritePlanItem>>>({});
 
   // ✅ Selecting bullets = apply rewrite (if rewritten exists)
   const [selectedBulletIdx, setSelectedBulletIdx] = useState<Set<number>>(() => new Set());
@@ -3836,6 +3187,7 @@ export default function ResumeMvp() {
   const [showExpertiseOnResume, setShowExpertiseOnResume] = useState(true);
 
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplateId>("modern");
+  const selectedTemplate = resolveLegacyResumeTemplateSelection(resumeTemplate);
   const [profile, setProfile] = useState<ResumeProfile>({
     fullName: "",
     titleLine: "",
@@ -3867,6 +3219,78 @@ export default function ResumeMvp() {
     Record<string, { sessionId: string; attemptNumber: number; maxAttempts: number }>
   >({});
 
+  const trackedResumeEntryRef = useRef("");
+  const [profileSyncSaving, setProfileSyncSaving] = useState(false);
+  const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProfileSyncSignatureRef = useRef("");
+  const latestResumeHydratedRef = useRef(false);
+  const hydratedProfileIdRef = useRef("");
+  const [savedResumeRestored, setSavedResumeRestored] = useState(false);
+  const [hydratingSavedResume, setHydratingSavedResume] = useState(false);
+  // Guards for saved-resume hydration: only the newest request may apply state,
+  // nothing may be synced back before hydration has settled, and the first
+  // post-hydration signature is seeded so a plain visit never triggers a write.
+  const hydrationRequestRef = useRef(0);
+  // Match metadata of the restored profile. Edits made without a fresh analysis
+  // are merged into it instead of narrowing what is already saved.
+  const restoredProfileMetaRef = useRef<{ skills: string[]; titles: string[]; keywords: string[] } | null>(null);
+  const [hydrationSettled, setHydrationSettled] = useState(false);
+  const syncRequestRef = useRef(0);
+  const syncSignatureSeedPendingRef = useRef(false);
+  const searchParams = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+  const [latestResumeMeta, setLatestResumeMeta] = useState<{ title: string; createdAt: string } | null>(null);
+  const [resumeSourceMeta, setResumeSourceMeta] = useState<ResumeSourceMeta | null>(null);
+  const setupModeJobText = useMemo(() => {
+    const safeTarget = targetPosition.trim() || "the user's target role";
+    return [
+      `${safeTarget} core responsibilities`,
+      "Relevant experience and transferable results",
+      "Clear execution, collaboration, and communication",
+      "Process improvement, ownership, and measurable impact",
+      "ATS-friendly phrasing without inventing experience",
+    ].join("\n");
+  }, [targetPosition]);
+
+  const scrollToSection = useCallback((sectionId: string) => {
+    if (typeof window === "undefined") return;
+    const node = document.getElementById(sectionId);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const isApplyPackFlow = useMemo(() => {
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    return queryBundle === "apply-pack" && !!queryJobId;
+  }, [searchParams]);
+
+  const applyPackPricingEligible = useMemo(() => {
+    if (!isApplyPackFlow || jobTextOverrideMode) return false;
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    const currentJobText = String(jobText || "").trim();
+    return !!activeJobId && !!savedJobText && currentJobText === savedJobText;
+  }, [isApplyPackFlow, jobTextOverrideMode, searchParams, applyPackBundle, jobText]);
+
+
+  const continueToCoverLetter = useCallback(() => {
+    if (typeof window !== "undefined" && applyPackBundle) {
+      const nextBundle = {
+        ...applyPackBundle,
+        nextStep: "cover-letter",
+      };
+      window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+    }
+
+    const params = new URLSearchParams();
+    if (applyPackBundle?.jobId) params.set("jobId", applyPackBundle.jobId);
+    if (applyPackBundle?.resumeProfileId) params.set("resumeProfileId", applyPackBundle.resumeProfileId);
+    params.set("bundle", "apply-pack");
+    params.set("next", "cover-letter");
+
+    router.push(`/cover-letter?${params.toString()}`);
+  }, [applyPackBundle, router]);
 
   function createRewriteSessionId() {
     try {
@@ -3882,17 +3306,458 @@ export default function ResumeMvp() {
   }
 
   const canAnalyze = useMemo(() => {
-    const hasResume = !!file || resumeText.trim().length > 0;
+    const hasResume = !!file || resumeText.trim().length > 0 || !!resumeHtmlDraft.trim();
+    if (isSetupMode) return hasResume;
     const hasJob = jobText.trim().length > 0;
     const hasTargetPosition = targetPosition.trim().length > 0;
     return hasResume && hasJob && hasTargetPosition;
-  }, [file, resumeText, jobText, targetPosition]);
+  }, [file, resumeText, resumeHtmlDraft, jobText, targetPosition, isSetupMode]);
+
+  const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
+    const next = sanitizeStructuredResumeSnapshot(snapshot);
+    if (!next) return false;
+
+    // This replaces the whole document, so per-row rewrite state from whatever
+    // was loaded before no longer lines up with these sections and bullets.
+    setRewriteProofByRow((prev) => (Object.keys(prev).length ? {} : prev));
+    setSelectedBulletIdx((prev) => (prev.size ? new Set<number>() : prev));
+    setAssignments((prev) => (Object.keys(prev).length ? {} : prev));
+
+    setTargetPosition(next.targetPosition || "");
+    if (isLegacyResumeTemplateId(next.template)) {
+      setResumeTemplate(next.template);
+    }
+    setProfile({
+      fullName: next.profile.fullName,
+      titleLine: next.profile.titleLine,
+      locationLine: next.profile.locationLine,
+      email: next.profile.email,
+      phone: next.profile.phone,
+      linkedin: next.profile.linkedin,
+      portfolio: next.profile.portfolio,
+      summary: next.profile.summary,
+    });
+
+    const nextSections = next.sections.length
+      ? next.sections
+      : [{ id: "default", company: "Experience", title: "", dates: "", location: "", bullets: [] }];
+
+    setSections(nextSections.map(({ bullets: _bullets, ...section }) => section));
+    setEditorBulletsBySection(
+      nextSections.reduce<Record<string, string[]>>((acc, section) => {
+        acc[section.id] = Array.isArray(section.bullets)
+          ? section.bullets.map((bullet) => String(bullet ?? ""))
+          : [];
+        return acc;
+      }, {})
+    );
+    setEditorEducationItems(next.educationItems);
+    setEditorExpertiseItems(next.expertiseItems);
+    setEditorMetaGames(next.metaGames);
+    setEditorMetaMetrics(next.metaMetrics);
+    setShippedLabelMode(next.shippedLabelMode === "apps" ? "Apps" : "Games");
+    setIncludeMetaInResumeDoc(next.includeMetaInResumeDoc);
+    setShowShippedBlock(next.showShippedBlock);
+    setShowMetricsBlock(next.showMetricsBlock);
+    setShowEducationOnResume(next.showEducationOnResume);
+    setShowExpertiseOnResume(next.showExpertiseOnResume);
+    setShowProfilePhoto(next.showProfilePhoto);
+    setProfilePhotoDataUrl(next.profilePhotoDataUrl);
+    setProfilePhotoShape(next.profilePhotoShape);
+    setProfilePhotoSize(next.profilePhotoSize);
+
+    return true;
+  }, []);
+
+  const hydrateLatestSavedResume = useCallback(
+    async (options?: { force?: boolean; preferredProfileId?: string | null }) => {
+      if (status !== "authenticated") return null;
+      if (!options?.force && latestResumeHydratedRef.current) return null;
+
+      const requestId = ++hydrationRequestRef.current;
+      const isStaleRequest = () => hydrationRequestRef.current !== requestId;
+
+      const preferredProfileId = String(options?.preferredProfileId || "").trim();
+
+      if (preferredProfileId) {
+        try {
+          const response = await fetch("/api/resume-profiles", { method: "GET", cache: "no-store" });
+          const payload = (await parseApiResponse(response)) as { ok?: boolean; items?: Array<Record<string, unknown>> } | string;
+
+          if (response.ok && typeof payload !== "string" && payload?.ok && Array.isArray(payload.items)) {
+            const matchedProfile = payload.items.find((item) => String(item?.id || "").trim() === preferredProfileId) as ResumeProfileHydrationItem | undefined;
+            const resumeDocuments = Array.isArray((payload as { resumeDocuments?: ResumeDocumentHydrationItem[] }).resumeDocuments)
+              ? ((payload as { resumeDocuments?: ResumeDocumentHydrationItem[] }).resumeDocuments as ResumeDocumentHydrationItem[])
+              : [];
+
+            const preferredDocument = matchedProfile?.sourceDocument
+              || resumeDocuments.find((document) => String(document.id || "").trim() === String(matchedProfile?.sourceDocumentId || "").trim())
+              || null;
+
+            const profileText = String(matchedProfile?.rawText || "").trim();
+            const documentText = String(preferredDocument?.text || "").trim();
+            const htmlText = String(preferredDocument?.html || "").trim()
+              ? htmlToPlainText(String(preferredDocument?.html || ""))
+              : "";
+            if (isStaleRequest()) return null;
+            const structuredApplied = applyStructuredSnapshot(preferredDocument?.structuredData || null);
+            const structuredText = structuredApplied && preferredDocument?.structuredData
+              ? structuredSnapshotToResumeText(preferredDocument.structuredData)
+              : "";
+            const structuredAnalyzeText = structuredApplied && preferredDocument?.structuredData
+              ? structuredSnapshotToAnalyzeText(preferredDocument.structuredData)
+              : "";
+            const preferredText = structuredApplied
+              ? structuredAnalyzeText || structuredText || profileText || documentText || htmlText
+              : profileText || documentText || htmlText || structuredText;
+
+            if (preferredText || structuredApplied) {
+              latestResumeHydratedRef.current = true;
+              if (structuredApplied) {
+                setSavedResumeRestored(true);
+                syncSignatureSeedPendingRef.current = true;
+              }
+              hydratedProfileIdRef.current = preferredProfileId;
+              restoredProfileMetaRef.current = {
+                skills: Array.isArray(matchedProfile?.normalizedSkills) ? matchedProfile.normalizedSkills : [],
+                titles: Array.isArray(matchedProfile?.normalizedTitles) ? matchedProfile.normalizedTitles : [],
+                keywords: Array.isArray(matchedProfile?.keywords) ? matchedProfile.keywords : [],
+              };
+              if (preferredText) {
+                setResumeText(preferredText);
+              }
+
+              if (!structuredApplied && preferredText) {
+                setProfile(deriveProfileFromResumeText({
+                  resumeText: preferredText,
+                  fallbackTitle: matchedProfile?.title,
+                  fallbackSummary: matchedProfile?.summary,
+                  normalizedTitles: matchedProfile?.normalizedTitles,
+                }));
+              } else if (!structuredApplied && matchedProfile?.summary) {
+                setProfile((prev) => ({ ...prev, summary: String(matchedProfile.summary || "") }));
+              }
+
+              setResumeSourceMeta({
+                fileName: preferredDocument?.sourceFileName || String(preferredDocument?.title || matchedProfile?.title || "").trim() || null,
+                mimeType: preferredDocument?.sourceMimeType || null,
+                extension: preferredDocument?.sourceFileExtension || null,
+                sourceKind: preferredDocument?.sourceKind || (preferredDocument ? "saved_resume" : "resume_profile"),
+              });
+              setLatestResumeMeta({
+                title: String(preferredDocument?.title || matchedProfile?.title || "Resume profile").trim() || "Resume profile",
+                createdAt: String(preferredDocument?.createdAt || matchedProfile?.updatedAt || "").trim(),
+              });
+
+              return {
+                text: preferredText,
+                structuredText,
+                htmlText,
+              };
+            }
+          }
+        } catch {
+          // fall back to latest saved resume
+        }
+      }
+
+      try {
+        const response = await fetch("/api/resume-latest", { method: "GET", cache: "no-store" });
+        const payload = (await parseApiResponse(response)) as LatestResumePayload | string;
+
+        if (!response.ok || typeof payload === "string" || !payload?.ok || !payload.item) return null;
+
+        const latest = payload.item;
+        const nextText = String(latest.text || "").trim();
+        if (isStaleRequest()) return null;
+        const structuredApplied = applyStructuredSnapshot(latest.structuredData || null);
+        const structuredText = structuredApplied && latest.structuredData
+          ? structuredSnapshotToResumeText(latest.structuredData)
+          : "";
+        const structuredAnalyzeText = structuredApplied && latest.structuredData
+          ? structuredSnapshotToAnalyzeText(latest.structuredData)
+          : "";
+        const htmlText = String(latest.html || "").trim()
+          ? htmlToPlainText(String(latest.html || ""))
+          : "";
+        const preferredText = structuredApplied
+          ? structuredAnalyzeText || structuredText || nextText || htmlText
+          : nextText || htmlText || structuredText;
+
+        if (!preferredText && !structuredApplied) return null;
+
+        latestResumeHydratedRef.current = true;
+        if (structuredApplied) {
+          setSavedResumeRestored(true);
+          syncSignatureSeedPendingRef.current = true;
+        }
+
+        if (preferredText) {
+          setResumeText(preferredText);
+        }
+
+        if (latest.template && isLegacyResumeTemplateId(latest.template)) {
+          setResumeTemplate(latest.template);
+        }
+
+        setResumeSourceMeta({
+          fileName: latest.sourceFileName || null,
+          mimeType: latest.sourceMimeType || null,
+          extension: latest.sourceFileExtension || null,
+          sourceKind: latest.sourceKind || "saved_resume",
+        });
+        setLatestResumeMeta({
+          title: String(latest.title || latest.sourceFileName || "Latest saved resume"),
+          createdAt: latest.createdAt,
+        });
+
+        return {
+          text: preferredText,
+          structuredText,
+          htmlText,
+        };
+      } catch {
+        return null;
+      }
+    },
+    [status, applyStructuredSnapshot]
+  );
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const preferredProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || stored).trim();
+    })();
+
+    // Selecting a different saved profile has to replace what is on screen;
+    // every other path keeps the one-shot behaviour.
+    const switchedProfile =
+      !!preferredProfileId && !!hydratedProfileIdRef.current && preferredProfileId !== hydratedProfileIdRef.current;
+
+    if (latestResumeHydratedRef.current && !switchedProfile) return;
+
+    // An upload or an analysis in flight is never discarded, and restored text
+    // alone must not keep saving blocked.
+    if (file || analysis || (resumeText.trim() && !switchedProfile)) {
+      setHydrationSettled(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function hydrateLatestResume() {
+      setHydratingSavedResume(true);
+      try {
+        const hydrated = await hydrateLatestSavedResume({ preferredProfileId, force: switchedProfile });
+        if (!hydrated || cancelled) return;
+      } finally {
+        setHydrationSettled(true);
+        setHydratingSavedResume(false);
+      }
+    }
+
+    void hydrateLatestResume();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, file, resumeText, analysis, hydrateLatestSavedResume, searchParams]);
+
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    async function hydrateApplyPack() {
+      const queryJobId = String(searchParams.get("jobId") || "").trim();
+      const queryResumeProfileId = String(searchParams.get("resumeProfileId") || "").trim();
+      const queryBundle = String(searchParams.get("bundle") || "").trim();
+      const queryNext = String(searchParams.get("next") || "").trim();
+
+      let parsed: ApplyPackBundle | null = null;
+
+      try {
+        const raw = window.sessionStorage.getItem("gitajob.applyPack");
+        if (raw) {
+          parsed = JSON.parse(raw) as ApplyPackBundle;
+        }
+      } catch {
+        parsed = null;
+      }
+
+      const storedJobId = String(parsed?.jobId || "").trim();
+      const storedJobText = String(parsed?.job?.jobContextText || "").trim();
+      const storedTargetPosition = String(parsed?.job?.title || "").trim();
+      const isJobAwareResumeEntry = !!queryJobId;
+
+      const needsFreshJobContext =
+        isJobAwareResumeEntry &&
+        (queryJobId !== storedJobId || !storedJobText || queryBundle !== "apply-pack");
+
+      if (needsFreshJobContext) {
+        try {
+          const response = await fetch(`/api/jobs/${encodeURIComponent(queryJobId)}/context`, {
+            method: "GET",
+            cache: "no-store",
+          });
+          const json = (await response.json().catch(() => null)) as
+            | { ok?: boolean; item?: ApplyPackBundle["job"]; error?: string }
+            | null;
+
+          if (response.ok && json?.ok && json.item) {
+            const fetchedJob = json.item;
+            const nextBundle: ApplyPackBundle = {
+              bundle: "apply-pack",
+              jobId: queryJobId,
+              resumeProfileId:
+                queryResumeProfileId || String(parsed?.resumeProfileId || "").trim() || undefined,
+              createdAt: new Date().toISOString(),
+              nextStep: queryNext || parsed?.nextStep || "resume",
+              job: fetchedJob,
+            };
+
+            if (queryBundle === "apply-pack") {
+              window.sessionStorage.setItem("gitajob.applyPack", JSON.stringify(nextBundle));
+            }
+
+            if (cancelled) return;
+
+            setApplyPackBundle(queryBundle === "apply-pack" ? nextBundle : null);
+            const fetchedJobText = String(fetchedJob.jobContextText || "").trim();
+            const fetchedTargetPosition =
+              String(fetchedJob.title || "").trim() ||
+              inferTargetPositionFromJobContext(fetchedJobText);
+            setJobText((current) => (current.trim() ? current : fetchedJobText));
+            if (fetchedTargetPosition) {
+              setTargetPosition((current) => current.trim() ? current : fetchedTargetPosition);
+            }
+            setJobTextOverrideMode(false);
+            return;
+          }
+        } catch {
+          // fall through to stored bundle
+        }
+      }
+
+      if (!parsed || parsed.bundle !== "apply-pack" || cancelled) return;
+
+      const isActiveApplyPackResumeEntry = queryBundle === "apply-pack" && !!queryJobId;
+      if (!isActiveApplyPackResumeEntry) {
+        setApplyPackBundle(null);
+        setJobTextOverrideMode(false);
+        return;
+      }
+
+      setApplyPackBundle(parsed);
+
+      const sameRequestedJob = queryJobId === storedJobId;
+
+      if (sameRequestedJob && storedJobText) {
+        setJobText((current) => (current.trim() ? current : storedJobText));
+      }
+
+      if (sameRequestedJob && storedTargetPosition) {
+        setTargetPosition(storedTargetPosition);
+      }
+    }
+
+    hydrateApplyPack();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (targetPosition.trim()) return;
+
+    const inferredTargetPosition = inferTargetPositionFromJobContext(jobText);
+    if (inferredTargetPosition) setTargetPosition(inferredTargetPosition);
+  }, [jobText, targetPosition]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const queryBundle = String(searchParams.get("bundle") || "").trim();
+    const queryJobId = String(searchParams.get("jobId") || "").trim();
+    const isDirectResumeEntry = queryBundle !== "apply-pack" || !queryJobId;
+
+    if (!isDirectResumeEntry) return;
+
+    setApplyPackBundle(null);
+    setJobTextOverrideMode(false);
+  }, [searchParamsKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const queryJobId = searchParams.get("jobId") || "";
+    const queryResumeProfileId = searchParams.get("resumeProfileId") || "";
+    const bundle = searchParams.get("bundle") || "";
+    const next = searchParams.get("next") || "";
+
+    const storedJobId = String(applyPackBundle?.jobId || "").trim();
+    const storedResumeProfileId = String(applyPackBundle?.resumeProfileId || "").trim();
+    const activeJobId = queryJobId || storedJobId;
+    const activeResumeProfileId = queryResumeProfileId || storedResumeProfileId;
+    const activeTitle = String(applyPackBundle?.job?.title || targetPosition || "").trim();
+    const activeCompany = String(applyPackBundle?.job?.company || "").trim();
+
+    if (!activeJobId) return;
+
+    const entryKey = JSON.stringify({
+      activeJobId,
+      activeResumeProfileId,
+      bundle,
+      next,
+      activeTitle,
+      activeCompany,
+    });
+
+    if (trackedResumeEntryRef.current === entryKey) return;
+    trackedResumeEntryRef.current = entryKey;
+
+    trackJobEvent({
+      event: "job_context_resume_entry",
+      jobId: activeJobId,
+      resumeProfileId: activeResumeProfileId || undefined,
+      company: activeCompany || undefined,
+      jobTitle: activeTitle || undefined,
+      route: "/resume",
+      mode: bundle === "apply-pack" ? "apply_pack" : "resume",
+      meta: {
+        next: next || undefined,
+        hasBundlePayload: !!applyPackBundle,
+      },
+    });
+  }, [applyPackBundle, targetPosition, searchParamsKey]);
+
+  function syncJobTextFromApplyPack() {
+    const savedJobText = String(applyPackBundle?.job?.jobContextText || "").trim();
+    const savedTargetPosition =
+      String(applyPackBundle?.job?.title || "").trim() ||
+      inferTargetPositionFromJobContext(savedJobText);
+
+    if (savedJobText) setJobText(savedJobText);
+    if (savedTargetPosition) setTargetPosition(savedTargetPosition);
+    setJobTextOverrideMode(false);
+  }
 
   const resetDerivedState = useCallback(() => {
     setAnalysis(null);
+    setSavedResumeRestored(false);
+    restoredProfileMetaRef.current = null;
+    syncSignatureSeedPendingRef.current = false;
+    lastProfileSyncSignatureRef.current = "";
+    latestResumeHydratedRef.current = false;
     setSelectedBulletIdx(new Set());
     setAssignments({});
     setRewriteSessions({});
+    setRewriteProofByRow({});
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
     setAtsScoreInitialized(false);
@@ -3901,7 +3766,28 @@ export default function ResumeMvp() {
     setLoadingRewriteIndex(null);
     setLoadingBatchRewrite(false);
     setSections([{ id: "default", company: "Experience", title: "", dates: "", location: "" }]);
+    setEditorBulletsBySection({});
+    setEditorEducationItems([]);
+    setEditorExpertiseItems([]);
+    setEditorMetaGames([]);
+    setEditorMetaMetrics([]);
     setResumeBlobUrl("");
+    setResumeHtmlDraft("");
+    setResumeText("");
+    setPreserveStructuredDuringAnalyze(false);
+    setLatestResumeMeta(null);
+    setResumeSourceMeta(null);
+    setProfile({
+      fullName: "",
+      titleLine: "",
+      locationLine: "",
+      email: "",
+      phone: "",
+      linkedin: "",
+      portfolio: "",
+      summary: "",
+    });
+    setProfilePhotoDataUrl("");
     setConfirmedAtsScore(null);
     setAtsScoreUpdatedAt(null);
     setAtsScoreInitialized(false);
@@ -3931,6 +3817,7 @@ export default function ResumeMvp() {
   );
 
   const clearFile = useCallback(() => {
+    latestResumeHydratedRef.current = false;
     setFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     resetDerivedState();
@@ -3954,8 +3841,8 @@ export default function ResumeMvp() {
       setProfilePhotoDataUrl(dataUrl);
       setShowProfilePhoto(true);
       setError(null);
-    } catch (e: any) {
-      setError(e?.message || "Could not load profile photo.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Could not load profile photo."));
     }
   }, []);
 
@@ -4012,7 +3899,7 @@ export default function ResumeMvp() {
   }
 
   async function handleAnalyze() {
-    if (!targetPosition.trim()) {
+    if (!isSetupMode && !targetPosition.trim()) {
       setError("Target position is required for ATS analysis.");
       return;
     }
@@ -4026,22 +3913,94 @@ export default function ResumeMvp() {
     try {
       let res: Response;
 
-      const resumeInput = resumeText.trim();
+      const hasCanonicalStructuredResume = hasStructuredResumeBullets(structuredResumeSnapshot);
+      const shouldPreserveStructuredSource = hasCanonicalStructuredResume;
+      setPreserveStructuredDuringAnalyze(shouldPreserveStructuredSource);
+
+      let structuredSnapshotText = shouldPreserveStructuredSource
+        ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+        : "";
+      let htmlDraftPlain = liveResumeHtml.trim() ? htmlToPlainText(liveResumeHtml) : "";
+      const savedResumeText = resumeText.trim();
+      let resumeInput = shouldPreserveStructuredSource
+        ? structuredSnapshotText || savedResumeText || htmlDraftPlain
+        : file
+          ? savedResumeText
+          : savedResumeText || structuredSnapshotText || htmlDraftPlain;
+
+      if (shouldPreserveStructuredSource && structuredSnapshotText) {
+        resumeInput = structuredSnapshotText || savedResumeText;
+      }
+
+      if (!file && !String(resumeInput).trim()) {
+        const hydrated = await hydrateLatestSavedResume({ force: true });
+        if (hydrated) {
+          structuredSnapshotText = hydrated.structuredText || structuredSnapshotText;
+          htmlDraftPlain = hydrated.htmlText || htmlDraftPlain;
+          resumeInput = hydrated.text || hydrated.structuredText || hydrated.htmlText || resumeInput;
+        }
+      }
+
       const resumePlain = looksLikeHtmlInput(resumeInput) ? htmlToPlainText(resumeInput) : resumeInput;
       const resumeTextForApi = resumePlain ? normalizeResumeTextForParsing(resumePlain) : "";
 
-      if (file) {
-        const url = await ensureResumeUploadedToBlob(file);
+      if (!file && !resumeTextForApi.trim()) {
+        throw new Error("No saved resume was loaded. Open your saved FTUE resume first or upload a file.");
+      }
+
+      const effectiveTargetPosition = isSetupMode ? "Professional Resume" : targetPosition.trim();
+
+      const analyticsParams =
+        typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const analyticsJobId =
+        analyticsParams?.get("jobId") || String(applyPackBundle?.jobId || "").trim();
+      const analyticsResumeProfileId =
+        analyticsParams?.get("resumeProfileId") || String(applyPackBundle?.resumeProfileId || "").trim();
+      const analyticsBundle =
+        analyticsParams?.get("bundle") || String(applyPackBundle?.bundle || "").trim();
+      const analyticsMode = analyticsBundle === "apply-pack" && applyPackPricingEligible ? "apply_pack" : "resume";
+      const effectiveJobText = isSetupMode ? setupModeJobText : jobText;
+
+      if (analyticsJobId) {
+        trackJobEvent({
+          event: analyticsMode === "apply_pack" ? "job_apply_pack_started" : "job_resume_analysis_started",
+          jobId: analyticsJobId,
+          resumeProfileId: analyticsResumeProfileId || undefined,
+          company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+          jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
+          route: "/resume",
+          mode: analyticsMode,
+          meta: {
+            hasResumeFile: !!file,
+            hasResumeText: !!resumeText.trim(),
+            hasJobText: !!effectiveJobText.trim(),
+            hasTargetPosition: !!effectiveTargetPosition.trim(),
+          },
+        });
+      }
+
+      const shouldAnalyzeFromBlob = !!file && !shouldPreserveStructuredSource;
+
+      if (shouldAnalyzeFromBlob) {
+        const url = await ensureResumeUploadedToBlob(file!);
 
         res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resumeBlobUrl: url,
-            jobText,
-            targetPosition,
+            jobText: effectiveJobText,
+            targetPosition: effectiveTargetPosition,
+            isFirstTimeSetup: isSetupMode,
             onlyExperienceBullets,
-            resumeText: resumeTextForApi || "",
+            resumeText: "",
+            jobId: analyticsJobId || undefined,
+            resumeProfileId: analyticsResumeProfileId || undefined,
+            sourceSlug: String(applyPackBundle?.sourceSlug || "").trim() || undefined,
+            company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+            jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
+            mode: analyticsMode,
+            bundleSessionId: analyticsMode === "apply_pack" ? String(applyPackBundle?.bundleSessionId || "").trim() || undefined : undefined,
           }),
         });
       } else {
@@ -4050,9 +4009,17 @@ export default function ResumeMvp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             resumeText: resumeTextForApi || resumePlain,
-            jobText,
-            targetPosition,
+            jobText: effectiveJobText,
+            targetPosition: effectiveTargetPosition,
             onlyExperienceBullets,
+            isFirstTimeSetup: isSetupMode,
+            jobId: analyticsJobId || undefined,
+            resumeProfileId: analyticsResumeProfileId || undefined,
+            sourceSlug: String(applyPackBundle?.sourceSlug || "").trim() || undefined,
+            company: String(applyPackBundle?.job?.company || "").trim() || undefined,
+            jobTitle: String(applyPackBundle?.job?.title || effectiveTargetPosition || "").trim() || undefined,
+            mode: analyticsMode,
+            bundleSessionId: analyticsMode === "apply_pack" ? String(applyPackBundle?.bundleSessionId || "").trim() || undefined : undefined,
           }),
         });
       }
@@ -4071,9 +4038,10 @@ export default function ResumeMvp() {
       }
 
       if (!res.ok) {
-        const errMsg = typeof payload === "string" ? payload : (payload as any)?.error || "Analyze failed";
-        if ((payload as any)?.error === "OUT_OF_CREDITS") {
-          const bal = (payload as any)?.balance;
+        const apiError = typeof payload === "object" && payload !== null ? payload as { error?: string; balance?: number } : null;
+        const errMsg = typeof payload === "string" ? payload : apiError?.error || "Analyze failed";
+        if (apiError?.error === "OUT_OF_CREDITS") {
+          const bal = apiError?.balance;
           throw new Error(`Out of credits. Balance: ${bal ?? 0}.`);
         }
         throw new Error(errMsg);
@@ -4084,54 +4052,112 @@ export default function ResumeMvp() {
       }
 
       const data = payload as AnalyzeResponse;
-      setAnalysis(data);
+      const normalizedAnalysis = shouldPreserveStructuredSource
+        ? {
+            ...data,
+            metaBlocks: {
+              gamesShipped: [],
+              metrics: [],
+            },
+            highlights: {
+              gamesShipped: [],
+              keyMetrics: [],
+            },
+          }
+        : data;
+      setAnalysis(normalizedAnalysis);
+      if (shouldPreserveStructuredSource) {
+        const canonicalAnalyzeText = structuredSnapshotToAnalyzeText(structuredResumeSnapshot).trim();
+        if (canonicalAnalyzeText) {
+          setResumeText(canonicalAnalyzeText);
+        }
+      } else if (resumeTextForApi.trim()) {
+        setResumeText(resumeTextForApi);
+      }
+
+      if (typeof window !== "undefined") {
+        const autoProfileId = String(data?.autoResumeProfile?.id || "").trim();
+        if (autoProfileId) {
+          window.localStorage.setItem("activeResumeProfileId", autoProfileId);
+        }
+      }
 
       const rewritePlanLocal = Array.isArray(data?.rewritePlan) ? data.rewritePlan! : [];
       const planLen = rewritePlanLocal.length;
 
-      const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];
-      const nextSections: ExperienceSection[] =
-        jobs.length > 0
-          ? jobs.map((j) => ({
-              id: String(j.id),
-              company: String(j.company || "Company"),
-              title: String(j.title || "Role"),
-              // ✅ IMPORTANT: no placeholder “Dates”
-              dates: String(j.dates || ""),
-              location: j.location ? String(j.location) : "",
-            }))
-          : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
+      if (shouldPreserveStructuredSource) {
+        setAssignments({});
+      } else {
+        const jobs = Array.isArray(data?.experienceJobs) ? data.experienceJobs! : [];
+        const nextSections: ExperienceSection[] =
+          jobs.length > 0
+            ? jobs.map((j) => ({
+                id: String(j.id),
+                company: String(j.company || "Company"),
+                title: String(j.title || "Role"),
+                // ✅ IMPORTANT: no placeholder “Dates”
+                dates: String(j.dates || ""),
+                location: j.location ? String(j.location) : "",
+              }))
+            : [{ id: "default", company: "Experience", title: "", dates: "", location: "" }];
 
-      setSections(nextSections);
+        setSections(nextSections);
 
-      const knownSectionIds = new Set(nextSections.map((s) => s.id));
-      const fallbackId = nextSections[0]?.id || "default";
+        const knownSectionIds = new Set(nextSections.map((s) => s.id));
+        const fallbackId = nextSections[0]?.id || "default";
 
-      if (planLen) {
-        const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
-        const auto = buildAssignmentsFromServerMapping({
-          rewritePlan: rewritePlanLocal,
-          bulletJobIds,
-          knownSectionIds,
-          fallbackSectionId: fallbackId,
+        const analyzedEditorBullets: Record<string, string[]> = {};
+        const apiBulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : [];
+        const apiBullets = Array.isArray(data?.bullets) ? data.bullets : [];
+
+        apiBullets.forEach((bullet, index) => {
+          const cleanBullet = String(bullet ?? "").trim();
+          if (!cleanBullet) return;
+          const sectionId = String(apiBulletJobIds[index] || fallbackId).trim() || fallbackId;
+          if (!analyzedEditorBullets[sectionId]) analyzedEditorBullets[sectionId] = [];
+          analyzedEditorBullets[sectionId].push(cleanBullet);
         });
 
-        setAssignments(auto);
-        ensureAssignmentsForPlan(planLen, fallbackId);
-      } else {
-        setAssignments({});
+        if (!Object.keys(analyzedEditorBullets).length && jobs.length) {
+          jobs.forEach((job) => {
+            const sectionId = String(job?.id || fallbackId).trim() || fallbackId;
+            const sectionBullets = Array.isArray(job?.bullets)
+              ? job.bullets.map((bullet) => String(bullet ?? "").trim()).filter(Boolean)
+              : [];
+            if (sectionBullets.length) {
+              analyzedEditorBullets[sectionId] = sectionBullets;
+            }
+          });
+        }
+
+        setEditorBulletsBySection(analyzedEditorBullets);
+
+        if (planLen) {
+          const bulletJobIds = Array.isArray(data?.bulletJobIds) ? data.bulletJobIds : undefined;
+          const auto = buildAssignmentsFromServerMapping({
+            rewritePlan: rewritePlanLocal,
+            bulletJobIds,
+            knownSectionIds,
+            fallbackSectionId: fallbackId,
+          });
+
+          setAssignments(auto);
+          ensureAssignmentsForPlan(planLen, fallbackId);
+        } else {
+          setAssignments({});
+        }
       }
 
       refreshCredits();
-    } catch (e: any) {
-      setError(e?.message || "Analyze failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Analyze failed"));
       refreshCredits();
     } finally {
       setLoadingAnalyze(false);
     }
   }
 
-  async function postRewriteWithFallback(body: any) {
+  async function postRewriteWithFallback(body: Record<string, unknown>, options?: { timeoutMs?: number }) {
     const safeBody = {
       ...buildRewriteBulletPayload(body),
       rewriteSessionId: body?.rewriteSessionId,
@@ -4158,11 +4184,27 @@ export default function ResumeMvp() {
       );
     }
 
-    const res = await fetch("/api/rewrite-bullet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-    });
+    const timeoutMs = Math.max(1_000, Number(options?.timeoutMs ?? REWRITE_FIRST_ATTEMPT_TIMEOUT_MS));
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    let res: Response;
+    try {
+      res = await fetch("/api/rewrite-bullet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+        signal: controller.signal,
+      });
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      if (err.name === "AbortError") {
+        throw new Error(`Rewrite request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     const payload = await parseApiResponse(res);
 
@@ -4174,12 +4216,10 @@ export default function ResumeMvp() {
     return { res, payload };
   }
 
-  async function handleRewriteBullet(index: number, options?: { safer?: boolean }) {
-    if (!analysis) return;
-
+  async function handleRewriteBullet(index: number, options?: { safer?: boolean }): Promise<boolean> {
     const rowsSnapshot = liveBulletRowsRef.current.length ? liveBulletRowsRef.current : liveBulletRows;
     const row = rowsSnapshot[index];
-    if (!row) return;
+    if (!row) return false;
 
     const sessionKey = getRewriteSessionKey(row);
     const existingSession = rewriteSessions[sessionKey];
@@ -4191,7 +4231,7 @@ export default function ResumeMvp() {
 
     if (activeSession.attemptNumber >= activeSession.maxAttempts) {
       setError(`Rewrite attempt limit reached for this bullet (${activeSession.maxAttempts}). Edit the bullet to start a new rewrite session.`);
-      return;
+      return false;
     }
 
     const originalBullet = String(row.originalText ?? row.text ?? "").trim();
@@ -4200,14 +4240,14 @@ export default function ResumeMvp() {
 
     if (!originalBullet) {
       setError("Missing original bullet for rewrite. Re-run Analyze or confirm bullets extracted.");
-      return;
+      return false;
     }
 
     if (isTrainingLikeBullet(originalBullet)) {
       const rewrittenTraining = defaultTrainingRewrite(originalBullet);
       if (!rewrittenTraining) {
         setError("Training bullet detected, but could not generate a safe rewrite.");
-        return;
+        return false;
       }
 
       setAnalysis((prev) => {
@@ -4273,20 +4313,47 @@ export default function ResumeMvp() {
         return { ...prev, [row.sectionId]: next };
       });
 
+      setRewriteProofByRow((prev) => ({
+        ...prev,
+        [row.key]: {
+          originalBullet,
+          suggestedKeywords,
+          rewrittenBullet: rewrittenTraining,
+          needsMoreInfo: false,
+          notes: ["Training/education bullet detected; rewrite kept faithful (no invented duties)."],
+          keywordHits: [],
+          blockedKeywords: [],
+          truthRisk: {
+            score: 0,
+            level: "safe",
+            reasons: ["Training bullet rewrite kept close to the original claim."],
+            addedTerms: [],
+            riskyPhrases: [],
+            unsupportedClaims: [],
+          },
+          jobId: row.sectionId,
+        },
+      }));
+
       refreshCredits();
-      return;
+      return true;
+    }
+
+    if (!jobText.trim()) {
+      setError("Paste the job posting above before rewriting bullets. AI rewrites need that job context.");
+      return false;
     }
 
     setLoadingRewriteIndex(index);
     setError(null);
 
     try {
-      const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
+      const rewritePlanLocal = Array.isArray(analysis?.rewritePlan) ? analysis.rewritePlan : [];
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
       const jobTextCapped = String(jobText ?? "").slice(0, 6000);
 
-      const norm = (s: any) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
       const extractOpenerVerb = (bullet: string) => {
         const s = String(bullet ?? "")
@@ -4532,7 +4599,7 @@ export default function ResumeMvp() {
         maxAttempts: activeSession.maxAttempts,
       };
 
-      async function runRewriteAttempt(extraConstraints: string[] = [], requestAttemptNumber?: number) {
+      async function runRewriteAttempt(extraConstraints: string[] = [], requestAttemptNumber?: number, timeoutMs = REWRITE_FIRST_ATTEMPT_TIMEOUT_MS) {
         const nextAttemptNumber =
           typeof requestAttemptNumber === "number"
             ? requestAttemptNumber
@@ -4555,7 +4622,7 @@ export default function ResumeMvp() {
           ],
         };
 
-        const { res, payload } = await postRewriteWithFallback(requestBody);
+        const { res, payload } = await postRewriteWithFallback(requestBody, { timeoutMs });
 
         if (isHtmlDoc(payload)) {
           throw new Error(`Rewrite returned HTML (server error). Check terminal logs.\nStatus: ${res.status}`);
@@ -4602,7 +4669,30 @@ export default function ResumeMvp() {
         return payload;
       }
 
-      let payload = await runRewriteAttempt();
+      async function runRewriteAttemptWithTimeoutRetry(extraConstraints: string[] = [], requestAttemptNumber?: number) {
+        const firstAttemptNumber =
+          typeof requestAttemptNumber === "number"
+            ? requestAttemptNumber
+            : activeSession.attemptNumber + 1;
+
+        try {
+          return await runRewriteAttempt(extraConstraints, firstAttemptNumber, REWRITE_FIRST_ATTEMPT_TIMEOUT_MS);
+        } catch (e: unknown) {
+          const message = getErrorMessage(e, "Rewrite failed");
+          if (!/timed out|abort/i.test(message)) throw e;
+
+          return await runRewriteAttempt(
+            [
+              ...extraConstraints,
+              "The previous rewrite request timed out. Return one concise, faithful rewrite without extra explanation.",
+            ],
+            firstAttemptNumber + 1,
+            REWRITE_RETRY_TIMEOUT_MS
+          );
+        }
+      }
+
+      let payload = await runRewriteAttemptWithTimeoutRetry();
 
       let rewrittenBullet = String(payload?.rewrittenBullet ?? "").trim();
       let needsMoreInfo = !!payload?.needsMoreInfo;
@@ -4629,7 +4719,7 @@ export default function ResumeMvp() {
           needsMoreInfo,
         })
       ) {
-        payload = await runRewriteAttempt(
+        payload = await runRewriteAttemptWithTimeoutRetry(
           [
             "This bullet still needs a more noticeable rewrite. Keep it truthful, but strengthen the opener, tighten the structure, and make the improvement obvious.",
             "Do not return a near-copy of the original. Make a clear wording upgrade while preserving the original facts.",
@@ -4721,6 +4811,22 @@ export default function ResumeMvp() {
         return { ...prev, [row.sectionId]: next };
       });
 
+      setRewriteProofByRow((prev) => ({
+        ...prev,
+        [row.key]: {
+          originalBullet,
+          suggestedKeywords,
+          rewrittenBullet,
+          needsMoreInfo,
+          notes,
+          keywordHits,
+          blockedKeywords,
+          truthRisk: truthRisk ?? undefined,
+          verbStrength: payload?.verbStrengthAfter,
+          jobId: row.sectionId,
+        },
+      }));
+
       if (appendedPlanIndex !== null) {
         setAssignments((prev) => ({
           ...prev,
@@ -4729,9 +4835,11 @@ export default function ResumeMvp() {
       }
 
       refreshCredits();
-    } catch (e: any) {
-      setError(e?.message || "Rewrite failed");
+      return true;
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Rewrite failed"));
       refreshCredits();
+      return false;
     } finally {
       setLoadingRewriteIndex(null);
     }
@@ -4774,6 +4882,13 @@ export default function ResumeMvp() {
       const next = [...(prev[row.sectionId] || [])];
       next[row.bulletIndex] = row.originalText || next[row.bulletIndex] || "";
       return { ...prev, [row.sectionId]: next };
+    });
+
+    setRewriteProofByRow((prev) => {
+      if (!(row.key in prev)) return prev;
+      const next = { ...prev };
+      delete next[row.key];
+      return next;
     });
 
     setSelectedBulletIdx((prev) => {
@@ -4851,6 +4966,13 @@ if (typeof planIndex === "number") {
     setResumeText(rebuiltResumeText);
 
     const rewriteSessionKey = `${sectionId}:${index}`;
+    setRewriteProofByRow((prev) => {
+      if (!(rewriteSessionKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[rewriteSessionKey];
+      return next;
+    });
+
     setRewriteSessions((prev) => {
       if (!(rewriteSessionKey in prev)) return prev;
       const next = { ...prev };
@@ -4867,11 +4989,14 @@ if (typeof planIndex === "number") {
   }
 
   async function handleRewriteSelected() {
-    if (!analysis) return;
-
     const effectiveLen = liveBulletRows.length;
     if (!effectiveLen) {
-      setError("No bullets available. Run Analyze first.");
+      setError("No bullets available. Upload or restore a resume first.");
+      return;
+    }
+
+    if (!jobText.trim()) {
+      setError("Paste the job posting above before rewriting bullets. AI rewrites need that job context.");
       return;
     }
 
@@ -4884,10 +5009,19 @@ if (typeof planIndex === "number") {
     setLoadingBatchRewrite(true);
     setError(null);
 
+    let successCount = 0;
+    let failedCount = 0;
+
     try {
       for (const i of selected) {
         // eslint-disable-next-line no-await-in-loop
-        await handleRewriteBullet(i);
+        const ok = await handleRewriteBullet(i);
+        if (ok) successCount += 1;
+        else failedCount += 1;
+      }
+
+      if (failedCount > 0) {
+        setError(`Rewrote ${successCount} of ${selected.length} selected bullets. ${failedCount} failed or timed out and were skipped.`);
       }
     } finally {
       setLoadingBatchRewrite(false);
@@ -4920,6 +5054,8 @@ if (typeof planIndex === "number") {
 
   const [editorMetaGames, setEditorMetaGames] = useState<string[]>([]);
   const [editorMetaMetrics, setEditorMetaMetrics] = useState<string[]>([]);
+  const lastMetaGamesSeedKeyRef = useRef<string>("");
+  const lastMetaMetricsSeedKeyRef = useRef<string>("");
   const [shippedLabelMode, setShippedLabelMode] = useState<"Games" | "Apps">("Games");
 
   const guardrailTerms = useMemo(() => {
@@ -4975,7 +5111,54 @@ if (typeof planIndex === "number") {
   const [editorExpertiseItems, setEditorExpertiseItems] = useState<string[]>([]);
   const [editorEducationItems, setEditorEducationItems] = useState<string[]>([]);
 
+  const structuredResumeSnapshot = useMemo<StructuredResumeSnapshot>(() => ({
+    version: 1,
+    targetPosition: targetPosition.trim(),
+    template: resumeTemplate,
+    profile,
+    sections: sections.map((section) => ({
+      ...section,
+      bullets: (editorBulletsBySection[section.id] || []).map((bullet) => String(bullet ?? "").trim()).filter(Boolean),
+    })),
+    educationItems: editorEducationItems.filter((x) => String(x ?? "").trim()),
+    expertiseItems: editorExpertiseItems.filter((x) => String(x ?? "").trim()),
+    metaGames: editorMetaGames.filter((x) => String(x ?? "").trim()),
+    metaMetrics: editorMetaMetrics.filter((x) => String(x ?? "").trim()),
+    shippedLabelMode: shippedLabelMode === "Apps" ? "apps" : "games",
+    includeMetaInResumeDoc,
+    showShippedBlock,
+    showMetricsBlock,
+    showEducationOnResume,
+    showExpertiseOnResume,
+    showProfilePhoto,
+    profilePhotoDataUrl,
+    profilePhotoShape,
+    profilePhotoSize,
+  }), [
+    targetPosition,
+    resumeTemplate,
+    profile,
+    sections,
+    editorBulletsBySection,
+    editorEducationItems,
+    editorExpertiseItems,
+    editorMetaGames,
+    editorMetaMetrics,
+    shippedLabelMode,
+    includeMetaInResumeDoc,
+    showShippedBlock,
+    showMetricsBlock,
+    showEducationOnResume,
+    showExpertiseOnResume,
+    showProfilePhoto,
+    profilePhotoDataUrl,
+    profilePhotoShape,
+    profilePhotoSize,
+  ]);
+
   useEffect(() => {
+    if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
       if (cleanedPrev.length) return prev;
@@ -4983,10 +5166,11 @@ if (typeof planIndex === "number") {
       const parsed = parseEducationLines(resumeText);
       return parsed.length ? parsed : prev;
     });
-  }, [resumeText]);
+  }, [resumeText, structuredResumeSnapshot]);
 
   useEffect(() => {
     if (!analysis) return;
+    if (hasStructuredResumeBullets(structuredResumeSnapshot)) return;
 
     setEditorEducationItems((prev) => {
       const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
@@ -5000,24 +5184,7 @@ if (typeof planIndex === "number") {
       const parsed = parseEducationLines(sourceText);
       return parsed.length ? parsed : prev;
     });
-  }, [analysis, resumeText]);
-
-useEffect(() => {
-  if (!analysis) return;
-
-  setEditorEducationItems((prev) => {
-    const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
-    if (cleanedPrev.length) return prev;
-
-    const sourceText =
-      String(analysis?.debug?.rawText ?? "") ||
-      String(analysis?.debug?.normalizedText ?? "") ||
-      String(resumeText ?? "");
-
-    const parsed = parseEducationLines(sourceText);
-    return parsed.length ? parsed : prev;
-  });
-}, [analysis, resumeText]);
+  }, [analysis, resumeText, structuredResumeSnapshot]);
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [dragState, setDragState] = useState<{ sectionId: string; index: number } | null>(null);
@@ -5050,26 +5217,81 @@ useEffect(() => {
     window.setTimeout(() => setHighlightedNavTarget((prev) => (prev === `rewrite:${key}` ? null : prev)), 1800);
   }, []);
 
-  useEffect(() => {
-    setEditorBulletsBySection((prev) => {
-      const hasExisting = Object.keys(prev).length > 0;
-      if (hasExisting) return prev;
+  const analysisSeedKey = useMemo(() => {
+    if (!analysis) return "";
+    const jobIds = Array.isArray(analysis?.bulletJobIds) ? analysis.bulletJobIds.join("|") : "";
+    const bullets = Array.isArray(analysis?.bullets) ? analysis.bullets.join("|") : "";
+    const jobs = Array.isArray(analysis?.experienceJobs)
+      ? analysis.experienceJobs
+          .map((job) => `${String(job?.id || "")}:${Array.isArray(job?.bullets) ? job.bullets.join("|") : ""}`)
+          .join("||")
+      : "";
+    return `${jobIds}::${bullets}::${jobs}`;
+  }, [analysis]);
+  const metaGamesSeedKey = useMemo(() => `${analysisSeedKey}::games::${metaGames.join("|")}`, [analysisSeedKey, metaGames]);
+  const metaMetricsSeedKey = useMemo(() => `${analysisSeedKey}::metrics::${metaMetrics.join("|")}`, [analysisSeedKey, metaMetrics]);
 
-      const seeded: Record<string, string[]> = {};
-      Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
-        seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
-      });
+  useEffect(() => {
+    if (!analysisSeedKey) return;
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+
+    const seeded: Record<string, string[]> = {};
+    Object.entries(bulletsBySection).forEach(([sectionId, bullets]) => {
+      seeded[sectionId] = [...bullets].map((x) => String(x ?? ""));
+    });
+
+    if (!Object.keys(seeded).length) return;
+
+    setEditorBulletsBySection((prev) => {
+      const prevKeys = Object.keys(prev);
+      const seededKeys = Object.keys(seeded);
+
+      if (prevKeys.length === seededKeys.length) {
+        const same = seededKeys.every((sectionId) => {
+          const prevBullets = prev[sectionId] || [];
+          const nextBullets = seeded[sectionId] || [];
+          if (prevBullets.length !== nextBullets.length) return false;
+          return nextBullets.every((bullet, index) => prevBullets[index] === bullet);
+        });
+
+        if (same) return prev;
+      }
+
       return seeded;
     });
-  }, [bulletsBySection]);
+  }, [analysisSeedKey, bulletsBySection, preserveStructuredDuringAnalyze, structuredResumeSnapshot]);
 
   useEffect(() => {
-    setEditorMetaGames(metaGames);
-  }, [analysis?.metaBlocks?.gamesShipped]);
+    if (!metaGamesSeedKey) return;
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (lastMetaGamesSeedKeyRef.current === metaGamesSeedKey) return;
+
+    lastMetaGamesSeedKeyRef.current = metaGamesSeedKey;
+    setEditorMetaGames((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      const cleanedNext = metaGames.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
+        return prev;
+      }
+      return metaGames;
+    });
+  }, [metaGamesSeedKey, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaGames]);
 
   useEffect(() => {
-    setEditorMetaMetrics(metaMetrics);
-  }, [analysis?.metaBlocks?.metrics]);
+    if (!metaMetricsSeedKey) return;
+    if (preserveStructuredDuringAnalyze && hasStructuredResumeBullets(structuredResumeSnapshot)) return;
+    if (lastMetaMetricsSeedKeyRef.current === metaMetricsSeedKey) return;
+
+    lastMetaMetricsSeedKeyRef.current = metaMetricsSeedKey;
+    setEditorMetaMetrics((prev) => {
+      const cleanedPrev = prev.map((x) => String(x ?? "").trim()).filter(Boolean);
+      const cleanedNext = metaMetrics.map((x) => String(x ?? "").trim()).filter(Boolean);
+      if (cleanedPrev.length === cleanedNext.length && cleanedNext.every((value, index) => cleanedPrev[index] === value)) {
+        return prev;
+      }
+      return metaMetrics;
+    });
+  }, [metaMetricsSeedKey, preserveStructuredDuringAnalyze, structuredResumeSnapshot, metaMetrics]);
 
   useEffect(() => {
     setCollapsedSections((prev) => {
@@ -5442,23 +5664,26 @@ useEffect(() => {
       const sectionLabel = `${section.company || "Untitled Company"} — ${section.title || "Untitled Role"}`;
 
       editedBullets.forEach((text, bulletIndex) => {
+        const rowKey = `${section.id}:${bulletIndex}`;
         const matched = bucket[bulletIndex];
         const matchedItem = matched?.item;
+        const proofItem = rewriteProofByRow[rowKey];
+        const proofTruthRisk = proofItem?.truthRisk as TruthRisk | undefined;
 
         rows.push({
-          key: `${section.id}:${bulletIndex}`,
+          key: rowKey,
           sectionId: section.id,
           sectionLabel,
           bulletIndex,
           text,
-          originalText: String(matchedItem?.originalBullet ?? text ?? "").trim(),
+          originalText: String(matchedItem?.originalBullet ?? proofItem?.originalBullet ?? text ?? "").trim(),
           planIndex: typeof matched?.planIndex === "number" ? matched.planIndex : null,
-          rewrittenBullet: String(matchedItem?.rewrittenBullet ?? "").trim(),
-          suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords),
-          needsMoreInfo: !!matchedItem?.needsMoreInfo,
-          notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : [],
-          keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : [],
-          blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : [],
+          rewrittenBullet: String(matchedItem?.rewrittenBullet ?? proofItem?.rewrittenBullet ?? "").trim(),
+          suggestedKeywords: keywordsToArray(matchedItem?.suggestedKeywords ?? proofItem?.suggestedKeywords),
+          needsMoreInfo: !!(matchedItem?.needsMoreInfo ?? proofItem?.needsMoreInfo),
+          notes: Array.isArray(matchedItem?.notes) ? matchedItem.notes : Array.isArray(proofItem?.notes) ? proofItem.notes : [],
+          keywordHits: Array.isArray(matchedItem?.keywordHits) ? matchedItem.keywordHits : Array.isArray(proofItem?.keywordHits) ? proofItem.keywordHits : [],
+          blockedKeywords: Array.isArray(matchedItem?.blockedKeywords) ? matchedItem.blockedKeywords : Array.isArray(proofItem?.blockedKeywords) ? proofItem.blockedKeywords : [],
           truthRisk: matchedItem?.truthRisk
             ? {
                 score: Number(matchedItem.truthRisk.score ?? 0),
@@ -5468,13 +5693,28 @@ useEffect(() => {
                 riskyPhrases: Array.isArray(matchedItem.truthRisk.riskyPhrases) ? matchedItem.truthRisk.riskyPhrases : [],
                 unsupportedClaims: Array.isArray(matchedItem.truthRisk.unsupportedClaims) ? matchedItem.truthRisk.unsupportedClaims : [],
               }
-            : null,
+            : proofTruthRisk
+              ? {
+                  score: Number(proofTruthRisk.score ?? 0),
+                  level: proofTruthRisk.level === "risky" ? "risky" : proofTruthRisk.level === "review" ? "review" : "safe",
+                  reasons: Array.isArray(proofTruthRisk.reasons) ? proofTruthRisk.reasons : [],
+                  addedTerms: Array.isArray(proofTruthRisk.addedTerms) ? proofTruthRisk.addedTerms : [],
+                  riskyPhrases: Array.isArray(proofTruthRisk.riskyPhrases) ? proofTruthRisk.riskyPhrases : [],
+                  unsupportedClaims: Array.isArray(proofTruthRisk.unsupportedClaims) ? proofTruthRisk.unsupportedClaims : [],
+                }
+              : null,
         });
       });
     });
 
     return rows;
-  }, [sections, editorBulletsBySection, planBucketsBySection]);
+  }, [sections, editorBulletsBySection, planBucketsBySection, rewriteProofByRow]);
+
+  const canRewriteBullets = useMemo(() => {
+    if (isSetupMode) return false;
+    if (!liveBulletRows.length) return false;
+    return jobText.trim().length > 0;
+  }, [isSetupMode, liveBulletRows.length, jobText]);
 
   const liveBulletRowsRef = useRef<LiveBulletRow[]>([]);
   const liveAtsScoreRef = useRef<AtsScoreResult | null>(null);
@@ -5625,11 +5865,87 @@ useEffect(() => {
     setAtsScoreInitialized(true);
   }, [analysis, liveBulletRows.length, liveAtsScore, atsScoreInitialized]);
 
-  const handleRefreshAtsScore = useCallback(() => {
-    setConfirmedAtsScore(liveAtsScore);
-    setAtsScoreUpdatedAt(Date.now());
-    setAtsScoreInitialized(true);
-  }, [liveAtsScore]);
+  const resumeProfileSyncSignature = useMemo(() => {
+    const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+      ? structuredSnapshotToAnalyzeText(structuredResumeSnapshot)
+      : "";
+    const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+    const normalizedDraft = normalizeResumeTextForParsing(draftSource);
+    if (normalizedDraft.length < 120) return "";
+
+    const activeResumeProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+    })();
+
+    const nextTitle = String(
+      profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
+    ).trim();
+
+    const savedMeta = analysis ? null : restoredProfileMetaRef.current;
+
+    const nextTitles = uniqueTerms(
+      [
+        profile.titleLine,
+        targetPosition,
+        analysis?.ats?.detectedResumeRole?.roleName,
+        analysis?.ats?.targetRole?.roleName,
+        ...(savedMeta?.titles ?? []),
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    ).slice(0, 12);
+
+    const nextKeywords = uniqueTerms([
+      ...((analysis?.presentKeywords ?? []) as string[]),
+      ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...(savedMeta?.keywords ?? []),
+      ...editorExpertiseItems,
+      ...editorMetaGames,
+      ...editorMetaMetrics,
+    ]).slice(0, 80);
+
+    const nextSkills = uniqueTerms([
+      ...((analysis?.presentKeywords ?? []) as string[]),
+      ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+      ...(savedMeta?.skills ?? []),
+      ...editorExpertiseItems,
+    ]).slice(0, 60);
+
+    return JSON.stringify({
+      profileId: activeResumeProfileId || null,
+      title: nextTitle,
+      rawText: normalizedDraft,
+      template: resumeTemplate,
+      skills: nextSkills,
+      titles: nextTitles,
+      keywords: nextKeywords,
+      structured: structuredResumeSnapshot,
+    });
+  }, [
+    resumeText,
+    resumeHtmlDraft,
+    searchParamsKey,
+    applyPackBundle,
+    profile.titleLine,
+    analysis,
+    targetPosition,
+    editorExpertiseItems,
+    editorMetaGames,
+    editorMetaMetrics,
+    resumeTemplate,
+    structuredResumeSnapshot,
+  ]);
+
+  // Seed the sync signature with the restored state so simply opening the
+  // compiler never writes back; the next real edit changes it and saves.
+  useEffect(() => {
+    if (!syncSignatureSeedPendingRef.current) return;
+    if (!resumeProfileSyncSignature) return;
+    syncSignatureSeedPendingRef.current = false;
+    lastProfileSyncSignatureRef.current = resumeProfileSyncSignature;
+  }, [resumeProfileSyncSignature]);
 
   useEffect(() => {
     setSelectedBulletIdx((prev) => {
@@ -5638,8 +5954,11 @@ useEffect(() => {
     });
   }, [liveBulletRows.length]);
 
-  const resumeHtml = useMemo(() => {
-    if (!analysis || !liveBulletRows.length) return "";
+
+const resumeHtml = useMemo(() => {
+    // A restored resume has no in-memory analysis, but its editor state is
+    // complete, so the preview must still compile from it.
+    if ((!analysis && !savedResumeRestored) || !liveBulletRows.length) return "";
     return buildResumeHtml({
       template: resumeTemplate,
       profile,
@@ -5662,6 +5981,7 @@ useEffect(() => {
     });
   }, [
     analysis,
+    savedResumeRestored,
     liveBulletRows.length,
     resumeTemplate,
     profile,
@@ -5693,6 +6013,236 @@ useEffect(() => {
     return (compiledResumeHtml || "").trim();
   }, [compiledResumeHtml]);
 
+  const refreshCurrentJobMatch = useCallback(async (resumeProfileIdOverride?: string | null) => {
+    if (typeof window === "undefined") return null;
+
+    const activeJobId = String(searchParams.get("jobId") || applyPackBundle?.jobId || "").trim();
+    const storedResumeProfileId = window.localStorage.getItem("activeResumeProfileId") || "";
+    const activeResumeProfileId = String(
+      resumeProfileIdOverride ||
+      searchParams.get("resumeProfileId") ||
+      applyPackBundle?.resumeProfileId ||
+      storedResumeProfileId
+    ).trim();
+
+    if (!activeJobId || !activeResumeProfileId) return null;
+
+    try {
+      const response = await fetch(
+        `/api/jobs/${encodeURIComponent(activeJobId)}/match?resumeProfileId=${encodeURIComponent(activeResumeProfileId)}`,
+        { method: "GET", cache: "no-store" }
+      );
+      const payload = await parseApiResponse(response);
+      if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
+      return payload?.item ?? null;
+    } catch {
+      return null;
+    }
+  }, [searchParamsKey, applyPackBundle]);
+
+
+const syncResumeProfileDraft = useCallback(async (options?: { force?: boolean }) => {
+  if (status !== "authenticated") return null;
+  if (!analysis && !savedResumeRestored) return null;
+  if (!hydrationSettled && !latestResumeHydratedRef.current) return null;
+  const forceSync = Boolean(options?.force);
+
+  setProfileSyncSaving(true);
+
+  const activeResumeProfileId = (() => {
+    if (typeof window === "undefined") return "";
+    const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+    return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+  })();
+
+  const structuredDraft = hasStructuredResumeBullets(structuredResumeSnapshot)
+    ? structuredSnapshotToResumeText(structuredResumeSnapshot)
+    : "";
+  const draftSource = structuredDraft || resumeText.trim() || htmlToPlainText(resumeHtmlDraft || "");
+  const normalizedDraft = normalizeResumeTextForParsing(draftSource);
+  if (normalizedDraft.length < 120) {
+    setProfileSyncSaving(false);
+    return activeResumeProfileId || null;
+  }
+
+  const nextTitle = String(
+    profile.titleLine || targetPosition || analysis?.ats?.detectedResumeRole?.roleName || analysis?.ats?.targetRole?.roleName || ""
+  ).trim();
+
+  const nextSummary = String(profile.summary || analysis?.autoResumeProfile?.title || "").trim();
+
+  const savedMeta = analysis ? null : restoredProfileMetaRef.current;
+
+  const nextTitles = uniqueTerms(
+    [
+      profile.titleLine,
+      analysis?.ats?.detectedResumeRole?.roleName,
+      analysis?.ats?.targetRole?.roleName,
+      targetPosition,
+      ...(savedMeta?.titles ?? []),
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  ).slice(0, 12);
+
+  const nextKeywords = uniqueTerms([
+    ...((analysis?.presentKeywords ?? []) as string[]),
+    ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...(savedMeta?.keywords ?? []),
+    ...editorExpertiseItems,
+    ...editorMetaGames,
+    ...editorMetaMetrics,
+  ]).slice(0, 80);
+
+  const nextSkills = uniqueTerms([
+    ...((analysis?.presentKeywords ?? []) as string[]),
+    ...((analysis?.ats?.matchedTerms ?? []) as string[]),
+    ...(savedMeta?.skills ?? []),
+    ...editorExpertiseItems,
+  ]).slice(0, 60);
+
+  const signature = resumeProfileSyncSignature;
+
+  if (!signature || (!forceSync && lastProfileSyncSignatureRef.current === signature)) {
+    setProfileSyncSaving(false);
+    return activeResumeProfileId || null;
+  }
+
+  const syncRequestId = ++syncRequestRef.current;
+
+  try {
+    const response = await fetch("/api/resume-profiles/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: activeResumeProfileId || undefined,
+        title: nextTitle || undefined,
+        summary: nextSummary || undefined,
+        rawText: normalizedDraft,
+        html: liveResumeHtml || undefined,
+        template: resumeTemplate,
+        skills: nextSkills,
+        titles: nextTitles,
+        keywords: nextKeywords,
+        structuredData: structuredResumeSnapshot,
+        sourceMeta: resumeSourceMeta,
+      }),
+    });
+
+    const payload = await parseApiResponse(response);
+    if (!response.ok || typeof payload === "string" || !payload?.ok) return null;
+
+    // A newer save started while this one was in flight: do not let the older
+    // response record its signature over the newer edits.
+    if (syncRequestRef.current !== syncRequestId) return null;
+
+    lastProfileSyncSignatureRef.current = signature;
+
+    const syncedProfileId = String(payload?.item?.id || "").trim();
+    if (typeof window !== "undefined" && syncedProfileId) {
+      window.localStorage.setItem("activeResumeProfileId", syncedProfileId);
+    }
+    const nextProfileId = syncedProfileId || activeResumeProfileId || null;
+    await refreshCurrentJobMatch(nextProfileId);
+    return nextProfileId;
+  } catch {
+    return null;
+  } finally {
+    setProfileSyncSaving(false);
+  }
+}, [
+  status,
+  analysis,
+  savedResumeRestored,
+  hydrationSettled,
+  searchParamsKey,
+  applyPackBundle,
+  resumeText,
+  resumeHtmlDraft,
+  liveResumeHtml,
+  resumeTemplate,
+  profile.titleLine,
+  profile.summary,
+  targetPosition,
+  editorExpertiseItems,
+  editorMetaGames,
+  editorMetaMetrics,
+  structuredResumeSnapshot,
+  resumeSourceMeta,
+  refreshCurrentJobMatch,
+]);
+
+
+  const loadNewestResumeProfileId = useCallback(async () => {
+    try {
+      const response = await fetch("/api/resume-profiles", { method: "GET", cache: "no-store" });
+      const payload = await parseApiResponse(response) as { ok?: boolean; items?: Array<{ id?: string | null }> } | string;
+
+      if (!response.ok || typeof payload === "string" || !payload?.ok || !Array.isArray(payload.items)) {
+        return "";
+      }
+
+      return String(payload.items[0]?.id || "").trim();
+    } catch {
+      return "";
+    }
+  }, []);
+
+  const finishSetupAndGoToJobs = useCallback(async () => {
+    setError(null);
+
+    const syncedProfileId = await syncResumeProfileDraft();
+    const fallbackProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || applyPackBundle?.resumeProfileId || stored).trim();
+    })();
+    const recoveredProfileId = String(syncedProfileId || fallbackProfileId || "").trim() || await loadNewestResumeProfileId();
+    const resumeProfileId = String(recoveredProfileId || "").trim();
+
+    if (resumeProfileId) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("activeResumeProfileId", resumeProfileId);
+      }
+      router.push(`/jobs?resumeProfileId=${encodeURIComponent(resumeProfileId)}`);
+      return;
+    }
+
+    if (analysis) {
+      setError("Setup finished analyzing the resume, but no resume profile was saved. Please click Refresh ATS + Profile Sync once, then try Finish Setup again.");
+    }
+  }, [syncResumeProfileDraft, router, analysis, searchParamsKey, applyPackBundle, loadNewestResumeProfileId]);
+
+useEffect(() => {
+  if (status !== "authenticated") return;
+  if (analysis ? !atsScoreInitialized : !savedResumeRestored) return;
+
+  if (profileSyncTimeoutRef.current) {
+    clearTimeout(profileSyncTimeoutRef.current);
+  }
+
+  profileSyncTimeoutRef.current = setTimeout(() => {
+    void syncResumeProfileDraft();
+  }, 1600);
+
+  return () => {
+    if (profileSyncTimeoutRef.current) {
+      clearTimeout(profileSyncTimeoutRef.current);
+      profileSyncTimeoutRef.current = null;
+    }
+  };
+}, [status, analysis, atsScoreInitialized, savedResumeRestored, syncResumeProfileDraft]);
+
+  const handleRefreshAtsScore = useCallback(async () => {
+    setError(null);
+    setConfirmedAtsScore(liveAtsScore);
+    setAtsScoreUpdatedAt(Date.now());
+    setAtsScoreInitialized(true);
+    const syncedProfileId = await syncResumeProfileDraft({ force: true });
+    await refreshCurrentJobMatch(syncedProfileId);
+  }, [liveAtsScore, syncResumeProfileDraft, refreshCurrentJobMatch]);
+
+  
   async function handleCopyOutput() {
     const html = liveResumeHtml;
     if (!html) return;
@@ -5742,8 +6292,8 @@ useEffect(() => {
       a.remove();
 
       URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setError(e?.message || "PDF download failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "PDF download failed"));
     }
   }
 
@@ -5761,6 +6311,62 @@ useEffect(() => {
     return Array.from(new Set(hits));
   }, [effectivePlan, guardrailTerms]);
 
+  const checklistItems = useMemo<WorkflowChecklistItem[]>(() => {
+    const hasResumeSource = !!file || resumeText.trim().length > 0;
+    const hasTemplate = !!resumeTemplate;
+    const hasHeader = [profile.fullName, profile.titleLine, profile.email].some((value) => String(value || "").trim());
+    const hasSummary = profile.summary.trim().length > 0;
+    const hasAnalyzed = !!analysis;
+    const hasKeywordReview = !analysis || showAtsKeywords;
+    const hasShippedProducts = editorMetaGames.some((item) => String(item || "").trim());
+    const hasMetrics = editorMetaMetrics.some((item) => String(item || "").trim());
+    const hasEditedBullets = liveBulletRows.length > 0;
+    const hasOutput = !!liveResumeHtml.trim();
+
+    return [
+      { id: "resume-source", label: isSetupMode ? "Upload your base resume" : "Resume source loaded", done: hasResumeSource, actionLabel: "Go", onAction: () => scrollToSection("resume-source") },
+      ...(isSetupMode ? [] : [{ id: "job-setup", label: "Target position / job context", done: !!targetPosition.trim() && !!jobText.trim(), actionLabel: "Go", onAction: () => scrollToSection("job-setup") }]),
+      { id: "template", label: "Choose template", done: hasTemplate, actionLabel: "Go", onAction: () => scrollToSection("resume-template") },
+      { id: "header", label: "Header details", done: hasHeader, actionLabel: "Go", onAction: () => scrollToSection("header-details") },
+      { id: "summary", label: "Add summary", done: hasSummary, actionLabel: "Go", onAction: () => scrollToSection("summary-section") },
+      { id: "analyze", label: hasAnalyzed ? (isSetupMode ? "Base resume analyzed" : "Resume analyzed") : (isSetupMode ? "Analyze base resume" : "Analyze resume"), done: hasAnalyzed, actionLabel: "Go", onAction: () => scrollToSection("analyze-resume") },
+      ...(isSetupMode ? [] : [{ id: "ats", label: "Review ATS + Areas of Expertise", done: hasAnalyzed && hasKeywordReview, actionLabel: "Go", onAction: () => scrollToSection("ats-panel") }]),
+      { id: "shipped", label: "Add shipped products", done: hasShippedProducts, actionLabel: "Go", onAction: () => scrollToSection("shipped-products") },
+      { id: "metrics", label: "Add metrics", done: hasMetrics, actionLabel: "Go", onAction: () => scrollToSection("key-metrics") },
+      { id: "bullets", label: isSetupMode ? "Edit bullets" : "Edit / rewrite bullets", done: hasEditedBullets, actionLabel: "Go", onAction: () => scrollToSection("bullets-panel") },
+      { id: "output", label: isSetupMode ? "Update profile" : "View / print / download resume", done: hasOutput, actionLabel: "Go", onAction: () => scrollToSection("resume-output") },
+    ];
+  }, [
+    file,
+    resumeText,
+    targetPosition,
+    jobText,
+    resumeTemplate,
+    profile.fullName,
+    profile.titleLine,
+    profile.email,
+    profile.summary,
+    analysis,
+    showAtsKeywords,
+    editorMetaGames,
+    editorMetaMetrics,
+    liveBulletRows.length,
+    liveResumeHtml,
+    scrollToSection,
+    isSetupMode,
+  ]);
+  const checklistCompletedCount = checklistItems.filter((item) => item.done).length;
+  const canContinueToCoverLetter = !isSetupMode && !!analysis && !atsScoreDirty;
+
+  const pendingUploadNote = useMemo(() => {
+    if (liveResumeHtml.trim()) return "";
+    if (error) return "";
+    if (!file) return "";
+    return isSetupMode
+      ? `"${file.name}" is ready. Run Analyze Base Resume to load it into the preview.`
+      : `"${file.name}" is ready. Add the job posting and target position, then run Analyze to load it into the preview.`;
+  }, [liveResumeHtml, error, file, isSetupMode]);
+
   const fileIsPdf = useMemo(() => {
     if (!file) return false;
     const name = String(file.name || "").toLowerCase();
@@ -5768,7 +6374,7 @@ useEffect(() => {
   }, [file]);
 
   return (
-    <main className="mx-auto max-w-[1900px] px-2 py-6 md:px-3 xl:px-4 2xl:px-5 text-black dark:text-black">
+    <main className="mx-auto max-w-[1900px] px-2 py-6 md:px-3 xl:px-4 2xl:px-5 text-black dark:text-slate-100">
       {error ? (
         <div className="mb-4">
           <Callout title="Error" tone="danger">
@@ -5777,21 +6383,99 @@ useEffect(() => {
         </div>
       ) : null}
 
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]">
         {/* Inputs */}
-        <section className="rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold">Inputs</h2>
-            <div className="flex items-center gap-2 text-xs text-black/90 dark:text-black/90">
-              <span className="rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10">
-                {creditsLoading ? "Credits…" : creditsBalance === null ? "Credits: —" : `Credits: ${creditsBalance}`}
-              </span>
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 sm:p-4">
+          <div className="mb-4 rounded-2xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-black/10">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white">Resume workflow guide</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300">
+                  {checklistCompletedCount}/{checklistItems.length} completed
+                  {latestResumeMeta ? ` · Latest resume loaded: ${latestResumeMeta.title}` : ""}
+                  {isSetupMode ? " · First-time setup is free" : ""}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid min-w-0 gap-2">
+              {checklistItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/70 sm:gap-3 sm:px-3"
+                >
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${item.done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"}`}>
+                    {item.done ? "✓" : "•"}
+                  </span>
+                  <span className="min-w-0 overflow-hidden break-words text-sm font-semibold leading-snug text-slate-900 dark:text-white sm:text-[15px]">
+                    {item.label}
+                  </span>
+                  {item.onAction ? (
+                    <button
+                      type="button"
+                      onClick={item.onAction}
+                      className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                    >
+                      {item.actionLabel || "Open"}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-stretch gap-2">
+              <button
+                type="button"
+                onClick={handleRefreshAtsScore}
+                disabled={!analysis}
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+              >
+                {analysis
+                  ? "Refresh ATS + Profile Sync"
+                  : isSetupMode
+                    ? "Analyze base resume first"
+                    : isApplyPackFlow
+                      ? "Finalize Resume"
+                      : "Analyze resume first"}
+              </button>
+              {isSetupMode ? (
+                <button
+                  type="button"
+                  onClick={finishSetupAndGoToJobs}
+                  disabled={!analysis || profileSyncSaving}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {profileSyncSaving ? "Finishing setup…" : "Finish Setup & Go to Job Board"}
+                </button>
+              ) : isApplyPackFlow ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={continueToCoverLetter}
+                    disabled={!canContinueToCoverLetter}
+                    className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black shadow-md transition-all duration-200 hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Continue to Cover Letter
+                  </button>
+                  <div className="min-w-[170px] rounded-xl border border-amber-400/30 bg-amber-50/90 px-3 py-2 text-[11px] font-bold text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
+                    Must complete to use Credit Pack
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
 
           <div className="mt-3 grid gap-3">
-            <div className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Upload resume file</div>
+            <div id="resume-source" className="grid gap-1.5">
+              <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">{isSetupMode ? "Upload your base resume" : "Resume source"}</div>
+              {isSetupMode ? (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">This first setup is free. DOCX is still the best source when you have it.</div>
+              ) : (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                  Your current synced resume profile is loaded automatically in job flow. Upload a new file only if you want to replace it for this pass.
+                </div>
+              )}
 
               <input
                 id="resume-upload"
@@ -5799,15 +6483,39 @@ useEffect(() => {
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
                 onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
+                  const nextFile = e.target.files?.[0] ?? null;
                   resetDerivedState();
+                  setFile(nextFile);
+                  setResumeSourceMeta(
+                    nextFile
+                      ? {
+                          fileName: nextFile.name,
+                          mimeType: nextFile.type || null,
+                          extension: inferExtension(nextFile.name, nextFile.type),
+                          sourceKind: "upload",
+                        }
+                      : null
+                  );
                 }}
-                className="block w-full text-sm text-black
-                  file:mr-3 file:rounded-lg file:border file:border-emerald-700/40
-                  file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-extrabold file:text-black
-                  file:shadow-md hover:file:bg-emerald-700 hover:file:shadow-lg
-                  dark:text-black dark:file:border-emerald-300/30 dark:file:bg-emerald-500 dark:hover:file:bg-emerald-600"
+                className="sr-only"
               />
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  Choose File
+                </button>
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {file
+                    ? `Current: ${file.name}`
+                    : !isSetupMode && (latestResumeMeta || resumeText.trim())
+                      ? "Current: User Profile"
+                      : "No file chosen"}
+                </div>
+              </div>
 
               {/* ✅ Exact wording you asked for when PDFs are sketchy */}
               {fileIsPdf ? (
@@ -5819,6 +6527,12 @@ useEffect(() => {
                   Recommended: <strong>.docx</strong> (best parsing). PDFs can cause formatting issues.
                 </div>
               )}
+
+              {!isSetupMode && !file && (latestResumeMeta || resumeText.trim()) ? (
+                <div className="mt-1 rounded-lg border border-emerald-500/20 bg-emerald-50/80 px-3 py-2 text-[11px] font-semibold text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+                  Header details, summary, education, shipped products, and key metrics are auto-filled from your current saved resume data when available.
+                </div>
+              ) : null}
 
               {file ? (
                 <div className="mt-1 flex items-center gap-2">
@@ -5834,81 +6548,226 @@ useEffect(() => {
               ) : null}
             </div>
 
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Job posting text</div>
+            {!isSetupMode ? (
+              <div id="job-setup" className="grid gap-3">
+                <>
+                  <label className="grid gap-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        {applyPackBundle?.job?.jobContextText ? "Job context (from Job Board)" : "Job posting text"}
+                      </div>
+
+                      {applyPackBundle?.job?.jobContextText ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setJobTextOverrideMode((v) => !v)}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            {jobTextOverrideMode ? "Using manual override" : "Override saved job text"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={syncJobTextFromApplyPack}
+                            className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                          >
+                            Re-sync saved job
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <textarea
+                      value={jobText}
+                      onChange={(e) => setJobText(e.target.value)}
+                      rows={6}
+                      placeholder={applyPackBundle?.job?.jobContextText ? "Saved job context loaded from Job Board" : "Post job description/requirements here"}
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                    />
+
+                    <div className="text-xs text-black/70 dark:text-slate-200/80">
+                      {applyPackBundle?.job?.jobContextText
+                        ? jobTextOverrideMode
+                          ? "You are editing a local override. Re-sync anytime to restore the saved Job Board job context."
+                          : "This field was prefilled from the saved job you selected via the Job Board. You can still override it if needed."
+                        : "Paste a job posting manually, or launch this page from the Job Board to prefill it automatically."}
+                    </div>
+                  </label>
+
+                  <label className="grid gap-1.5">
+                    <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                      {applyPackBundle?.job?.title ? "Target position (prefilled from saved job)" : "Target position (required)"}
+                    </div>
+                    <input
+                      value={targetPosition}
+                      onChange={(e) => setTargetPosition(e.target.value)}
+                      placeholder="Production Director, QA Engineer, Product Owner..."
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
+                    />
+                    {applyPackBundle?.job?.title ? (
+                      <div className="text-xs text-black/70 dark:text-slate-200/80">
+                        Prefilled from Job Board: {applyPackBundle.job.title}
+                      </div>
+                    ) : null}
+                  </label>
+                </>
+              </div>
+            ) : null}
+
+            {/* Template + Color Scheme */}
+            <div id="resume-template" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-1 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Resume style</div>
+              <div className="mb-3 text-[11px] text-black/65 dark:text-slate-300/75">
+                Real layout + separate palette. Layout changes structure. Color scheme only changes the visual theme.
+              </div>
+
+              <div className="grid gap-3">
+                <label className="grid gap-1.5">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">
+                    Template layout
+                  </div>
+                  <select
+                    value={selectedTemplate.layoutId}
+                    onChange={(e) => {
+                      const next = buildResumeTemplateSelection(
+                        e.target.value as typeof selectedTemplate.layoutId,
+                        selectedTemplate.colorSchemeId,
+                      );
+                      setResumeTemplate(next.templateId);
+                    }}
+                    className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                    style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                  >
+                    {RESUME_LAYOUT_CATEGORY_ORDER.map((category) => {
+                      const options = RESUME_LAYOUT_OPTIONS.filter((option) => option.category === category);
+                      if (!options.length) return null;
+
+                      return (
+                        <optgroup key={category} label={RESUME_LAYOUT_CATEGORY_LABELS[category]}>
+                          {options.map((option) => (
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </label>
+
+                <label className="grid gap-1.5">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">
+                    Color scheme
+                  </div>
+                  <select
+                    value={selectedTemplate.colorSchemeId}
+                    onChange={(e) => {
+                      const next = buildResumeTemplateSelection(
+                        selectedTemplate.layoutId,
+                        e.target.value as typeof selectedTemplate.colorSchemeId,
+                      );
+                      setResumeTemplate(next.templateId);
+                    }}
+                    className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                    style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                  >
+                    {[...new Set(RESUME_COLOR_SCHEME_OPTIONS.map((option) => option.category))].map((category) => {
+                      const options = RESUME_COLOR_SCHEME_OPTIONS.filter((option) => option.category === category);
+                      if (!options.length) return null;
+
+                      return (
+                        <optgroup key={category} label={options[0]?.categoryLabel ?? "Color Schemes"}>
+                          {options.map((option) => (
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </label>
+
+                <div className="rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-[11px] text-black/70 dark:border-white/10 dark:bg-black/20 dark:text-slate-300/80">
+                  <span className="font-extrabold text-black/85 dark:text-slate-100/90">Current:</span>{" "}
+                  {selectedTemplate.layout.label} + {selectedTemplate.colorScheme.label}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = buildResumeTemplateSelection(
+                      selectedTemplate.layoutId,
+                      getRecommendedColorSchemeForLayout(selectedTemplate.layoutId),
+                    );
+                    setResumeTemplate(next.templateId);
+                  }}
+                  className="w-full rounded-xl border border-black/10 bg-white/80 px-3 py-2 text-[11px] font-extrabold text-black/80 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:text-white"
+                >
+                  Reset this layout to its recommended color
+                </button>
+              </div>
+            </div>
+
+            <div id="summary-section" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Summary</div>
               <textarea
-                value={jobText}
-                onChange={(e) => setJobText(e.target.value)}
-                rows={6}
-                placeholder="Post job description/requirements here"
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:focus:border-white/20"
+                value={profile.summary}
+                onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
+                placeholder="Summary (optional)"
+                rows={4}
+                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
               />
-            </label>
-
-            <label className="grid gap-1.5">
-              <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Target position (required)</div>
-              <input
-                value={targetPosition}
-                onChange={(e) => setTargetPosition(e.target.value)}
-                placeholder="Production Director, QA Engineer, Product Owner..."
-                className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-              />
-            </label>
-
-            {/* Template */}
-            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Template</div>
-
-              <select
-                value={resumeTemplate}
-                onChange={(e) => setResumeTemplate(e.target.value as ResumeTemplateId)}
-                className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-              >
-                {TEMPLATE_OPTIONS.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2 text-xs text-black/70 dark:text-slate-300/80">
+                Add a short summary that frames your fit before the experience section.
+              </div>
             </div>
 
             {/* Header details */}
-            <div className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
-              <div className="mb-2 text-sm font-extrabold text-black//0 dark:text-black/90">Header details</div>
+            <div id="header-details" className="rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Header details</div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <input
                   value={profile.fullName}
                   onChange={(e) => setProfile((p) => ({ ...p, fullName: e.target.value }))}
                   placeholder="Full name"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.titleLine}
                   onChange={(e) => setProfile((p) => ({ ...p, titleLine: e.target.value }))}
                   placeholder="Professional Title (e.g. QA Lead | Game & VR Systems)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.locationLine}
                   onChange={(e) => setProfile((p) => ({ ...p, locationLine: e.target.value }))}
                   placeholder="Location"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.email}
                   onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
 
                 <input
                   value={profile.phone}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="Phone"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
               </div>
 
@@ -5917,124 +6776,16 @@ useEffect(() => {
                   value={profile.linkedin}
                   onChange={(e) => setProfile((p) => ({ ...p, linkedin: e.target.value }))}
                   placeholder="LinkedIn"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
                 <input
                   value={profile.portfolio}
                   onChange={(e) => setProfile((p) => ({ ...p, portfolio: e.target.value }))}
                   placeholder="Portfolio / Website"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                 />
               </div>
 
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-black/90">Profile photo (Optional)</div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label
-                        htmlFor="profile-photo-upload"
-                        className="inline-flex cursor-pointer items-center rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                      >
-                        Choose File
-                      </label>
-
-                      <input
-                        id="profile-photo-upload"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={(e) => {
-                          const img = e.currentTarget.files?.[0] ?? null;
-                          void handleProfilePhotoUpload(img);
-                          e.currentTarget.value = "";
-                        }}
-                        className="hidden"
-                      />
-
-                      {profilePhotoDataUrl ? (
-                        <button
-                          type="button"
-                          onClick={clearProfilePhoto}
-                          className="text-xs font-extrabold underline opacity-80 hover:opacity-100"
-                        >
-                          Remove photo
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                      <input
-                        type="checkbox"
-                        checked={showProfilePhoto}
-                        onChange={(e) => setShowProfilePhoto(e.target.checked)}
-                        className="h-4 w-4"
-                      />
-                      Show profile photo on resume
-                    </label>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {profilePhotoDataUrl ? (
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={profilePhotoDataUrl}
-                          alt="Profile preview"
-                          className={[
-                            "h-14 w-14 border border-black/10 object-cover",
-                            profilePhotoShape === "circle"
-                              ? "rounded-full"
-                              : profilePhotoShape === "rounded"
-                              ? "rounded-2xl"
-                              : "rounded-none",
-                          ].join(" ")}
-                        />
-                        <div className="text-xs text-black/90 dark:text-black/90">
-                          Preview only. Final size/shape comes from the controls below.
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Shape</span>
-                        <select
-                          value={profilePhotoShape}
-                          onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
-                          className="w-full rounded-lg border border-black/10 bg-white px-2.5 py-2 text-xs font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-                        >
-                          <option value="circle">Circle</option>
-                          <option value="rounded">Rounded</option>
-                          <option value="square">Square</option>
-                        </select>
-                      </label>
-
-                      <label className="grid gap-1">
-                        <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Size</span>
-                        <select
-                          value={String(profilePhotoSize)}
-                          onChange={(e) => setProfilePhotoSize(Number(e.target.value))}
-                          className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-                        >
-                          <option value="88">Small</option>
-                          <option value="112">Medium</option>
-                          <option value="136">Large</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <textarea
-                  value={profile.summary}
-                  onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
-                  rows={3}
-                  placeholder="Summary (optional)"
-                  className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
-                />
-              </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
@@ -6043,21 +6794,10 @@ useEffect(() => {
                   disabled={!canAnalyze || loadingAnalyze}
                   className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
                 >
-                  {loadingAnalyze ? "Analyzing…" : `Analyze (${CREDIT_COSTS.analyze} credits)`}
+                  {loadingAnalyze ? "Analyzing…" : analysis ? (isSetupMode ? "Re-analyze Base Resume" : applyPackPricingEligible ? "Re-analyze Resume (included in 8-credit pack)" : `Re-analyze Resume (${CREDIT_COSTS.analyze} credits)`) : (isSetupMode ? "Analyze Base Resume (free)" : applyPackPricingEligible ? "Analyze Resume (included in 8-credit pack)" : `Analyze Resume (${CREDIT_COSTS.analyze} credits)`)}
                 </button>
 
-                
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                  <input
-                    type="checkbox"
-                    checked={showEducationOnResume}
-                    onChange={(e) => setShowEducationOnResume(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  Show Education on resume
-                </label>
-
-                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                   <input
                     type="checkbox"
                     checked={showExpertiseOnResume}
@@ -6074,122 +6814,11 @@ useEffect(() => {
                   onChange={(e) => setOnlyExperienceBullets(e.target.checked)}
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-extrabold text-black/90 dark:text-black/90">Only experience bullets</span>
+                <span className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Only experience bullets</span>
               </label>
                                 
               </div>
 
-
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Education (Editable)</div>
-                    <div className="text-xs text-black/90 dark:text-black/90">
-                      {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={addEducationItem}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                  >
-                    + Add
-                  </button>
-                </div>
-
-                {editorEducationItems.length ? (
-                  <div className="mt-3 grid gap-2">
-                    {editorEducationItems.map((item, i) => (
-                      <div key={`education-${i}`} className="flex items-center gap-2">
-                        <input
-                          value={item}
-                          onChange={(e) => updateEducationItem(i, e.target.value)}
-                          className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-black"
-                          placeholder="Education or certification"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => deleteEducationItem(i)}
-                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
-                          aria-label={`Delete education ${i + 1}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
-                    No education detected yet. Add it manually here if the parser misses anything.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Areas of Expertise (Editable)</div>
-                    <div className="text-xs text-black/90 dark:text-black/90">
-                      {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowExpertiseEditor((prev) => !prev)}
-                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                    >
-                      {showExpertiseEditor ? "Hide Expertise" : "Show Expertise"}
-                    </button>
-
-                    {showExpertiseEditor ? (
-                      <button
-                        type="button"
-                        onClick={addExpertiseItem}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                      >
-                        + Add
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!showExpertiseEditor ? (
-                  <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
-                    Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
-                  </div>
-                ) : editorExpertiseItems.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {editorExpertiseItems.map((item, i) => (
-                      <div
-                        key={`expertise-${i}`}
-                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20"
-                      >
-                        <input
-                          value={item}
-                          onChange={(e) => updateExpertiseItem(i, e.target.value)}
-                          className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-black"
-                          placeholder="Expertise"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => deleteExpertiseItem(i)}
-                          className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
-                          aria-label={`Delete expertise ${i + 1}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-xs text-black/90 dark:text-black/90">
-                    No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
-                  </div>
-                )}
-              </div>
 
               {debugInjected.length ? (
                 <div className="mt-2">
@@ -6216,247 +6845,77 @@ useEffect(() => {
         <section className="min-w-0">
           <HtmlDocPreview
             html={liveResumeHtml}
+            loading={hydratingSavedResume}
+            emptyNote={pendingUploadNote}
             footer={
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                >
-                  Download PDF (5 credits)
-                </button>
+              isSetupMode ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={finishSetupAndGoToJobs}
+                    disabled={!analysis || profileSyncSaving || !liveResumeHtml}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                  >
+                    {profileSyncSaving ? "Finishing setup…" : "Update Profile & Go to Job Board"}
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
-                    } catch (e: any) {
-                      setError(e?.message || "Preview failed");
-                    }
-                  }}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                >
-                  Preview
-                </button>
+                  <div className="text-xs text-black/70 dark:text-slate-200/80">
+                    PDF export unlocks after you tailor this resume for a real role.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                  >
+                    Download PDF (5 credits if exporting)
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={handlePrintPdf}
-                  disabled={!liveResumeHtml}
-                  className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                >
-                  Print
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        openHtmlPreviewInNewWindow("Resume Preview", liveResumeHtml);
+                      } catch (e: unknown) {
+                        setError(getErrorMessage(e, "Preview failed"));
+                      }
+                    }}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                  >
+                    Preview
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintPdf}
+                    disabled={!liveResumeHtml}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                  >
+                    Print
+                  </button>
+                </div>
+              )
             }
           />
 
 
-          {analysis ? (
-            <div className="mt-4 mb-3 rounded-2xl border border-black/10 bg-white/60 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
-                    ATS Score
-                  </div>
-                  <div className="mt-1 flex items-end gap-3">
-                    <div className="text-3xl font-black text-black dark:text-black">
-                      {confirmedAtsScore?.overall ?? liveAtsScore.overall}
-                    </div>
-                    <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-black/90">
-                      {confirmedAtsScore?.label ?? liveAtsScore.label}
-                    </div>
-                    {atsScoreDirty ? (
-                      <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
-                        Changes pending review
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">
-                        Up to date
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
-                    Live estimate: {liveAtsScore.overall} · Last updated: {formatAtsUpdatedAt(atsScoreUpdatedAt) || "Not saved yet"}
-                  </div>
-                  <div className="mt-1 text-xs text-black/90 dark:text-black/90">
-                    Role focus: {liveAtsScore.roleFocus[0] || "General"}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRefreshAtsScore}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                >
-                  Update ATS Score
-                </button>
-              </div>
-
-              {liveAtsScore.notes.length ? (
-                <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">
-                    ATS Notes
-                  </div>
-                  <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-black/90">
-                    {liveAtsScore.notes.slice(0, 4).map((note) => (
-                      <li key={note}>{note}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Keyword Coverage</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
-                    {Math.round(liveAtsScore.keywordCoverage * 100)}%
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Metrics</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
-                    {liveAtsScore.metricsCount}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Bullet Quality</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
-                    {liveAtsScore.bulletQualityAverage}/100
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">Complete-ness</div>
-                  <div className="mt-1 text-lg font-black text-black dark:text-black">
-                    {Math.round(liveAtsScore.sectionCompleteness * 100)}%
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                <div>
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-black/90">ATS Keywords</div>
-                  <div className="text-[11px] text-black/90 dark:text-black/90">Matched keywords and job-post-relevant missing terms are minimized by default.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAtsKeywords((prev) => !prev)}
-                  className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
-                >
-                  {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
-                </button>
-              </div>
-
-              {showAtsKeywords ? (
-                <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                    <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
-                      Matched Keywords ({liveAtsScore.matchedKeywords.length})
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {liveAtsScore.matchedKeywords.length ? (
-                        liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
-                      ) : (
-                        <span className="text-xs text-black/90 dark:text-black/90">No strong keyword matches yet.</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
-                        Missing Keywords ({liveAtsScore.missingKeywords.length})
-                      </div>
-                      {ignoredMissingKeywords.length ? (
-                        <button
-                          type="button"
-                          onClick={clearIgnoredMissingKeywords}
-                          className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                        >
-                          Reset removed
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="mb-2 text-[11px] text-black/90 dark:text-black/90">
-                      Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {liveAtsScore.missingKeywords.length ? (
-                        liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
-                          <div
-                            key={`missing-${term}`}
-                            className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-black/90"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => addKeywordToExpertise(term)}
-                              className="flex items-center justify-center bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-700 dark:hover:bg-emerald-500/20"
-                              title="Add this keyword to Areas of Expertise"
-                            >
-                              +
-                            </button>
-                            <span className="px-2.5 py-1">{term}</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleIgnoreMissingKeyword(term)}
-                              className="flex items-center justify-center bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-600 dark:hover:bg-red-500/20"
-                              title="Remove this keyword from ATS scoring"
-                            >
-                              −
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-xs text-black/90 dark:text-black/90">Coverage looks solid.</span>
-                      )}
-                    </div>
-                    {ignoredMissingKeywords.length ? (
-                      <div className="mt-3">
-                        <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-700">Removed From Scoring ({ignoredMissingKeywords.length})</div>
-                        <div className="flex flex-wrap gap-2">
-                          {ignoredMissingKeywords.map((term) => (
-                            <button
-                              key={`ignored-${term}`}
-                              type="button"
-                              onClick={() => toggleIgnoreMissingKeyword(term)}
-                              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-800 hover:bg-sky-100"
-                              title="Add this keyword back into ATS scoring"
-                            >
-                              <span>{term}</span>
-                              <span aria-hidden>+</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
-                  ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
-                </div>
-              )}
-              </div>
-          ) : null}
 
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
               Edit highlight blocks
             </div>
-            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
+            <div className="mb-3 text-xs text-black/90 dark:text-slate-100/90">
               Update the highlight cards shown in the resume preview. Toggle between Games and Apps for the shipped label.
             </div>
 
             <div className="grid gap-3">
-              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div id="shipped-products" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Shipped label</div>
+                  <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Shipped label</div>
                   <div className="inline-flex rounded-xl border border-black/10 bg-white p-1 dark:border-white/10 dark:bg-black/20">
                     {(["Games", "Apps"] as const).map((mode) => (
                       <button
@@ -6466,7 +6925,7 @@ useEffect(() => {
                         className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
                           shippedLabelMode === mode
                             ? "bg-emerald-600 text-black"
-                            : "text-black hover:bg-black/5 dark:text-black"
+                            : "text-black hover:bg-black/5 dark:text-slate-100"
                         }`}
                       >
                         {mode}
@@ -6474,7 +6933,7 @@ useEffect(() => {
                     ))}
                   </div>
                 </div>
-                <div className="text-xs text-black/90 dark:text-black/80">
+                <div className="text-xs text-black/90 dark:text-slate-200/80">
                   Preview title: {shippedLabelMode} Shipped
                 </div>
               </div>
@@ -6482,8 +6941,8 @@ useEffect(() => {
               <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">{shippedLabelMode} Shipped</div>
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">{shippedLabelMode} Shipped</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       <input
                         type="checkbox"
                         checked={showShippedBlock}
@@ -6496,7 +6955,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => setEditorMetaGames((prev) => [...prev, ""])}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     + Add item
                   </button>
@@ -6511,7 +6970,7 @@ useEffect(() => {
                             setEditorMetaGames((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
                           }
                                 rows={2}
-                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         />
                         <button
                           type="button"
@@ -6523,18 +6982,18 @@ useEffect(() => {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                       No shipped items yet.
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div id="key-metrics" className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="text-sm font-extrabold text-black/90 dark:text-black/90">Key Metrics</div>
-                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                    <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Key Metrics</div>
+                    <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                       <input
                         type="checkbox"
                         checked={showMetricsBlock}
@@ -6547,7 +7006,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={() => setEditorMetaMetrics((prev) => [...prev, ""])}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                   >
                     + Add metric
                   </button>
@@ -6562,7 +7021,7 @@ useEffect(() => {
                             setEditorMetaMetrics((prev) => prev.map((x, idx) => (idx === i ? e.target.value : x)))
                           }
                                 rows={2}
-                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                          className="flex-1 rounded-lg border border-black/10 bg-white p-2 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                         />
                         <button
                           type="button"
@@ -6574,68 +7033,512 @@ useEffect(() => {
                       </div>
                     ))
                   ) : (
-                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                    <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                       No key metrics yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="mb-2 text-sm font-extrabold text-black/90 dark:text-slate-100/90">Profile photo (Optional)</div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                    <div className="grid gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label
+                          htmlFor="profile-photo-upload"
+                          className="inline-flex cursor-pointer items-center rounded-lg border border-emerald-700/40 bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black shadow-md transition hover:bg-emerald-700 hover:shadow-lg dark:border-emerald-300/30 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                        >
+                          Choose File
+                        </label>
+
+                        <input
+                          id="profile-photo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => {
+                            const img = e.currentTarget.files?.[0] ?? null;
+                            void handleProfilePhotoUpload(img);
+                            e.currentTarget.value = "";
+                          }}
+                          className="hidden"
+                        />
+
+                        {profilePhotoDataUrl ? (
+                          <button
+                            type="button"
+                            onClick={clearProfilePhoto}
+                            className="text-xs font-extrabold underline opacity-80 hover:opacity-100"
+                          >
+                            Remove photo
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        <input
+                          type="checkbox"
+                          checked={showProfilePhoto}
+                          onChange={(e) => setShowProfilePhoto(e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        Show profile photo on resume
+                      </label>
+                    </div>
+
+                    <div className="grid gap-3">
+                      {profilePhotoDataUrl ? (
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={profilePhotoDataUrl}
+                            alt="Profile preview"
+                            className={[
+                              "h-14 w-14 border border-black/10 object-cover",
+                              profilePhotoShape === "circle"
+                                ? "rounded-full"
+                                : profilePhotoShape === "rounded"
+                                ? "rounded-2xl"
+                                : "rounded-none",
+                            ].join(" ")}
+                          />
+                          <div className="text-xs text-black/90 dark:text-slate-100/90">
+                            Preview only. Final size/shape comes from the controls below.
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1">
+                          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">Shape</div>
+                          <select
+                            value={profilePhotoShape}
+                            onChange={(e) => setProfilePhotoShape(e.target.value as "circle" | "rounded" | "square")}
+                            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                            style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                          >
+                            <option value="circle">Circle</option>
+                            <option value="rounded">Rounded</option>
+                            <option value="square">Square</option>
+                          </select>
+                        </label>
+
+                        <label className="grid gap-1">
+                          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black/70 dark:text-slate-300/80">Size</div>
+                          <select
+                            value={String(profilePhotoSize)}
+                            onChange={(e) => setProfilePhotoSize(Number(e.target.value) as 48 | 64 | 80 | 96 | 112)}
+                            className="w-full rounded-xl border border-black/10 bg-white p-3 text-sm font-extrabold text-black outline-none focus:border-black/20 dark:border-white/10 dark:bg-white dark:text-black dark:focus:border-black/20"
+                            style={{ color: "#111827", backgroundColor: "#ffffff" }}
+                          >
+                            <option value="48">Small</option>
+                            <option value="64">Medium</option>
+                            <option value="80">Large</option>
+                            <option value="96">XL</option>
+                            <option value="112">2XL</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Education (Editable)</div>
+                      <div className="text-xs text-black/90 dark:text-slate-100/90">
+                        {editorEducationItems.filter((x) => String(x ?? "").trim()).length} items
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                        <input
+                          type="checkbox"
+                          checked={showEducationOnResume}
+                          onChange={(e) => setShowEducationOnResume(e.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        Show on resume
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={addEducationItem}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {editorEducationItems.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {editorEducationItems.map((item, i) => (
+                        <div key={`education-${i}`} className="flex items-center gap-2">
+                          <input
+                            value={item}
+                            onChange={(e) => updateEducationItem(i, e.target.value)}
+                            className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:border-white/10 dark:bg-black/20 dark:text-slate-100"
+                            placeholder="Education or certification"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => deleteEducationItem(i)}
+                            className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                            aria-label={`Delete education ${i + 1}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
+                      No education detected yet. Add it manually here if the parser misses anything.
                     </div>
                   )}
                 </div>
               </div>
             </div>
           </div>
-        </section>      </div>
+        </section>
+
+      <section id="ats-panel" className="col-span-full mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">ATS + Areas of Expertise</div>
+            <div className="text-xs text-black/90 dark:text-slate-100/90">
+              Keep your expertise list and ATS keyword coverage together in one clear full-width section.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowExpertiseEditor((prev) => !prev)}
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+            >
+              {showExpertiseEditor ? "Hide Expertise" : "Show Expertise"}
+            </button>
+
+            {showExpertiseEditor ? (
+              <button
+                type="button"
+                onClick={addExpertiseItem}
+                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+              >
+                + Add
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAtsKeywords((prev) => {
+                  const next = !prev;
+                  if (next) setShowExpertiseEditor(true);
+                  return next;
+                });
+              }}
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+            >
+              {showAtsKeywords ? "Hide ATS Keywords" : "Show ATS Keywords"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRefreshAtsScore}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg"
+            >
+              Refresh ATS + Profile Sync
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">ATS Score</div>
+            <div className="mt-1 flex items-end gap-3">
+              <div className="text-3xl font-black text-black dark:text-slate-100">
+                {confirmedAtsScore?.overall ?? liveAtsScore.overall}
+              </div>
+              <div className="pb-1 text-sm font-extrabold text-black/90 dark:text-slate-100/90">
+                {confirmedAtsScore?.label ?? liveAtsScore.label}
+              </div>
+              {atsScoreDirty ? (
+                <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
+                  Changes pending review
+                </span>
+              ) : (
+                <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">
+                  Up to date
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
+              Live estimate: {liveAtsScore.overall} · Last updated: {formatAtsUpdatedAt(atsScoreUpdatedAt) || "Not saved yet"}
+            </div>
+            <div className="mt-1 text-xs text-black/90 dark:text-slate-100/90">
+              Role focus: {liveAtsScore.roleFocus[0] || "General"}
+            </div>
+          </div>
+
+          <div className="grid min-w-[220px] flex-1 gap-2 sm:grid-cols-3 xl:max-w-[720px]">
+            <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Keyword Coverage</div>
+              <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
+                {Math.round(liveAtsScore.keywordCoverage * 100)}%
+              </div>
+            </div>
+            <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Metrics</div>
+              <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
+                {liveAtsScore.metricsCount}
+              </div>
+            </div>
+            <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+              <div className="text-[11px] font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">Completeness</div>
+              <div className="mt-1 text-lg font-black text-black dark:text-slate-100">
+                {Math.round(liveAtsScore.sectionCompleteness * 100)}%
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {liveAtsScore.notes.length ? (
+          <div className="mt-3 rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-black/90 dark:text-slate-100/90">ATS Notes</div>
+            <ul className="mt-2 list-disc pl-5 text-xs text-black/90 dark:text-slate-100/90">
+              {liveAtsScore.notes.slice(0, 4).map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+          <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">Areas of Expertise (Editable)</div>
+                <div className="text-xs text-black/90 dark:text-slate-100/90">
+                  {editorExpertiseItems.filter((x) => String(x ?? "").trim()).length} items
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                <input
+                  type="checkbox"
+                  checked={showExpertiseOnResume}
+                  onChange={(e) => setShowExpertiseOnResume(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Show on resume
+              </label>
+            </div>
+
+            {!showExpertiseEditor ? (
+              <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
+                Expertise is minimized by default. Click <span className="font-extrabold">Show Expertise</span> to review or edit items.
+              </div>
+            ) : editorExpertiseItems.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {editorExpertiseItems.map((item, i) => (
+                  <div
+                    key={`expertise-${i}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-black/20"
+                  >
+                    <input
+                      value={item}
+                      onChange={(e) => updateExpertiseItem(i, e.target.value)}
+                      className="min-w-[120px] max-w-[260px] bg-transparent text-xs font-extrabold text-black outline-none placeholder:text-black/40 dark:text-slate-100"
+                      placeholder="Expertise"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => deleteExpertiseItem(i)}
+                      className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                      aria-label={`Delete expertise ${i + 1}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-black/90 dark:text-slate-100/90">
+                No expertise detected yet. Add resume text, bullets, or a stronger summary and analyze again.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-black/10 bg-white p-3 dark:border-white/10 dark:bg-black/10">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-extrabold text-black/90 dark:text-slate-100/90">ATS Keywords</div>
+                <div className="text-[11px] text-black/90 dark:text-slate-100/90">Matched keywords and job-post-relevant missing terms stay tied to Areas of Expertise here.</div>
+              </div>
+            </div>
+
+            {showAtsKeywords ? (
+              <div className="mt-3 grid gap-3">
+                <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-xs font-extrabold uppercase tracking-wide text-amber-700 dark:text-amber-700">
+                      Missing Keywords ({liveAtsScore.missingKeywords.length})
+                    </div>
+                    {ignoredMissingKeywords.length ? (
+                      <button
+                        type="button"
+                        onClick={clearIgnoredMissingKeywords}
+                        className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                      >
+                        Reset removed
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mb-2 text-[11px] text-black/90 dark:text-slate-100/90">
+                    Use the <span className="font-extrabold text-emerald-700">+</span> to add a keyword to Areas of Expertise and count it as covered, or the <span className="font-extrabold text-red-600">−</span> to remove it from ATS scoring for this application.
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {liveAtsScore.missingKeywords.length ? (
+                      liveAtsScore.missingKeywords.slice(0, 16).map((term) => (
+                        <div
+                          key={`missing-${term}`}
+                          className="inline-flex items-center overflow-hidden rounded-full border border-black/10 bg-black/5 text-xs font-extrabold text-black/90 dark:border-white/10 dark:bg-white/5 dark:text-slate-100/90"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => addKeywordToExpertise(term)}
+                            className="flex items-center justify-center bg-emerald-50 px-2 py-1 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-700 dark:hover:bg-emerald-500/20"
+                            title="Add this keyword to Areas of Expertise"
+                          >
+                            +
+                          </button>
+                          <span className="px-2.5 py-1">{term}</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleIgnoreMissingKeyword(term)}
+                            className="flex items-center justify-center bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-600 dark:hover:bg-red-500/20"
+                            title="Remove this keyword from ATS scoring"
+                          >
+                            −
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-xs text-black/90 dark:text-slate-100/90">Coverage looks solid.</span>
+                    )}
+                  </div>
+                  {ignoredMissingKeywords.length ? (
+                    <div className="mt-3">
+                      <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-sky-700 dark:text-sky-700">Removed From Scoring ({ignoredMissingKeywords.length})</div>
+                      <div className="flex flex-wrap gap-2">
+                        {ignoredMissingKeywords.map((term) => (
+                          <button
+                            key={`ignored-${term}`}
+                            type="button"
+                            onClick={() => toggleIgnoreMissingKeyword(term)}
+                            className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-extrabold text-sky-800 hover:bg-sky-100"
+                            title="Add this keyword back into ATS scoring"
+                          >
+                            <span>{term}</span>
+                            <span aria-hidden>+</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-black/5">
+                  <div className="mb-2 text-xs font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-700">
+                    Matched Keywords ({liveAtsScore.matchedKeywords.length})
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {liveAtsScore.matchedKeywords.length ? (
+                      liveAtsScore.matchedKeywords.slice(0, 16).map((term) => <Chip key={`matched-${term}`} text={term} />)
+                    ) : (
+                      <span className="text-xs text-black/90 dark:text-slate-100/90">No strong keyword matches yet.</span>
+                    )}
+                  </div>
+                </div>              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-xs text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
+                ATS keyword details are hidden for now. Click <span className="font-extrabold">Show ATS Keywords</span> to review matched, missing, and removed terms.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* ✅ BULLETS PANEL */}
-      {analysis && liveBulletRows.length ? (
-        <section className="mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+      {(analysis || savedResumeRestored) && liveBulletRows.length ? (
+        <section id="bullets-panel" className="col-span-full mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+          {!isSetupMode && !canRewriteBullets ? (
+            <div className="mb-3 rounded-xl border border-amber-300/60 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
+              Edit these bullets freely. AI rewrites need the job posting: paste it into{" "}
+              <span className="font-extrabold">Job description</span> above to enable them.
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => selectAll(liveBulletRows.length)}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-              >
-                Select all
-              </button>
-
-              <button
-                type="button"
-                onClick={selectNone}
-                className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-              >
-                Select none
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRewriteSelected}
-                disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
-                className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                  selectedCount === 0
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
-                    : "bg-emerald-300 text-black hover:bg-gray-800 active:scale-95 shadow-md"
-                }`}
-              >
-                {loadingBatchRewrite
-                  ? "Rewriting…"
-                  : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
-              </button>
-
-              <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
-                <input
-                  type="checkbox"
-                  checked={showRewriteScorecard}
-                  onChange={(e) => setShowRewriteScorecard(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                Show scorecard
-              </label>
-
-              <div className="text-xs text-black/90 dark:text-black/90">
-                Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
+            {isSetupMode ? (
+              <div className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-extrabold text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100">
+                Setup mode uses manual bullet editing only. AI rewrites unlock during job tailoring.
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectAll(liveBulletRows.length)}
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                >
+                  Select all
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selectNone}
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                >
+                  Select none
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRewriteSelected}
+                  disabled={!canRewriteBullets || loadingBatchRewrite || selectedCount === 0}
+                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+                    selectedCount === 0
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
+                      : "bg-emerald-300 text-black hover:bg-gray-800 active:scale-95 shadow-md"
+                  }`}
+                >
+                  {loadingBatchRewrite
+                    ? "Rewriting…"
+                    : `Rewrite Selected (${selectedCount}) (${CREDIT_COSTS.rewriteBullet} credit ea)`}
+                </button>
+
+                <label className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
+                  <input
+                    type="checkbox"
+                    checked={showRewriteScorecard}
+                    onChange={(e) => setShowRewriteScorecard(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Show scorecard
+                </label>
+
+                <div className="text-xs text-black/90 dark:text-slate-100/90">
+                  Selecting a bullet includes it in batch rewrite. Preview and editor use the same live bullet text.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 grid gap-3">
@@ -6668,41 +7571,45 @@ useEffect(() => {
                 >
                   <div className="flex flex-col gap-2">
                     <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleSelected(i)}
-                        className="h-4 w-4"
-                      />
+                      {!isSetupMode ? (
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleSelected(i)}
+                          className="h-4 w-4"
+                        />
+                      ) : null}
                       <span className="text-sm font-extrabold">Bullet {i + 1}</span>
                       {rewritten ? <Chip text="Has rewrite" /> : <Chip text="Original" muted />}
                     </label>
 
-                    <select
-                      value={assigned}
-                      onChange={(e) => {
-                        if (row.planIndex === null) return;
-                        setAssignments((prev) => ({
-                          ...prev,
-                          [row.planIndex as number]: { sectionId: e.target.value },
-                        }));
-                      }}
-                      disabled={row.planIndex === null}
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-black"
-                    >
-                      {sections.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {getSectionDisplayHeader(s)}
-                        </option>
-                      ))}
-                    </select>
+                    {!isSetupMode ? (
+                      <select
+                        value={assigned}
+                        onChange={(e) => {
+                          if (row.planIndex === null) return;
+                          setAssignments((prev) => ({
+                            ...prev,
+                            [row.planIndex as number]: { sectionId: e.target.value },
+                          }));
+                        }}
+                        disabled={row.planIndex === null}
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold outline-none disabled:opacity-60 dark:border-white/10 dark:bg-black/30 dark:text-slate-100"
+                      >
+                        {sections.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {getSectionDisplayHeader(s)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {rewritten ? (
+                      {!isSetupMode && rewritten ? (
                         <button
                           type="button"
                           onClick={() => handleUndoRewrite(i)}
-                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                          className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                         >
                           Restore Original
                         </button>
@@ -6711,7 +7618,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => goToEditorBullet(row.sectionId, row.bulletIndex)}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                       >
                         Go To Bullet
                       </button>
@@ -6719,33 +7626,37 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={() => editSectionHeader(row.sectionId)}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                       >
                         Edit Header
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i)}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
-                      >
-                        {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
-                      </button>
+                      {!isSetupMode ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleRewriteBullet(i)}
+                            disabled={!canRewriteBullets || (loadingRewriteIndex !== null && loadingRewriteIndex !== i)}
+                            className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
+                          >
+                            {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRewriteBullet(i, { safer: true })}
-                        disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
-                        className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
-                      >
-                        Safer Rewrite
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRewriteBullet(i, { safer: true })}
+                            disabled={!canRewriteBullets || (loadingRewriteIndex !== null && loadingRewriteIndex !== i)}
+                            className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+                          >
+                            Safer Rewrite
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="mt-2 grid gap-2">
-                    <div className="text-xs font-extrabold text-black/90 dark:text-black/90">Original</div>
+                    <div className="text-xs font-extrabold text-black/90 dark:text-slate-100/90">Original</div>
                     <div className="whitespace-pre-wrap text-sm">{original}</div>
 
                     {rewritten ? (
@@ -6762,14 +7673,14 @@ useEffect(() => {
                             </div>
                             <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                               <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
-                                <div className="font-extrabold text-black/90 dark:text-black/90">Score</div>
+                                <div className="font-extrabold text-black/90 dark:text-slate-100/90">Score</div>
                                 <div className="mt-1 text-sm font-black text-emerald-700 dark:text-emerald-700">
                                   {scorecard.total}/100
                                 </div>
                               </div>
                               <div className="rounded-lg bg-white/80 p-2 dark:bg-black/10">
-                                <div className="font-extrabold text-black/90 dark:text-black/90">Confidence</div>
-                                <div className="mt-1 text-sm font-black text-black/90 dark:text-black/90">
+                                <div className="font-extrabold text-black/90 dark:text-slate-100/90">Confidence</div>
+                                <div className="mt-1 text-sm font-black text-black/90 dark:text-slate-100/90">
                                   {scorecard.confidence}
                                 </div>
                               </div>
@@ -6777,7 +7688,7 @@ useEffect(() => {
                           </div>
                         ) : null}
 
-                        <div className="text-xs font-extrabold text-black/80 dark:text-black/80">
+                        <div className="text-xs font-extrabold text-black/80 dark:text-slate-200/80">
                           What changed
                         </div>
                         <RewriteDiff original={original} rewritten={rewritten} />
@@ -6790,10 +7701,10 @@ useEffect(() => {
           </div>
 
           <div className="mt-3 rounded-2xl border border-black/10 bg-white/60 p-3 dark:border-white/10 dark:bg-white/5">
-            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+            <div className="mb-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
               Edit resume bullets (live preview)
             </div>
-            <div className="mb-3 text-xs text-black/90 dark:text-black/90">
+            <div className="mb-3 text-xs text-black/90 dark:text-slate-100/90">
               Drag bullets to reorder them, edit text inline, or add and remove bullets per section.
             </div>
 
@@ -6811,15 +7722,15 @@ useEffect(() => {
                     className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
                   >
                     <div className="min-w-0">
-                      <div className="text-lg font-black text-black dark:text-black">
+                      <div className="text-lg font-black text-black dark:text-slate-100">
                         {getSectionDisplayHeader(s)} {s.dates ? `| ${s.dates}` : ""}
                       </div>
-                      <div className="text-sm text-black/90 dark:text-black/90">
+                      <div className="text-sm text-black/90 dark:text-slate-100/90">
                         {(editorBulletsBySection[s.id] || []).length} bullets
                       </div>
                     </div>
 
-                    <div className="shrink-0 text-sm font-extrabold text-black/90 dark:text-black/90">
+                    <div className="shrink-0 text-sm font-extrabold text-black/90 dark:text-slate-100/90">
                       {collapsedSections[s.id] ? "Expand" : "Collapse"}
                     </div>
                   </button>
@@ -6828,7 +7739,7 @@ useEffect(() => {
                     <button
                       type="button"
                       onClick={() => addEditorBullet(s.id)}
-                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                      className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                     >
                       + Add bullet
                     </button>
@@ -6869,7 +7780,7 @@ useEffect(() => {
                               ].join(" ")}
                             >
                               <div className="mb-2 flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-black/90">
+                                <div className="flex items-center gap-2 text-xs font-extrabold text-black/90 dark:text-slate-100/90">
                                   <span className="cursor-grab select-none">⋮⋮</span>
                                   <span>Bullet {i + 1}</span>
                                 </div>
@@ -6878,7 +7789,7 @@ useEffect(() => {
                                   <button
                                     type="button"
                                     onClick={() => goToRewrite(s.id, i)}
-                                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-black dark:hover:bg-white/15"
+                                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-black hover:bg-black/5 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                                   >
                                     Go To Rewrite
                                   </button>
@@ -6905,12 +7816,12 @@ useEffect(() => {
                                 value={b}
                                 onChange={(e) => updateEditorBullet(s.id, i, e.target.value)}
                                 rows={3}
-                                className="w-full rounded-lg border border-black/10 bg-white p-2.5 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-black dark:focus:border-white/20"
+                                className="w-full rounded-lg border border-black/10 bg-white p-2.5 text-sm outline-none focus:border-black/20 dark:border-white/10 dark:bg-black/20 dark:text-slate-100 dark:focus:border-white/20"
                               />
                             </div>
                           ))
                         ) : (
-                          <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-black/90">
+                          <div className="rounded-xl border border-dashed border-black/10 bg-white/50 p-3 text-sm text-black/90 dark:border-white/10 dark:bg-black/10 dark:text-slate-100/90">
                             No bullets in this section yet.
                           </div>
                         )}
@@ -6923,6 +7834,8 @@ useEffect(() => {
           </div>
         </section>
       ) : null}
+      </div>
     </main>
   );
 }
+ 

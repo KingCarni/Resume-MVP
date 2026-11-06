@@ -1,8 +1,7 @@
-// src/app/account/page.tsx
-import DashboardShell from "@/components/layout/DashboardShell";
-import DonationRequestPanel from "@/components/account/DonationRequestPanel";
-import AdminDonationRequestsPanel from "@/components/account/AdminDonationRequestsPanel";
 import { getServerSession } from "next-auth";
+
+import AccountProfileHub from "@/components/account/AccountProfileHub";
+import AppHeader from "@/components/layout/AppHeader";
 import { authOptions } from "@/lib/auth";
 
 const ADMIN_EMAIL = "gitajob.com@gmail.com";
@@ -13,22 +12,29 @@ export default async function AccountPage() {
   const isAdmin = email === ADMIN_EMAIL;
 
   return (
-    <DashboardShell
-      title="Account"
-      subtitle="Manage your credits and requests."
-    >
-      {/* Subtle signed-in indicator */}
-      <div className="mb-6 text-right text-xs font-semibold text-black/60">
-        Signed in as: {email || "unknown"}
-      </div>
+    <main className="min-h-screen pb-10 text-white">
+      <AppHeader menuItems={[
+        { href: "/jobs/saved", label: "Saved Jobs" },
+        { href: "/buy-credits", label: "Buy Credits" },
+        { href: "/account/donate", label: "Donate" },
+        ...(isAdmin ? [{ href: "/admin/debug", label: "Admin Debug" }] : []),
+      ]} />
 
-      <div className="grid gap-6">
-        {/* User Donation Request Panel */}
-        <DonationRequestPanel />
+      <div className="shell-wrap py-6">
+        <div className="shell-panel overflow-hidden">
+          <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(15,23,42,0.05)_52%,rgba(8,145,178,0.06))] px-6 py-8 sm:px-8 lg:px-10">
+            <p className="text-[11px] font-semibold tracking-[0.28em] text-cyan-200 uppercase">Account hub</p>
+            <h1 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">Profile, credits, donations, and resume data in one place.</h1>
+          </div>
 
-        {/* Admin Review Panel */}
-        {isAdmin ? <AdminDonationRequestsPanel /> : null}
+          <div className="px-4 py-6 sm:px-6 lg:px-8">
+            <AccountProfileHub
+              email={String(session?.user?.email ?? "").trim()}
+              isAdmin={isAdmin}
+            />
+          </div>
+        </div>
       </div>
-    </DashboardShell>
+    </main>
   );
 }

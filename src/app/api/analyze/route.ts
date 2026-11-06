@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/api/analyze/route.ts
 import mammoth from "mammoth";
 import { NextResponse } from "next/server";
@@ -8,8 +9,9 @@ import { computeVerbStrength } from "@/lib/verb_strength";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chargeCredits, refundCredits } from "@/lib/credits";
+import { chargeCredits, getCreditBalance, refundCredits } from "@/lib/credits";
 import { detectGameRole, detectRoleAndMissingTerms } from "@/lib/ats";
+import { upsertLatestResumeProfileForUser } from "@/lib/resumeProfiles/buildProfile";
 
 import { ocrPdfWithGoogleVision } from "@/lib/pdf_ocr_google";
 import { assessPdfTextQuality } from "@/lib/pdf_quality";
@@ -52,6 +54,106 @@ type AtsHit = {
   score: number;
 };
 
+type JobsAnalyticsMode = "resume" | "cover_letter" | "apply_pack" | "browse";
+
+type JobsAnalyticsContext = {
+  jobId: string;
+  resumeProfileId?: string;
+  sourceSlug?: string;
+  company?: string;
+  jobTitle?: string;
+  mode?: JobsAnalyticsMode;
+  bundleSessionId?: string;
+};
+
+function cleanOptionalString(value: unknown) {
+  const s = String(value ?? "").trim();
+  return s || undefined;
+}
+
+function buildJobsAnalyticsContext(input: {
+  jobId?: unknown;
+  resumeProfileId?: unknown;
+  sourceSlug?: unknown;
+  company?: unknown;
+  jobTitle?: unknown;
+  mode?: unknown;
+  bundleSessionId?: unknown;
+}) {
+  const jobId = cleanOptionalString(input.jobId);
+  if (!jobId) return null;
+
+  const modeRaw = cleanOptionalString(input.mode);
+  const mode: JobsAnalyticsMode | undefined =
+    modeRaw === "apply_pack" || modeRaw === "cover_letter" || modeRaw === "browse" || modeRaw === "resume"
+      ? modeRaw
+      : "resume";
+
+  return {
+    jobId,
+    resumeProfileId: cleanOptionalString(input.resumeProfileId),
+    sourceSlug: cleanOptionalString(input.sourceSlug),
+    company: cleanOptionalString(input.company),
+    jobTitle: cleanOptionalString(input.jobTitle),
+    mode,
+    bundleSessionId: cleanOptionalString(input.bundleSessionId),
+  } satisfies JobsAnalyticsContext;
+}
+
+async function writeJobsAnalyticsEvent(args: {
+  userId: string;
+  event: string;
+  route: string;
+  context: JobsAnalyticsContext | null;
+  meta?: Record<string, unknown>;
+}) {
+  if (!args.context?.jobId) return;
+
+  await prisma.event.create({
+    data: {
+      userId: args.userId,
+      type: "analyze",
+      metaJson: {
+        tag: BOOT_TAG,
+        category: "jobs",
+        event: args.event,
+        route: args.route,
+        jobId: args.context.jobId,
+        resumeProfileId: args.context.resumeProfileId ?? null,
+        sourceSlug: args.context.sourceSlug ?? null,
+        company: args.context.company ?? null,
+        jobTitle: args.context.jobTitle ?? null,
+        mode: args.context.mode ?? null,
+        bundleSessionId: args.context.bundleSessionId ?? null,
+        ...(typeof args.meta === "object" && args.meta ? toSafeJson(args.meta) : {}),
+      },
+    },
+  });
+}
+
+function toSafeJson(value: unknown) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+
+const COST_TAILOR_RESUME = 5;
+const COST_APPLY_PACK = 8;
+
+function buildJobsChargeConfig(context: JobsAnalyticsContext | null, fallbackMode: JobsAnalyticsMode) {
+  const mode = context?.mode === "apply_pack" ? "apply_pack" : fallbackMode;
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  const isApplyPack = mode === "apply_pack" && !!bundleSessionId;
+
+  return {
+    mode,
+    isApplyPack,
+    cost: isApplyPack ? COST_APPLY_PACK : COST_TAILOR_RESUME,
+    reason: isApplyPack ? "job_apply_pack" : "job_tailor_resume",
+    ref: isApplyPack ? `job_apply_pack:${bundleSessionId}` : undefined,
+    bundleSessionId,
+  } as const;
+}
+
 function okJson(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
     ...init,
@@ -64,6 +166,74 @@ function okJson(payload: any, init?: ResponseInit) {
 
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
+}
+
+async function getCanonicalJobContextText(jobId: string) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      status: "active",
+    },
+    select: {
+      title: true,
+      company: true,
+      location: true,
+      remoteType: true,
+      seniority: true,
+      employmentType: true,
+      description: true,
+      requirementsText: true,
+      responsibilitiesText: true,
+    },
+  });
+
+  if (!job) return "";
+
+  return [
+    `${job.title} at ${job.company}`,
+    job.location ? `Location: ${job.location}` : null,
+    `Remote type: ${job.remoteType}`,
+    `Seniority: ${job.seniority}`,
+    `Employment type: ${job.employmentType}`,
+    job.description || null,
+    job.requirementsText || null,
+    job.responsibilitiesText || null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function resolveEffectiveJobsAnalyticsContext(
+  context: JobsAnalyticsContext | null,
+  currentJobText: string,
+  fallbackMode: JobsAnalyticsMode
+) {
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  if (!context?.jobId || context?.mode !== "apply_pack" || !bundleSessionId) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  const canonicalJobText = await getCanonicalJobContextText(context.jobId);
+  const matchesCanonical = !!canonicalJobText && normalizeJobText(canonicalJobText) === normalizeJobText(currentJobText);
+
+  if (matchesCanonical) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  return {
+    context: {
+      ...context,
+      mode: fallbackMode,
+      bundleSessionId: undefined,
+    },
+    bundleOverrideInvalidated: true,
+  } as const;
 }
 
 function normalizeResumeText(input: unknown) {
@@ -141,6 +311,36 @@ function cleanLeadingBulletGarbage(s: string) {
 function safeArray(input: unknown): string[] {
   return Array.isArray(input) ? input.map((x) => String(x || "").trim()).filter(Boolean) : [];
 }
+
+function safeTitleArray(input: Array<string | null | undefined>) {
+  return uniqueCaseInsensitive(
+    input.map((item) => String(item || "").trim()).filter(Boolean)
+  );
+}
+
+function buildAutoResumeProfileSummary(args: {
+  targetPosition: string;
+  parserUsed: string;
+  ats?: any;
+  highlights?: { gamesShipped?: string[]; keyMetrics?: string[] };
+}) {
+  const roleName =
+    String(args.ats?.detectedResumeRole?.roleName || "").trim() ||
+    String(args.ats?.targetRole?.roleName || "").trim() ||
+    String(args.targetPosition || "").trim();
+
+  const matchedTerms = safeArray(args.ats?.matchedTerms).slice(0, 4);
+  const metricHint = safeArray(args.highlights?.keyMetrics).slice(0, 1);
+  const parts: string[] = [];
+
+  if (roleName) parts.push(`${roleName} profile auto-created from resume analysis.`);
+  if (matchedTerms.length) parts.push(`Detected strengths: ${matchedTerms.join(", ")}.`);
+  if (metricHint.length) parts.push(`Evidence captured: ${metricHint[0]}.`);
+  if (args.parserUsed && args.parserUsed !== "unknown") parts.push(`Source parse: ${args.parserUsed}.`);
+
+  return parts.join(" ").trim() || "Auto-created from resume analysis.";
+}
+
 
 function pct(part: number, total: number) {
   if (!total) return 0;
@@ -333,6 +533,130 @@ function buildAtsAnalysis(args: { resumeText: string; jobText: string; targetPos
     roleShift,
   };
 }
+
+
+function classifyJdKeywordForAtsCategory(term: string): AtsCategoryKey {
+  const normalized = normalizeJobText(term).toLowerCase();
+  const compact = normalized.replace(/[.\s-]+/g, "");
+
+  const toolTerms = new Set([
+    "javascript", "typescript", "python", "java", "c#", "c++", "go", "golang", "ruby", "php", "lua", "swift", "kotlin", "scala",
+    "html", "css", "sql", "rest", "rest api", "rest apis", "api", "apis",
+    "react", "next.js", "nextjs", "node.js", "nodejs", "node", "vue", "angular", "svelte", "django", "rails", "spring",
+    "zendesk", "jira", "mode", "looker", "tableau", "figma", "github", "gitlab", "docker", "kubernetes", "postman",
+    "postgresql", "postgres", "mysql", "mongodb", "redis", "aws", "azure", "gcp",
+  ]);
+
+  if (toolTerms.has(normalized) || toolTerms.has(compact)) return "tools";
+
+  if (/\b(ticket|ticketing|triage|escalation|escalations|incident|debug|troubleshoot|troubleshooting|quality|testing|test|documentation|process improvement|time management|customer support|technical support|communication|collaboration|self starter|customer-facing|customer facing)\b/i.test(normalized)) {
+    return "methods";
+  }
+
+  if (/\b(game|gaming|finance|financial|banking|support|customer|developer tools|platform|saas|api platform|ai|database|data visualization|visualization)\b/i.test(normalized)) {
+    return "domain";
+  }
+
+  if (/\b(reduce|improve|increase|optimize|quality|latency|performance|reliability|standards|impact|resolution)\b/i.test(normalized)) {
+    return "outcomes";
+  }
+
+  return "core";
+}
+
+function mergeTerms(...groups: Array<unknown>): string[] {
+  const values = groups.flatMap((group) => safeArray(group));
+  return uniqueCaseInsensitive(values);
+}
+
+function mergeCategoryBuckets(
+  base: Partial<AtsCategoryBuckets> | null | undefined,
+  terms: string[],
+) {
+  const next: AtsCategoryBuckets = {
+    titles: safeArray(base?.titles),
+    core: safeArray(base?.core),
+    tools: safeArray(base?.tools),
+    methods: safeArray(base?.methods),
+    domain: safeArray(base?.domain),
+    outcomes: safeArray(base?.outcomes),
+  };
+
+  for (const term of terms) {
+    const clean = String(term || "").trim();
+    if (!clean) continue;
+    const category = classifyJdKeywordForAtsCategory(clean);
+    next[category] = uniqueCaseInsensitive([...next[category], clean]);
+  }
+
+  return next;
+}
+
+function bridgeJobDescriptionKeywordFitIntoAts(args: {
+  ats: ReturnType<typeof buildAtsAnalysis>;
+  analysis: any;
+}) {
+  const { ats, analysis } = args;
+  const presentFromJobDescription = safeArray(analysis?.presentKeywords ?? analysis?.present).slice(0, 24);
+  const missingFromJobDescription = safeArray(
+    analysis?.highImpactMissing ?? analysis?.missingKeywords ?? analysis?.missing,
+  ).slice(0, 24);
+
+  if (!presentFromJobDescription.length && !missingFromJobDescription.length) return ats;
+
+  const matchedByCategory = mergeCategoryBuckets(
+    ats.matchedByCategory ?? undefined,
+    presentFromJobDescription,
+  );
+  const missingByCategory = mergeCategoryBuckets(
+    ats.missingByCategory ?? undefined,
+    missingFromJobDescription,
+  );
+
+  const matchedTerms = mergeTerms(ats.matchedTerms, presentFromJobDescription).slice(0, 32);
+  const matchedTermsDetailed = uniqueCaseInsensitive([
+    ...safeArray(ats.matchedTermsDetailed?.map((hit) => hit.term)),
+    ...presentFromJobDescription,
+  ]).slice(0, 32).map((term) => ({
+    category: classifyJdKeywordForAtsCategory(term),
+    term,
+    count: 1,
+    score: 0,
+  }));
+
+  const jdMissingTools = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "tools");
+  const jdMissingCore = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "core");
+  const jdMissingMethods = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "methods");
+  const jdMissingDomain = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "domain");
+  const jdMissingOutcomes = missingFromJobDescription.filter((term) => classifyJdKeywordForAtsCategory(term) === "outcomes");
+
+  const missingCriticalTerms = mergeTerms(ats.missingCriticalTerms, jdMissingTools, jdMissingCore).slice(0, 15);
+  const missingImportantTerms = mergeTerms(ats.missingImportantTerms, jdMissingMethods, jdMissingDomain).slice(0, 15);
+  const missingNiceToHaveTerms = mergeTerms(ats.missingNiceToHaveTerms, jdMissingOutcomes).slice(0, 20);
+
+  const categoryScores = buildAtsCategoryScores({
+    matchedByCategory,
+    missingByCategory,
+  });
+
+  return {
+    ...ats,
+    matchedTerms,
+    matchedTermsDetailed,
+    missingCriticalTerms,
+    missingImportantTerms,
+    missingNiceToHaveTerms,
+    matchedByCategory,
+    missingByCategory,
+    categoryScores,
+    overallScore: buildOverallAtsScore(categoryScores),
+    notes: uniqueCaseInsensitive([
+      ...safeArray(ats.notes),
+      "Job-description keywords were merged into ATS scoring so this role's actual tools and requirements are represented.",
+    ]).slice(0, 8),
+  };
+}
+
 
 function looksLikeDateRangeLine(lineRaw: string) {
   const line = String(lineRaw || "").trim();
@@ -679,24 +1003,41 @@ function extractMetaBlocks(fullText: string) {
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const gamesShippedRegex = /^(\u{1F3AE}\s*)?games shipped:/iu;
-  const metricLikeRegex =
-    /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
+  const gamesShippedRegex = /^(?:🎮\s*)?games shipped:\s*(.*)$/i;
+  const metricLikeRegex = /(%|\$\s?\d|\b\d+(\.\d+)?\s?(ms|s|sec|secs|minutes|min|hrs|hours|days|weeks)\b|\b\d+(\.\d+)?x\b)/i;
+  const actionVerbRe = /\b(served|supported|managed|coordinated|tested|reviewed|developed|created|updated|collaborated|maintained|implemented|organized|completed|prepared|piloted|reported|ensured|integrated|wrote|followed|communicated)\b/i;
 
   const gamesShipped: string[] = [];
   const metrics: string[] = [];
   const seenGames = new Set<string>();
   const seenMetrics = new Set<string>();
 
+  const pushGame = (value: string) => {
+    const cleaned = value.replace(/^[-•]\s*/, "").replace(/\s+/g, " ").trim();
+    if (!cleaned) return;
+    if (cleaned.length > 90) return;
+    if (actionVerbRe.test(cleaned)) return;
+    const k = normalizeForContains(cleaned);
+    if (!seenGames.has(k)) {
+      seenGames.add(k);
+      gamesShipped.push(cleaned);
+    }
+  };
+
   for (const l0 of lines) {
     const l = l0.replace(/\s+/g, " ").trim();
     if (!l) continue;
 
-    if (gamesShippedRegex.test(l)) {
-      const k = normalizeForContains(l);
-      if (!seenGames.has(k)) {
-        seenGames.add(k);
-        gamesShipped.push(l);
+    const gamesMatch = l.match(gamesShippedRegex);
+    if (gamesMatch) {
+      const rest = String(gamesMatch[1] ?? "").trim();
+      if (rest) {
+        const parts = rest.split(/\s*[•|]\s*|\s*,\s*(?=[A-Z0-9])/).map((x) => x.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          parts.forEach(pushGame);
+        } else {
+          pushGame(rest);
+        }
       }
       continue;
     }
@@ -704,6 +1045,7 @@ function extractMetaBlocks(fullText: string) {
     if (l.length <= 110 && metricLikeRegex.test(l)) {
       if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19|20)\d{2}\b/i.test(l)) continue;
       if (/\b\d{3}[-.)\s]*\d{3}[-.\s]*\d{4}\b/.test(l)) continue;
+      if (actionVerbRe.test(l) && !/%|\$\s?\d|\b\d+(\.\d+)?x\b/i.test(l)) continue;
 
       const k = normalizeForContains(l);
       if (!seenMetrics.has(k)) {
@@ -1256,6 +1598,7 @@ export async function POST(req: Request) {
 
   let chargedUserId = "";
   let chargedCost = 0;
+  let jobsAnalyticsContext: JobsAnalyticsContext | null = null;
 
   try {
     const contentType = req.headers.get("content-type") || "";
@@ -1271,6 +1614,7 @@ export async function POST(req: Request) {
     let jobText = "";
     let targetPosition = "";
     let onlyExperienceBullets = true;
+    let isFirstTimeSetup = false;
 
     let bulletsFromFile: string[] = [];
     let blobDebug: any = null;
@@ -1286,12 +1630,29 @@ export async function POST(req: Request) {
       const file = form.get("file");
       const resumeTextFallback = form.get("resumeText");
       const job = form.get("jobText") ?? form.get("jobPostingText");
+      const target = form.get("targetPosition");
 
       const flagRaw = form.get("onlyExperienceBullets");
       const parsedFlag = parseOnlyExperienceFlagFromFormData(flagRaw);
       if (typeof parsedFlag === "boolean") onlyExperienceBullets = parsedFlag;
 
+      const firstTimeSetupRaw = form.get("isFirstTimeSetup");
+      if (typeof firstTimeSetupRaw === "string") {
+        isFirstTimeSetup = ["1", "true", "yes", "on"].includes(firstTimeSetupRaw.toLowerCase());
+      }
+
       jobText = normalizeJobText(job);
+      targetPosition = normalizeJobText(target);
+
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: form.get("jobId"),
+        resumeProfileId: form.get("resumeProfileId"),
+        sourceSlug: form.get("sourceSlug"),
+        company: form.get("company"),
+        jobTitle: form.get("jobTitle") ?? target,
+        mode: form.get("mode"),
+        bundleSessionId: form.get("bundleSessionId"),
+      });
 
       if (file && file instanceof File) {
         if (file.size > MAX_FILE_BYTES) {
@@ -1329,8 +1690,22 @@ export async function POST(req: Request) {
       jobText = normalizeJobText(body.jobText ?? body.jobPostingText);
       targetPosition = normalizeJobText(body.targetPosition);
 
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: body.jobId,
+        resumeProfileId: body.resumeProfileId,
+        sourceSlug: body.sourceSlug,
+        company: body.company,
+        jobTitle: body.jobTitle ?? body.targetPosition,
+        mode: body.mode,
+        bundleSessionId: body.bundleSessionId,
+      });
+
       if (typeof body.onlyExperienceBullets === "boolean") {
         onlyExperienceBullets = body.onlyExperienceBullets;
+      }
+
+      if (typeof body.isFirstTimeSetup === "boolean") {
+        isFirstTimeSetup = body.isFirstTimeSetup;
       }
 
       if (resumeBlobUrl) {
@@ -1356,8 +1731,8 @@ export async function POST(req: Request) {
 
         const extra = sanitizeResumeInput(body.resumeText);
         if (extra && extra.length >= 200 && extra !== resumeText) {
-          resumeText = `${resumeText}\n\n${extra}`;
-          blobDebug.appendedResumeText = true;
+          blobDebug.appendedResumeText = false;
+          blobDebug.ignoredResumeText = true;
         }
 
         if (!extracted.parserUsed) {
@@ -1398,25 +1773,98 @@ export async function POST(req: Request) {
       );
     }
 
-    const COST_ANALYZE = 3;
-    const charged = await chargeCredits({
-      userId: dbUser.id,
-      cost: COST_ANALYZE,
-      reason: "analyze",
-      eventType: "analyze",
-      meta: { cost: COST_ANALYZE },
-    });
+    const effectiveJobsContextResult = await resolveEffectiveJobsAnalyticsContext(
+      jobsAnalyticsContext,
+      jobText,
+      "resume"
+    );
+    jobsAnalyticsContext = effectiveJobsContextResult.context;
+
+    const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "resume");
+    const eligibleForFreeSetup =
+      isFirstTimeSetup &&
+      chargeConfig.mode !== "apply_pack" &&
+      (await prisma.resumeProfile.count({ where: { userId: dbUser.id } })) === 0;
+
+    const charged = eligibleForFreeSetup
+      ? { ok: true, balance: await getCreditBalance(dbUser.id), alreadyApplied: true }
+      : await chargeCredits({
+          userId: dbUser.id,
+          cost: chargeConfig.cost,
+          reason: chargeConfig.reason,
+          eventType: "analyze",
+          ref: chargeConfig.ref,
+          meta: {
+            cost: chargeConfig.cost,
+            jobId: jobsAnalyticsContext?.jobId ?? null,
+            resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
+            company: jobsAnalyticsContext?.company ?? null,
+            jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
+            sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
+            mode: chargeConfig.mode,
+            bundleSessionId: chargeConfig.bundleSessionId ?? null,
+        bundleOverrideInvalidated: effectiveJobsContextResult.bundleOverrideInvalidated,
+            setupMode: isFirstTimeSetup,
+            freeSetupGranted: eligibleForFreeSetup,
+          },
+        });
 
     if (!charged.ok) {
+      await writeJobsAnalyticsEvent({
+        userId: dbUser.id,
+        event: "job_resume_analysis_failed",
+        route: "/resume",
+        context: jobsAnalyticsContext,
+        meta: {
+          creditsCost: eligibleForFreeSetup ? 0 : chargeConfig.cost,
+        freeSetupGranted: eligibleForFreeSetup,
+          error: "OUT_OF_CREDITS",
+          refunded: false,
+          parserUsed,
+          detectedType,
+        },
+      });
+
+      if (jobsAnalyticsContext?.mode === "apply_pack") {
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_apply_pack_failed",
+          route: "/resume",
+          context: jobsAnalyticsContext,
+          meta: {
+            step: "resume_analyze",
+            creditsCost: chargeConfig.cost,
+            error: "OUT_OF_CREDITS",
+            refunded: false,
+          },
+        });
+      }
+
       return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
     chargedUserId = dbUser.id;
-    chargedCost = COST_ANALYZE;
+    chargedCost = charged.alreadyApplied ? 0 : chargeConfig.cost;
 
-    const analysis: any = analyzeKeywordFit(resumeText, jobText);
-    const metaBlocks = extractMetaBlocks(resumeText);
-    const ats = buildAtsAnalysis({ resumeText, jobText, targetPosition });
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_resume_credit_charged",
+      route: "/api/analyze",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: chargeConfig.cost,
+        parserUsed,
+        detectedType,
+        targetPosition,
+      },
+    });
+
+    const analysis: any = analyzeKeywordFit(jobText, resumeText);
+    const metaBlocks = isFirstTimeSetup
+      ? { gamesShipped: [] as string[], metrics: [] as string[] }
+      : extractMetaBlocks(resumeText);
+    const atsBase = buildAtsAnalysis({ resumeText, jobText, targetPosition });
+    const ats = bridgeJobDescriptionKeywordFitIntoAts({ ats: atsBase, analysis });
 
     const highlights = {
       gamesShipped: metaBlocks.gamesShipped,
@@ -1531,6 +1979,37 @@ export async function POST(req: Request) {
           },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: "NO_BULLETS_DETECTED",
+            parserUsed,
+            detectedType,
+            foundExperienceSection: experienceSlice.foundSection,
+            experienceMode: experienceSlice.mode,
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: dbUser.id,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: "NO_BULLETS_DETECTED",
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
@@ -1554,6 +2033,37 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       } catch (refundErr: any) {
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: false,
+            error: "NO_BULLETS_DETECTED",
+            refundError: refundErr?.message || String(refundErr),
+            parserUsed,
+            detectedType,
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: dbUser.id,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: false,
+              error: "NO_BULLETS_DETECTED",
+              refundError: refundErr?.message || String(refundErr),
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
@@ -1639,6 +2149,59 @@ export async function POST(req: Request) {
       };
     });
 
+    let autoResumeProfile: any = null;
+    let autoResumeProfileError: string | null = null;
+
+    try {
+      autoResumeProfile = await upsertLatestResumeProfileForUser({
+        userId: dbUser.id,
+        title:
+          String(ats?.detectedResumeRole?.roleName || "").trim() ||
+          String(targetPosition || "").trim() ||
+          null,
+        rawText: resumeText,
+        summary: buildAutoResumeProfileSummary({
+          targetPosition,
+          parserUsed,
+          ats,
+          highlights,
+        }),
+        skills: uniqueCaseInsensitive([
+          ...safeArray(analysis?.presentKeywords),
+          ...safeArray(ats?.matchedTerms),
+        ]).slice(0, 40),
+        titles: safeTitleArray([
+          ats?.detectedResumeRole?.roleName,
+          ats?.targetRole?.roleName,
+          targetPosition,
+        ]).slice(0, 10),
+        keywords: uniqueCaseInsensitive([
+          ...safeArray(analysis?.presentKeywords),
+          ...safeArray(ats?.matchedTerms),
+          ...safeArray(metaBlocks?.gamesShipped),
+        ]).slice(0, 60),
+      });
+    } catch (profileErr: any) {
+      autoResumeProfileError = profileErr?.message ? String(profileErr.message) : String(profileErr);
+      console.error("resume profile auto-save failed:", profileErr);
+    }
+
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_resume_analysis_completed",
+      route: "/api/analyze",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: chargeConfig.cost,
+        parserUsed,
+        detectedType,
+        targetPosition,
+        bulletsCount: bullets.length,
+        jobsDetected: experienceJobs.length,
+        atsOverallScore: ats?.overallScore ?? null,
+      },
+    });
+
     return okJson({
       ok: true,
       balance: charged.balance,
@@ -1652,7 +2215,16 @@ export async function POST(req: Request) {
       rewritePlan,
       metaBlocks,
       highlights,
-      warnings: warningsUnique,
+      warnings: autoResumeProfileError
+        ? Array.from(new Set([...warningsUnique, "Resume profile auto-save failed."]))
+        : warningsUnique,
+      autoResumeProfile: autoResumeProfile
+        ? {
+            id: autoResumeProfile.id,
+            title: autoResumeProfile.title,
+            updatedAt: autoResumeProfile.updatedAt,
+          }
+        : null,
       debug: {
         contentType,
         resumeLen: resumeText.length,
@@ -1681,6 +2253,9 @@ export async function POST(req: Request) {
         atsPrimaryJobRole: ats?.detectedJobRole?.roleKey ?? null,
         atsTargetRole: ats?.targetRole?.roleKey ?? null,
         atsOverallScore: ats?.overallScore ?? null,
+        autoResumeProfileSaved: !!autoResumeProfile,
+        autoResumeProfileId: autoResumeProfile?.id ?? null,
+        autoResumeProfileError,
       },
     });
   } catch (e: any) {
@@ -1697,11 +2272,67 @@ export async function POST(req: Request) {
           meta: { cost: chargedCost, error: message },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: message || "Failed to analyze input",
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: message || "Failed to analyze input",
+            },
+          });
+        }
+
         return okJson(
           { ok: false, error: message || "Failed to analyze input", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_resume_analysis_failed",
+          route: "/api/analyze",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: false,
+            error: message || "Failed to analyze input",
+            refundError: refundErr?.message || String(refundErr),
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/analyze",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "resume_analyze",
+              creditsCost: chargedCost,
+              refunded: false,
+              error: message || "Failed to analyze input",
+              refundError: refundErr?.message || String(refundErr),
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,

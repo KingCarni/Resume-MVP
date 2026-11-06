@@ -33,12 +33,120 @@ type ReqBody = {
   hiringManager?: string;
   roleTitle?: string;
 
+  jobId?: string;
+  resumeProfileId?: string;
+  sourceSlug?: string;
+  jobTitle?: string;
+  company?: string;
+  mode?: "resume" | "cover_letter" | "apply_pack" | "browse";
+  bundleSessionId?: string;
+
   tone?: string;
   length?: "short" | "standard" | "detailed";
   includeBullets?: boolean;
   blockedTerms?: string[];
   targetTerms?: string[];
 };
+
+type JobsAnalyticsMode = "resume" | "cover_letter" | "apply_pack" | "browse";
+
+type JobsAnalyticsContext = {
+  jobId: string;
+  resumeProfileId?: string;
+  sourceSlug?: string;
+  company?: string;
+  jobTitle?: string;
+  mode?: JobsAnalyticsMode;
+  bundleSessionId?: string;
+};
+
+function cleanOptionalString(value: unknown) {
+  const s = String(value ?? "").trim();
+  return s || undefined;
+}
+
+function buildJobsAnalyticsContext(input: {
+  jobId?: unknown;
+  resumeProfileId?: unknown;
+  sourceSlug?: unknown;
+  company?: unknown;
+  jobTitle?: unknown;
+  mode?: unknown;
+  bundleSessionId?: unknown;
+}) {
+  const jobId = cleanOptionalString(input.jobId);
+  if (!jobId) return null;
+
+  const modeRaw = cleanOptionalString(input.mode);
+  const mode: JobsAnalyticsMode | undefined =
+    modeRaw === "apply_pack" || modeRaw === "cover_letter" || modeRaw === "browse" || modeRaw === "resume"
+      ? modeRaw
+      : "cover_letter";
+
+  return {
+    jobId,
+    resumeProfileId: cleanOptionalString(input.resumeProfileId),
+    sourceSlug: cleanOptionalString(input.sourceSlug),
+    company: cleanOptionalString(input.company),
+    jobTitle: cleanOptionalString(input.jobTitle),
+    mode,
+    bundleSessionId: cleanOptionalString(input.bundleSessionId),
+  } satisfies JobsAnalyticsContext;
+}
+
+function toSafeJson(value: unknown) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+async function writeJobsAnalyticsEvent(args: {
+  userId: string;
+  event: string;
+  route: string;
+  context: JobsAnalyticsContext | null;
+  meta?: Record<string, unknown>;
+}) {
+  if (!args.context?.jobId) return;
+
+  await prisma.event.create({
+    data: {
+      userId: args.userId,
+      type: "analyze",
+      metaJson: {
+        tag: BOOT_TAG,
+        category: "jobs",
+        event: args.event,
+        route: args.route,
+        jobId: args.context.jobId,
+        resumeProfileId: args.context.resumeProfileId ?? null,
+        sourceSlug: args.context.sourceSlug ?? null,
+        company: args.context.company ?? null,
+        jobTitle: args.context.jobTitle ?? null,
+        mode: args.context.mode ?? null,
+        bundleSessionId: args.context.bundleSessionId ?? null,
+        ...(typeof args.meta === "object" && args.meta ? toSafeJson(args.meta) : {}),
+      },
+    },
+  });
+}
+
+
+const COST_GENERATE_COVER_LETTER = 5;
+const COST_APPLY_PACK = 8;
+
+function buildJobsChargeConfig(context: JobsAnalyticsContext | null, fallbackMode: JobsAnalyticsMode) {
+  const mode = context?.mode === "apply_pack" ? "apply_pack" : fallbackMode;
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  const isApplyPack = mode === "apply_pack" && !!bundleSessionId;
+
+  return {
+    mode,
+    isApplyPack,
+    cost: isApplyPack ? COST_APPLY_PACK : COST_GENERATE_COVER_LETTER,
+    reason: isApplyPack ? "job_apply_pack" : "job_generate_cover_letter",
+    ref: isApplyPack ? `job_apply_pack:${bundleSessionId}` : undefined,
+    bundleSessionId,
+  } as const;
+}
 
 function okJson(payload: any, init?: ResponseInit) {
   return NextResponse.json(payload, {
@@ -52,6 +160,74 @@ function okJson(payload: any, init?: ResponseInit) {
 
 function normalizeJobText(input: unknown) {
   return String(input ?? "").replace(/\s+/g, " ").trim();
+}
+
+async function getCanonicalJobContextText(jobId: string) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      status: "active",
+    },
+    select: {
+      title: true,
+      company: true,
+      location: true,
+      remoteType: true,
+      seniority: true,
+      employmentType: true,
+      description: true,
+      requirementsText: true,
+      responsibilitiesText: true,
+    },
+  });
+
+  if (!job) return "";
+
+  return [
+    `${job.title} at ${job.company}`,
+    job.location ? `Location: ${job.location}` : null,
+    `Remote type: ${job.remoteType}`,
+    `Seniority: ${job.seniority}`,
+    `Employment type: ${job.employmentType}`,
+    job.description || null,
+    job.requirementsText || null,
+    job.responsibilitiesText || null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function resolveEffectiveJobsAnalyticsContext(
+  context: JobsAnalyticsContext | null,
+  currentJobText: string,
+  fallbackMode: JobsAnalyticsMode
+) {
+  const bundleSessionId = cleanOptionalString(context?.bundleSessionId);
+  if (!context?.jobId || context?.mode !== "apply_pack" || !bundleSessionId) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  const canonicalJobText = await getCanonicalJobContextText(context.jobId);
+  const matchesCanonical = !!canonicalJobText && normalizeJobText(canonicalJobText) === normalizeJobText(currentJobText);
+
+  if (matchesCanonical) {
+    return {
+      context,
+      bundleOverrideInvalidated: false,
+    } as const;
+  }
+
+  return {
+    context: {
+      ...context,
+      mode: fallbackMode,
+      bundleSessionId: undefined,
+    },
+    bundleOverrideInvalidated: true,
+  } as const;
 }
 
 function normalizeResumeText(input: unknown) {
@@ -237,22 +413,6 @@ function buildPrompt(args: {
     blockedTerms,
     targetTerms,
   } = args;
-
-  const today = new Date().toLocaleDateString("en-CA", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  const headerLines = [
-    fullName ? fullName : "",
-    [locationLine, phone, email].filter(Boolean).join(" • "),
-    linkedin ? linkedin : "",
-    today,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
   const greeting = hiringManager ? `Hi ${hiringManager},` : "Dear Hiring Manager,";
 
   const lengthGuide =
@@ -286,14 +446,12 @@ function buildPrompt(args: {
 You are writing a job application cover letter.
 
 OUTPUT FORMAT (exact):
-1) Start with the header block (name/contact/date) IF provided.
+1) Greeting line
 2) Blank line
-3) Greeting line
-4) Blank line
-5) Body paragraphs
-6) If includeBullets=true: blank line + exactly 3 impact bullets
-7) Blank line
-8) Sign-off: "Sincerely," then name (if available, else omit name line)
+3) Body paragraphs only
+4) If includeBullets=true: blank line + exactly 3 impact bullets
+5) Do NOT include any header/contact block
+6) Do NOT include any closing/sign-off line
 
 Role context:
 - Company: ${targetCompany || "(not provided)"}
@@ -303,6 +461,11 @@ Role context:
 
 Greeting line (use exactly):
 ${greeting}
+
+Additional formatting rules:
+- Do NOT output the candidate's name, address, email, phone, LinkedIn, or date anywhere in the letter body.
+- Do NOT include a closing such as "Sincerely," "Regards," or the candidate name at the end.
+- The app renders header details and the optional signature block separately.
 
 Rules:
 ${rules}
@@ -328,6 +491,7 @@ export async function POST(req: Request) {
 
   let chargedUserId = "";
   let chargedCost = 0;
+  let jobsAnalyticsContext: JobsAnalyticsContext | null = null;
 
   try {
     // ✅ Require login
@@ -356,6 +520,7 @@ export async function POST(req: Request) {
     let targetCompany = "";
     let hiringManager = "";
     let roleTitle = "";
+
 
     let tone = "confident, concise, impact-driven";
     let length: "short" | "standard" | "detailed" = "standard";
@@ -400,6 +565,16 @@ export async function POST(req: Request) {
       hiringManager = toStr(form.get("hiringManager")).trim();
       roleTitle = toStr(form.get("roleTitle")).trim();
 
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: form.get("jobId"),
+        resumeProfileId: form.get("resumeProfileId"),
+        sourceSlug: form.get("sourceSlug"),
+        company: form.get("company") ?? form.get("targetCompany"),
+        jobTitle: form.get("jobTitle") ?? form.get("roleTitle"),
+        mode: form.get("mode"),
+        bundleSessionId: form.get("bundleSessionId"),
+      });
+
       tone = toStr(form.get("tone") || tone).trim() || tone;
 
       const lenRaw = toStr(form.get("length") || "standard").trim();
@@ -423,6 +598,16 @@ export async function POST(req: Request) {
       targetCompany = toStr(body.targetCompany).trim();
       hiringManager = toStr(body.hiringManager).trim();
       roleTitle = toStr(body.roleTitle).trim();
+
+      jobsAnalyticsContext = buildJobsAnalyticsContext({
+        jobId: body.jobId,
+        resumeProfileId: body.resumeProfileId,
+        sourceSlug: body.sourceSlug,
+        company: body.company ?? body.targetCompany,
+        jobTitle: body.jobTitle ?? body.roleTitle,
+        mode: body.mode,
+        bundleSessionId: body.bundleSessionId,
+      });
 
       tone = toStr(body.tone || tone).trim() || tone;
 
@@ -454,25 +639,80 @@ export async function POST(req: Request) {
     }
 
     // ✅ Charge credits AFTER validation
-    const COST_COVER_LETTER = 5;
+    const effectiveJobsContextResult = await resolveEffectiveJobsAnalyticsContext(
+      jobsAnalyticsContext,
+      jobText,
+      "cover_letter"
+    );
+    jobsAnalyticsContext = effectiveJobsContextResult.context;
+
+    const chargeConfig = buildJobsChargeConfig(jobsAnalyticsContext, "cover_letter");
     const charged = await chargeCredits({
       userId: dbUser.id,
-      cost: COST_COVER_LETTER,
-      reason: "cover_letter",
+      cost: chargeConfig.cost,
+      reason: chargeConfig.reason,
       eventType: "cover_letter",
+      ref: chargeConfig.ref,
       meta: {
-        cost: COST_COVER_LETTER,
+        cost: chargeConfig.cost,
         resumeLen: resumeText.length,
         jobLen: jobText.length,
+        jobId: jobsAnalyticsContext?.jobId ?? null,
+        resumeProfileId: jobsAnalyticsContext?.resumeProfileId ?? null,
+        company: jobsAnalyticsContext?.company ?? null,
+        jobTitle: jobsAnalyticsContext?.jobTitle ?? null,
+        sourceSlug: jobsAnalyticsContext?.sourceSlug ?? null,
+        mode: chargeConfig.mode,
+        bundleSessionId: chargeConfig.bundleSessionId ?? null,
+        bundleOverrideInvalidated: effectiveJobsContextResult.bundleOverrideInvalidated,
       },
     });
 
     if (!charged.ok) {
+      await writeJobsAnalyticsEvent({
+        userId: dbUser.id,
+        event: "job_cover_letter_failed",
+        route: "/cover-letter",
+        context: jobsAnalyticsContext,
+        meta: {
+          creditsCost: chargeConfig.cost,
+          error: "OUT_OF_CREDITS",
+          refunded: false,
+        },
+      });
+
+      if (jobsAnalyticsContext?.mode === "apply_pack") {
+        await writeJobsAnalyticsEvent({
+          userId: dbUser.id,
+          event: "job_apply_pack_failed",
+          route: "/cover-letter",
+          context: jobsAnalyticsContext,
+          meta: {
+            step: "cover_letter",
+            creditsCost: chargeConfig.cost,
+            error: "OUT_OF_CREDITS",
+            refunded: false,
+          },
+        });
+      }
+
       return okJson({ ok: false, error: "OUT_OF_CREDITS", balance: charged.balance }, { status: 402 });
     }
 
     chargedUserId = dbUser.id;
-    chargedCost = COST_COVER_LETTER;
+    chargedCost = charged.alreadyApplied ? 0 : chargeConfig.cost;
+
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_cover_letter_credit_charged",
+      route: "/api/cover-letter",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: chargeConfig.cost,
+        resumeLen: resumeText.length,
+        jobLen: jobText.length,
+      },
+    });
 
     const prompt = buildPrompt({
       resumeText,
@@ -515,6 +755,33 @@ export async function POST(req: Request) {
         meta: { cost: chargedCost },
       });
 
+      await writeJobsAnalyticsEvent({
+        userId: chargedUserId,
+        event: "job_cover_letter_failed",
+        route: "/api/cover-letter",
+        context: jobsAnalyticsContext,
+        meta: {
+          creditsCost: chargedCost,
+          refunded: true,
+          error: "MODEL_RETURNED_EMPTY_RESPONSE",
+        },
+      });
+
+      if (jobsAnalyticsContext?.mode === "apply_pack") {
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_apply_pack_failed",
+          route: "/api/cover-letter",
+          context: jobsAnalyticsContext,
+          meta: {
+            step: "cover_letter",
+            creditsCost: chargedCost,
+            refunded: true,
+            error: "MODEL_RETURNED_EMPTY_RESPONSE",
+          },
+        });
+      }
+
       return okJson(
         { ok: false, error: "Model returned empty response", refunded: true, balance: refunded.balance },
         { status: 500 }
@@ -534,6 +801,35 @@ export async function POST(req: Request) {
           meta: { cost: chargedCost, hit },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_cover_letter_failed",
+          route: "/api/cover-letter",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: "BLOCKED_TERM_DETECTED",
+            blockedTerm: hit,
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/cover-letter",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "cover_letter",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: "BLOCKED_TERM_DETECTED",
+              blockedTerm: hit,
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
@@ -546,6 +842,31 @@ export async function POST(req: Request) {
       }
     }
 
+    await writeJobsAnalyticsEvent({
+      userId: dbUser.id,
+      event: "job_cover_letter_completed",
+      route: "/api/cover-letter",
+      context: jobsAnalyticsContext,
+      meta: {
+        creditsCost: chargeConfig.cost,
+        textLength: text.length,
+      },
+    });
+
+    if (jobsAnalyticsContext?.mode === "apply_pack") {
+      await writeJobsAnalyticsEvent({
+        userId: dbUser.id,
+        event: "job_apply_pack_completed",
+        route: "/api/cover-letter",
+        context: jobsAnalyticsContext,
+        meta: {
+          creditsCost: chargeConfig.cost,
+          step: "cover_letter",
+          textLength: text.length,
+        },
+      });
+    }
+
     return okJson({
       ok: true,
       coverLetter: text,
@@ -556,7 +877,7 @@ export async function POST(req: Request) {
         jobLen: jobText.length,
         maxFileMb: MAX_FILE_MB,
         minResumeChars: MIN_RESUME_CHARS,
-        cost: COST_COVER_LETTER,
+        cost: chargeConfig.cost,
       },
     });
   } catch (err: any) {
@@ -573,12 +894,68 @@ export async function POST(req: Request) {
           meta: { error: message, cost: chargedCost },
         });
 
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_cover_letter_failed",
+          route: "/api/cover-letter",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: true,
+            error: message || "Cover letter generation failed",
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/cover-letter",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "cover_letter",
+              creditsCost: chargedCost,
+              refunded: true,
+              error: message || "Cover letter generation failed",
+            },
+          });
+        }
+
         return okJson(
           { ok: false, error: message || "Cover letter generation failed", refunded: true, balance: refunded.balance },
           { status: 500 }
         );
       } catch (refundErr: any) {
         console.error("refundCredits failed:", refundErr);
+        await writeJobsAnalyticsEvent({
+          userId: chargedUserId,
+          event: "job_cover_letter_failed",
+          route: "/api/cover-letter",
+          context: jobsAnalyticsContext,
+          meta: {
+            creditsCost: chargedCost,
+            refunded: false,
+            error: message || "Cover letter generation failed",
+            refundError: refundErr?.message || String(refundErr),
+          },
+        });
+
+        if (jobsAnalyticsContext?.mode === "apply_pack") {
+          await writeJobsAnalyticsEvent({
+            userId: chargedUserId,
+            event: "job_apply_pack_failed",
+            route: "/api/cover-letter",
+            context: jobsAnalyticsContext,
+            meta: {
+              step: "cover_letter",
+              creditsCost: chargedCost,
+              refunded: false,
+              error: message || "Cover letter generation failed",
+              refundError: refundErr?.message || String(refundErr),
+            },
+          });
+        }
+
         return okJson(
           {
             ok: false,
