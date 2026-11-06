@@ -627,7 +627,7 @@ function openHtmlPreviewInNewWindow(title: string, html: string) {
   }, 60000);
 }
 
-function HtmlDocPreview({ html, footer, loading }: { html: string; footer?: React.ReactNode; loading?: boolean }) {
+function HtmlDocPreview({ html, footer, loading, emptyNote }: { html: string; footer?: React.ReactNode; loading?: boolean; emptyNote?: string }) {
   return (
     <div className="w-full min-w-0 rounded-2xl border border-black/10 bg-white/60 p-2 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -638,9 +638,9 @@ function HtmlDocPreview({ html, footer, loading }: { html: string; footer?: Reac
       </div>
 
       <div className="w-full min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-black/20">
-        {loading && !html.trim() ? (
-          <div className="flex h-[1180px] w-full min-w-0 items-center justify-center text-sm font-semibold text-black/60 dark:text-slate-100/70">
-            Restoring your saved resume…
+        {!html.trim() && (loading || emptyNote) ? (
+          <div className="flex h-[1180px] w-full min-w-0 items-center justify-center px-6 text-center text-sm font-semibold text-black/60 dark:text-slate-100/70">
+            {loading ? "Restoring your saved resume…" : emptyNote}
           </div>
         ) : (
           <iframe
@@ -3224,6 +3224,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const profileSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProfileSyncSignatureRef = useRef("");
   const latestResumeHydratedRef = useRef(false);
+  const hydratedProfileIdRef = useRef("");
   const [savedResumeRestored, setSavedResumeRestored] = useState(false);
   const [hydratingSavedResume, setHydratingSavedResume] = useState(false);
   // Guards for saved-resume hydration: only the newest request may apply state,
@@ -3315,6 +3316,12 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   const applyStructuredSnapshot = useCallback((snapshot: StructuredResumeSnapshot | null | undefined) => {
     const next = sanitizeStructuredResumeSnapshot(snapshot);
     if (!next) return false;
+
+    // This replaces the whole document, so per-row rewrite state from whatever
+    // was loaded before no longer lines up with these sections and bullets.
+    setRewriteProofByRow((prev) => (Object.keys(prev).length ? {} : prev));
+    setSelectedBulletIdx((prev) => (prev.size ? new Set<number>() : prev));
+    setAssignments((prev) => (Object.keys(prev).length ? {} : prev));
 
     setTargetPosition(next.targetPosition || "");
     if (isLegacyResumeTemplateId(next.template)) {
@@ -3410,6 +3417,7 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
                 setSavedResumeRestored(true);
                 syncSignatureSeedPendingRef.current = true;
               }
+              hydratedProfileIdRef.current = preferredProfileId;
               restoredProfileMetaRef.current = {
                 skills: Array.isArray(matchedProfile?.normalizedSkills) ? matchedProfile.normalizedSkills : [],
                 titles: Array.isArray(matchedProfile?.normalizedTitles) ? matchedProfile.normalizedTitles : [],
@@ -3516,10 +3524,24 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   );
 
   useEffect(() => {
-    if (status !== "authenticated" || latestResumeHydratedRef.current) return;
-    // Content is already in the editor, so there is nothing to restore and
-    // saving must not stay blocked.
-    if (file || resumeText.trim() || analysis) {
+    if (status !== "authenticated") return;
+
+    const preferredProfileId = (() => {
+      if (typeof window === "undefined") return "";
+      const stored = window.localStorage.getItem("activeResumeProfileId") || "";
+      return String(searchParams.get("resumeProfileId") || stored).trim();
+    })();
+
+    // Selecting a different saved profile has to replace what is on screen;
+    // every other path keeps the one-shot behaviour.
+    const switchedProfile =
+      !!preferredProfileId && !!hydratedProfileIdRef.current && preferredProfileId !== hydratedProfileIdRef.current;
+
+    if (latestResumeHydratedRef.current && !switchedProfile) return;
+
+    // An upload or an analysis in flight is never discarded, and restored text
+    // alone must not keep saving blocked.
+    if (file || analysis || (resumeText.trim() && !switchedProfile)) {
       setHydrationSettled(true);
       return;
     }
@@ -3527,15 +3549,9 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
     let cancelled = false;
 
     async function hydrateLatestResume() {
-      const preferredProfileId = (() => {
-        if (typeof window === "undefined") return "";
-        const stored = window.localStorage.getItem("activeResumeProfileId") || "";
-        return String(searchParams.get("resumeProfileId") || stored).trim();
-      })();
-
       setHydratingSavedResume(true);
       try {
-        const hydrated = await hydrateLatestSavedResume({ preferredProfileId });
+        const hydrated = await hydrateLatestSavedResume({ preferredProfileId, force: switchedProfile });
         if (!hydrated || cancelled) return;
       } finally {
         setHydrationSettled(true);
@@ -3733,6 +3749,11 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
 
   const resetDerivedState = useCallback(() => {
     setAnalysis(null);
+    setSavedResumeRestored(false);
+    restoredProfileMetaRef.current = null;
+    syncSignatureSeedPendingRef.current = false;
+    lastProfileSyncSignatureRef.current = "";
+    latestResumeHydratedRef.current = false;
     setSelectedBulletIdx(new Set());
     setAssignments({});
     setRewriteSessions({});
@@ -4196,8 +4217,6 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
   }
 
   async function handleRewriteBullet(index: number, options?: { safer?: boolean }): Promise<boolean> {
-    if (!analysis) return false;
-
     const rowsSnapshot = liveBulletRowsRef.current.length ? liveBulletRowsRef.current : liveBulletRows;
     const row = rowsSnapshot[index];
     if (!row) return false;
@@ -4320,11 +4339,16 @@ export default function ResumeMvp({ mode = "standard" }: ResumeMvpProps) {
       return true;
     }
 
+    if (!jobText.trim()) {
+      setError("Paste the job posting above before rewriting bullets. AI rewrites need that job context.");
+      return false;
+    }
+
     setLoadingRewriteIndex(index);
     setError(null);
 
     try {
-      const rewritePlanLocal = Array.isArray(analysis.rewritePlan) ? analysis.rewritePlan : [];
+      const rewritePlanLocal = Array.isArray(analysis?.rewritePlan) ? analysis.rewritePlan : [];
       const targetProducts = csvToArray(targetProductsCsv);
       const blockedTerms = csvToArray(blockedTermsCsv);
       const jobTextCapped = String(jobText ?? "").slice(0, 6000);
@@ -4965,11 +4989,14 @@ if (typeof planIndex === "number") {
   }
 
   async function handleRewriteSelected() {
-    if (!analysis) return;
-
     const effectiveLen = liveBulletRows.length;
     if (!effectiveLen) {
-      setError("No bullets available. Run Analyze first.");
+      setError("No bullets available. Upload or restore a resume first.");
+      return;
+    }
+
+    if (!jobText.trim()) {
+      setError("Paste the job posting above before rewriting bullets. AI rewrites need that job context.");
       return;
     }
 
@@ -5683,6 +5710,12 @@ if (typeof planIndex === "number") {
     return rows;
   }, [sections, editorBulletsBySection, planBucketsBySection, rewriteProofByRow]);
 
+  const canRewriteBullets = useMemo(() => {
+    if (isSetupMode) return false;
+    if (!liveBulletRows.length) return false;
+    return jobText.trim().length > 0;
+  }, [isSetupMode, liveBulletRows.length, jobText]);
+
   const liveBulletRowsRef = useRef<LiveBulletRow[]>([]);
   const liveAtsScoreRef = useRef<AtsScoreResult | null>(null);
 
@@ -6325,6 +6358,15 @@ useEffect(() => {
   const checklistCompletedCount = checklistItems.filter((item) => item.done).length;
   const canContinueToCoverLetter = !isSetupMode && !!analysis && !atsScoreDirty;
 
+  const pendingUploadNote = useMemo(() => {
+    if (liveResumeHtml.trim()) return "";
+    if (error) return "";
+    if (!file) return "";
+    return isSetupMode
+      ? `"${file.name}" is ready. Run Analyze Base Resume to load it into the preview.`
+      : `"${file.name}" is ready. Add the job posting and target position, then run Analyze to load it into the preview.`;
+  }, [liveResumeHtml, error, file, isSetupMode]);
+
   const fileIsPdf = useMemo(() => {
     if (!file) return false;
     const name = String(file.name || "").toLowerCase();
@@ -6442,6 +6484,7 @@ useEffect(() => {
                 accept=".pdf,.doc,.docx,.txt"
                 onChange={(e) => {
                   const nextFile = e.target.files?.[0] ?? null;
+                  resetDerivedState();
                   setFile(nextFile);
                   setResumeSourceMeta(
                     nextFile
@@ -6453,7 +6496,6 @@ useEffect(() => {
                         }
                       : null
                   );
-                  resetDerivedState();
                 }}
                 className="sr-only"
               />
@@ -6804,6 +6846,7 @@ useEffect(() => {
           <HtmlDocPreview
             html={liveResumeHtml}
             loading={hydratingSavedResume}
+            emptyNote={pendingUploadNote}
             footer={
               isSetupMode ? (
                 <div className="flex flex-wrap items-center gap-2">
@@ -7434,6 +7477,13 @@ useEffect(() => {
       {/* ✅ BULLETS PANEL */}
       {(analysis || savedResumeRestored) && liveBulletRows.length ? (
         <section id="bullets-panel" className="col-span-full mt-4 rounded-2xl border border-black/10 bg-white/60 p-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
+          {!isSetupMode && !canRewriteBullets ? (
+            <div className="mb-3 rounded-xl border border-amber-300/60 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
+              Edit these bullets freely. AI rewrites need the job posting: paste it into{" "}
+              <span className="font-extrabold">Job description</span> above to enable them.
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-extrabold">Bullets</h2>
 
@@ -7462,7 +7512,7 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={handleRewriteSelected}
-                  disabled={!analysis || loadingBatchRewrite || selectedCount === 0}
+                  disabled={!canRewriteBullets || loadingBatchRewrite || selectedCount === 0}
                   className={`px-4 py-2 rounded-xl font-semibold transition-all ${
                     selectedCount === 0
                       ? "bg-gray-300 text-gray-500 cursor-not-allowed opacity-70"
@@ -7586,7 +7636,7 @@ useEffect(() => {
                           <button
                             type="button"
                             onClick={() => handleRewriteBullet(i)}
-                            disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                            disabled={!canRewriteBullets || (loadingRewriteIndex !== null && loadingRewriteIndex !== i)}
                             className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-extrabold text-black transition-all duration-200 hover:bg-emerald-700 hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-50"
                           >
                             {loadingRewriteIndex === i ? "Rewriting…" : `Rewrite (${CREDIT_COSTS.rewriteBullet})`}
@@ -7595,7 +7645,7 @@ useEffect(() => {
                           <button
                             type="button"
                             onClick={() => handleRewriteBullet(i, { safer: true })}
-                            disabled={loadingRewriteIndex !== null && loadingRewriteIndex !== i}
+                            disabled={!canRewriteBullets || (loadingRewriteIndex !== null && loadingRewriteIndex !== i)}
                             className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-black hover:bg-black/5 disabled:opacity-50 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
                           >
                             Safer Rewrite
